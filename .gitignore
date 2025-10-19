@@ -39,6 +39,9 @@ coverage/
 projects-registry.json
 global/projects-registry.json
 
+# Local MyJarvis initialization (each dev has their own)
+.myjarvis/
+
 # Environment
 .env
 .env.local
