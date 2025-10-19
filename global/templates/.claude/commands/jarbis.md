@@ -6,18 +6,24 @@ Load MyJarvis context and prepare the workspace.
 
 1. **Identify the project name** from the current working directory (use basename)
 
-2. **Read all MyJarvis resources** for this project:
+2. **Determine the framework** by checking settings.json:
+   - Read `.myjarvis/config/settings.json`
+   - Extract the `project.framework` field
+
+3. **Read all MyJarvis resources** for this project:
    - Read resource: `myjarvis://{project-name}/memory/instructions`
    - Read resource: `myjarvis://{project-name}/memory/project`
    - Read resource: `myjarvis://{project-name}/memory/knowledge`
    - Read resource: `myjarvis://{project-name}/context/daily`
 
-3. **Acknowledge** you're ready (be concise):
+4. **Acknowledge** you're ready (be concise):
    ```
-   Jarbis ready for {project-name}
+   Jarbis ready for {project-name} ({framework})
 
    MCP tools loaded. How can I help?
    ```
+
+   If framework is "generic", just show: `Jarbis ready for {project-name}`
 
 ## CRITICAL RULES (Follow these STRICTLY):
 
