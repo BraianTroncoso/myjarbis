@@ -1,0 +1,379 @@
+#!/bin/bash
+
+#
+# MyJarvis Project Initialization Script
+#
+# This script initializes MyJarvis in the current project:
+# 1. Creates .myjarvis/ folder structure
+# 2. Copies templates (prompts, config, scripts)
+# 3. Detects project framework
+# 4. Generates project summary
+# 5. Registers project in global registry
+# 6. Updates .gitignore
+#
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Paths
+INSTALL_DIR="$HOME/.myjarvis-global"
+TEMPLATES_DIR="$INSTALL_DIR/templates"
+REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+CURRENT_DIR="$(pwd)"
+PROJECT_NAME="$(basename "$CURRENT_DIR")"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  MyJarvis Project Initialization"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Project: $PROJECT_NAME"
+echo "Path:    $CURRENT_DIR"
+echo ""
+
+# Check if already initialized
+if [ -d ".myjarvis" ]; then
+    echo -e "${YELLOW}Warning: .myjarvis/ folder already exists${NC}"
+    read -p "Reinitialize? This will overwrite existing files (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Initialization cancelled"
+        exit 0
+    fi
+fi
+
+# Detect framework
+echo -e "${BLUE}[1/6]${NC} Detecting project framework..."
+FRAMEWORK="generic"
+
+if [ -f "artisan" ] && [ -f "composer.json" ]; then
+    FRAMEWORK="laravel"
+    echo -e "${GREEN}✓${NC} Detected: Laravel"
+elif [ -f "package.json" ]; then
+    if grep -q "\"next\"" package.json; then
+        FRAMEWORK="nextjs"
+        echo -e "${GREEN}✓${NC} Detected: Next.js"
+    elif grep -q "\"react\"" package.json; then
+        FRAMEWORK="react"
+        echo -e "${GREEN}✓${NC} Detected: React"
+    elif grep -q "\"vue\"" package.json; then
+        FRAMEWORK="vue"
+        echo -e "${GREEN}✓${NC} Detected: Vue.js"
+    elif grep -q "\"express\"" package.json; then
+        FRAMEWORK="express"
+        echo -e "${GREEN}✓${NC} Detected: Express.js"
+    else
+        echo -e "${YELLOW}!${NC} Detected: Node.js (generic)"
+    fi
+else
+    echo -e "${YELLOW}!${NC} Framework: Generic"
+fi
+
+# Create .myjarvis folder structure
+echo ""
+echo -e "${BLUE}[2/6]${NC} Creating .myjarvis folder structure..."
+mkdir -p .myjarvis/{bin,context,prompts,config}
+mkdir -p .claude/commands
+echo -e "${GREEN}✓${NC} Created folder structure"
+
+# Run analyzer and copy templates
+echo ""
+echo -e "${BLUE}[3/6]${NC} Analyzing project and setting up templates..."
+
+# Copy framework-specific system.md
+if [ "$FRAMEWORK" = "laravel" ]; then
+    cp "$INSTALL_DIR/core/prompts/system-laravel.md" .myjarvis/prompts/system.md
+elif [ "$FRAMEWORK" = "express" ]; then
+    cp "$INSTALL_DIR/core/prompts/system-express.md" .myjarvis/prompts/system.md
+else
+    cp "$INSTALL_DIR/core/prompts/system-generic.md" .myjarvis/prompts/system.md
+fi
+
+# Run appropriate analyzer to generate project-summary.md
+if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
+    echo -e "${BLUE}Running Laravel analyzer...${NC}"
+    node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << 'EOF'
+# $PROJECT_NAME - Project Summary
+
+## Overview
+
+Project initialized on $(date +%Y-%m-%d).
+
+**Framework:** $FRAMEWORK
+
+## Project Structure
+
+TODO: Update with actual structure
+EOF
+elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
+    echo -e "${BLUE}Running Express analyzer...${NC}"
+    node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << EOF
+# $PROJECT_NAME - Project Summary
+
+## Overview
+
+Project initialized on $(date +%Y-%m-%d).
+
+**Framework:** $FRAMEWORK
+
+## Project Structure
+
+TODO: Update with actual structure
+EOF
+else
+    # Use generic analyzer
+    echo -e "${BLUE}Running generic analyzer...${NC}"
+    if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
+        node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << EOF
+# $PROJECT_NAME - Project Summary
+
+## Overview
+
+Project initialized on $(date +%Y-%m-%d).
+
+**Framework:** $FRAMEWORK
+
+## Project Structure
+
+TODO: Update with actual structure
+EOF
+    else
+        cat > .myjarvis/context/project-summary.md << EOF
+# $PROJECT_NAME - Project Summary
+
+## Overview
+
+Project initialized on $(date +%Y-%m-%d).
+
+**Framework:** $FRAMEWORK
+
+## Project Structure
+
+TODO: Update with actual structure
+
+## Architecture
+
+TODO: Document architecture decisions
+
+## Key Components
+
+TODO: List main components/modules
+
+## Development Notes
+
+- Initialized with MyJarvis on $(date +%Y-%m-%d)
+- Framework detected: $FRAMEWORK
+EOF
+
+# knowledge-base.md (context)
+cat > .myjarvis/context/knowledge-base.md << 'EOF'
+# Knowledge Base
+
+This file contains a chronological record of everything built in this project.
+
+Each entry documents:
+- **What** was implemented
+- **Why** decisions were made
+- **How** it was implemented
+- **Files** that were created/modified
+
+This serves as project memory for Claude and documentation for the team.
+
+---
+
+EOF
+
+# daily.md (context)
+cat > .myjarvis/context/daily.md << EOF
+# Daily Context - $(date +%Y-%m-%d)
+
+## Today's Focus
+
+TODO: What are we working on today?
+
+## Recent Changes
+
+- Project initialized with MyJarvis
+
+## Current Status
+
+- Framework: $FRAMEWORK
+- Ready for development
+
+## Next Steps
+
+1. Review project structure
+2. Plan first feature
+3. Start implementation
+
+---
+
+Last updated: $(date +%Y-%m-%d)
+EOF
+
+# settings.json (config)
+cat > .myjarvis/config/settings.json << EOF
+{
+  "project": {
+    "name": "$PROJECT_NAME",
+    "framework": "$FRAMEWORK",
+    "initialized": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+  },
+  "mcp": {
+    "enabled": true
+  },
+  "context": {
+    "autoGenerateCodebase": false,
+    "maxCodebaseSize": "10MB"
+  }
+}
+EOF
+
+# generate-context.sh (bin)
+cat > .myjarvis/bin/generate-context.sh << 'EOF'
+#!/bin/bash
+# Generate codebase.txt - a text dump of the entire codebase
+# Useful for giving Claude full project context
+
+OUTPUT=".myjarvis/context/codebase.txt"
+
+echo "Generating codebase context..."
+echo "# Codebase Context - Generated $(date)" > "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+# Find all relevant files (exclude node_modules, vendor, etc.)
+find . -type f \
+  -not -path "*/node_modules/*" \
+  -not -path "*/vendor/*" \
+  -not -path "*/.git/*" \
+  -not -path "*/build/*" \
+  -not -path "*/dist/*" \
+  -not -path "*/.myjarvis/*" \
+  -not -name "*.min.js" \
+  -not -name "package-lock.json" \
+  | while read file; do
+    echo "━━━ $file" >> "$OUTPUT"
+    cat "$file" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+done
+
+echo "✓ Generated: $OUTPUT"
+EOF
+chmod +x .myjarvis/bin/generate-context.sh
+
+# daily.sh (bin)
+cat > .myjarvis/bin/daily.sh << 'EOF'
+#!/bin/bash
+# Update daily.md with current date
+
+DAILY_FILE=".myjarvis/context/daily.md"
+TODAY=$(date +%Y-%m-%d)
+
+# Update header
+sed -i.bak "1s/.*/# Daily Context - $TODAY/" "$DAILY_FILE"
+sed -i.bak "s/Last updated: .*/Last updated: $TODAY/" "$DAILY_FILE"
+rm -f "${DAILY_FILE}.bak"
+
+echo "✓ Updated daily.md"
+EOF
+chmod +x .myjarvis/bin/daily.sh
+
+echo -e "${GREEN}✓${NC} Created initial files"
+
+# Create .claude commands from templates
+echo ""
+echo -e "${BLUE}[4/6]${NC} Creating Claude commands..."
+
+# Copy improved command templates
+cp "$INSTALL_DIR/templates/.claude/commands/plan.md" .claude/commands/plan.md
+cp "$INSTALL_DIR/templates/.claude/commands/implement.md" .claude/commands/implement.md
+cp "$INSTALL_DIR/templates/.claude/commands/complete.md" .claude/commands/complete.md
+
+echo -e "${GREEN}✓${NC} Created command files"
+
+# Register project in global registry
+echo ""
+echo -e "${BLUE}[5/6]${NC} Registering project..."
+
+node -e "
+const fs = require('fs');
+const registryPath = '$REGISTRY_FILE';
+
+let registry = { _version: '1.0', _comment: 'Auto-generated', projects: {} };
+
+if (fs.existsSync(registryPath)) {
+    registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+}
+
+registry.projects['$PROJECT_NAME'] = {
+    name: '$PROJECT_NAME',
+    path: '$CURRENT_DIR',
+    framework: '$FRAMEWORK',
+    initialized: new Date().toISOString(),
+    lastAccessed: new Date().toISOString()
+};
+
+registry._lastUpdated = new Date().toISOString();
+
+fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+"
+
+echo -e "${GREEN}✓${NC} Project registered in global registry"
+
+# Update .gitignore
+echo ""
+echo -e "${BLUE}[6/6]${NC} Updating .gitignore..."
+
+if [ -f ".gitignore" ]; then
+    if ! grep -q ".myjarvis/context/codebase.txt" .gitignore; then
+        echo "" >> .gitignore
+        echo "# MyJarvis" >> .gitignore
+        echo ".myjarvis/context/codebase.txt" >> .gitignore
+        echo -e "${GREEN}✓${NC} Updated .gitignore"
+    else
+        echo -e "${YELLOW}!${NC} .gitignore already configured"
+    fi
+else
+    cat > .gitignore << 'EOF'
+# MyJarvis
+.myjarvis/context/codebase.txt
+EOF
+    echo -e "${GREEN}✓${NC} Created .gitignore"
+fi
+
+# Success
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${GREEN}Initialization completed!${NC}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Project initialized with:"
+echo "  Framework: $FRAMEWORK"
+echo "  Structure: .myjarvis/ and .claude/"
+echo ""
+echo "Next steps:"
+echo ""
+echo "1. Review and customize:"
+echo "   - .myjarvis/prompts/system.md"
+echo "   - .myjarvis/context/project-summary.md"
+echo ""
+echo "2. Start Claude Code:"
+echo "   claude"
+echo ""
+echo "3. Use structured workflow:"
+echo "   /plan      - Plan a feature"
+echo "   /implement - Implement current phase"
+echo "   /complete  - Mark phase complete"
+echo ""
+echo "Tools available in Claude:"
+echo "  - search_code    - Find code intelligently"
+echo "  - get_context    - Get curated context"
+echo "  - update_memory  - Record implementations"
+echo ""

@@ -1,0 +1,146 @@
+#!/bin/bash
+
+#
+# MyJarvis CLI - Main Entry Point
+#
+# Commands:
+#   myjarvis init       - Initialize current project
+#   myjarvis list       - List all registered projects
+#   myjarvis context    - Generate fresh codebase context
+#   myjarvis update     - Update MyJarvis global installation
+#   myjarvis help       - Show help
+#
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Paths
+INSTALL_DIR="$HOME/.myjarvis-global"
+REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+
+# Show help
+show_help() {
+    echo ""
+    echo "MyJarvis - AI Development Assistant System"
+    echo ""
+    echo "Usage: myjarvis <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  init        Initialize MyJarvis in the current project"
+    echo "  list        List all projects registered with MyJarvis"
+    echo "  context     Generate fresh codebase context (codebase.txt)"
+    echo "  update      Update MyJarvis global installation"
+    echo "  help        Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  cd ~/projects/my-app"
+    echo "  myjarvis init              # Initialize project"
+    echo "  myjarvis list              # See all projects"
+    echo ""
+    echo "Documentation:"
+    echo "  https://github.com/braiantroncoso/myjarvis"
+    echo ""
+}
+
+# List registered projects
+list_projects() {
+    if [ ! -f "$REGISTRY_FILE" ]; then
+        echo -e "${YELLOW}No projects registered yet${NC}"
+        echo "Run 'myjarvis init' in a project to register it"
+        exit 0
+    fi
+
+    # Parse JSON and list projects
+    echo ""
+    echo "Registered Projects:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Use node to parse JSON (works cross-platform)
+    node -e "
+        const fs = require('fs');
+        const data = JSON.parse(fs.readFileSync('$REGISTRY_FILE', 'utf-8'));
+        const projects = data.projects;
+
+        if (Object.keys(projects).length === 0) {
+            console.log('  No projects registered yet');
+        } else {
+            for (const [name, config] of Object.entries(projects)) {
+                console.log('');
+                console.log('  Name:      ' + name);
+                console.log('  Path:      ' + config.path);
+                console.log('  Framework: ' + (config.framework || 'generic'));
+                console.log('  Created:   ' + config.initialized);
+            }
+        }
+    "
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# Generate codebase context
+generate_context() {
+    if [ ! -d ".myjarvis" ]; then
+        echo -e "${RED}Error: Not a MyJarvis project${NC}"
+        echo "Run 'myjarvis init' first"
+        exit 1
+    fi
+
+    if [ -f ".myjarvis/bin/generate-context.sh" ]; then
+        echo -e "${BLUE}Generating codebase context...${NC}"
+        bash .myjarvis/bin/generate-context.sh
+        echo -e "${GREEN}✓${NC} Context generated: .myjarvis/context/codebase.txt"
+    else
+        echo -e "${RED}Error: generate-context.sh not found${NC}"
+        exit 1
+    fi
+}
+
+# Main command router
+case "${1:-help}" in
+    init)
+        if [ ! -f "$INSTALL_DIR/bin/myjarvis-init" ]; then
+            echo -e "${RED}Error: MyJarvis not properly installed${NC}"
+            echo "Please run the installation script"
+            exit 1
+        fi
+        exec "$INSTALL_DIR/bin/myjarvis-init"
+        ;;
+
+    list)
+        list_projects
+        ;;
+
+    context)
+        generate_context
+        ;;
+
+    update)
+        if [ ! -f "$INSTALL_DIR/bin/myjarvis-update" ]; then
+            echo -e "${RED}Error: MyJarvis not properly installed${NC}"
+            exit 1
+        fi
+        exec "$INSTALL_DIR/bin/myjarvis-update"
+        ;;
+
+    help|--help|-h)
+        show_help
+        ;;
+
+    --version|-v)
+        echo "MyJarvis v0.1.0"
+        ;;
+
+    *)
+        echo -e "${RED}Error: Unknown command '${1}'${NC}"
+        echo "Run 'myjarvis help' for usage"
+        exit 1
+        ;;
+esac
