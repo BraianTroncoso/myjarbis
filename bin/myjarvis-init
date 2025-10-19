@@ -170,6 +170,8 @@ TODO: List main components/modules
 - Initialized with MyJarvis on $(date +%Y-%m-%d)
 - Framework detected: $FRAMEWORK
 EOF
+    fi
+fi
 
 # knowledge-base.md (context)
 cat > .myjarvis/context/knowledge-base.md << 'EOF'
