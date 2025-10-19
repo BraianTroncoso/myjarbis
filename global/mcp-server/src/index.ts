@@ -37,6 +37,9 @@ import {
   MyJarvisError,
   ErrorType,
 } from './types.js';
+import { searchCode, SearchCodeParams } from './tools/searchCode.js';
+import { getContext, GetContextParams } from './tools/getContext.js';
+import { updateMemory, UpdateMemoryParams } from './tools/updateMemory.js';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -335,30 +338,179 @@ async function main() {
   /**
    * Handler: List available tools
    *
-   * Tools are functions that Claude can call (we'll implement in Phase 3)
+   * Tools are functions that Claude can call
    */
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     console.error('[MyJarvis] Listing tools...');
 
-    // Phase 3: We'll add tools like search_code, get_context, update_memory
     return {
-      tools: [],
+      tools: [
+        {
+          name: 'search_code',
+          description: 'Search the codebase intelligently and return summarized results. Use this when you need to find specific code patterns, functions, or implementations without reading entire files.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectName: {
+                type: 'string',
+                description: 'Name of the project to search in',
+              },
+              query: {
+                type: 'string',
+                description: 'Search query (e.g., "User model", "authentication logic", "handlePayment")',
+              },
+              fileTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Filter by file extensions (e.g., ["ts", "tsx", "js"])',
+              },
+              caseInsensitive: {
+                type: 'boolean',
+                description: 'Case-insensitive search (default: false)',
+              },
+              maxResults: {
+                type: 'number',
+                description: 'Maximum number of results to return (default: 50)',
+              },
+            },
+            required: ['projectName', 'query'],
+          },
+        },
+        {
+          name: 'get_context',
+          description: 'Get curated context about a specific topic from the codebase. Returns ~2-3KB of relevant information instead of full files. Use this when you need to understand a feature or component.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectName: {
+                type: 'string',
+                description: 'Name of the project',
+              },
+              topic: {
+                type: 'string',
+                description: 'Topic to get context about (e.g., "User authentication", "payment processing", "User model")',
+              },
+              maxSize: {
+                type: 'number',
+                description: 'Maximum size of context in bytes (default: 3072 = 3KB)',
+              },
+            },
+            required: ['projectName', 'topic'],
+          },
+        },
+        {
+          name: 'update_memory',
+          description: 'Update the project\'s knowledge base with information about what was implemented. Use this after completing a feature or phase to maintain project memory.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectName: {
+                type: 'string',
+                description: 'Name of the project',
+              },
+              title: {
+                type: 'string',
+                description: 'Title of what was implemented (e.g., "User Authentication System")',
+              },
+              what: {
+                type: 'string',
+                description: 'What was built (brief description)',
+              },
+              why: {
+                type: 'string',
+                description: 'Why it was built this way (rationale)',
+              },
+              how: {
+                type: 'string',
+                description: 'How it was implemented (technical details, can be multi-line)',
+              },
+              files: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'List of files created or modified',
+              },
+              notes: {
+                type: 'string',
+                description: 'Additional notes or lessons learned',
+              },
+            },
+            required: ['projectName', 'title', 'what', 'why', 'how'],
+          },
+        },
+      ],
     };
   });
 
   /**
    * Handler: Execute a tool
    *
-   * (Will be implemented in Phase 3)
+   * Routes tool calls to the appropriate implementation
    */
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    console.error(`[MyJarvis] Tool called: ${request.params.name}`);
+    const { name, arguments: args } = request.params;
+    console.error(`[MyJarvis] Tool called: ${name}`);
 
-    throw new MyJarvisError(
-      ErrorType.RESOURCE_NOT_FOUND,
-      'Tools not yet implemented (Phase 3)',
-      { requestedTool: request.params.name }
-    );
+    try {
+      switch (name) {
+        case 'search_code': {
+          const params = args as unknown as SearchCodeParams;
+          const result = await searchCode(params, registry);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: result,
+              },
+            ],
+          };
+        }
+
+        case 'get_context': {
+          const params = args as unknown as GetContextParams;
+          const result = await getContext(params, registry);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: result,
+              },
+            ],
+          };
+        }
+
+        case 'update_memory': {
+          const params = args as unknown as UpdateMemoryParams;
+          const result = await updateMemory(params, registry);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: result,
+              },
+            ],
+          };
+        }
+
+        default:
+          throw new MyJarvisError(
+            ErrorType.RESOURCE_NOT_FOUND,
+            `Unknown tool: ${name}`,
+            { requestedTool: name, availableTools: ['search_code', 'get_context', 'update_memory'] }
+          );
+      }
+    } catch (error) {
+      if (error instanceof MyJarvisError) {
+        console.error(`[MyJarvis] Tool error: ${error.message}`, error.details);
+        throw error;
+      }
+
+      console.error('[MyJarvis] Unexpected tool error:', error);
+      throw new MyJarvisError(
+        ErrorType.FILE_READ_ERROR,
+        `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`,
+        { tool: name, error: String(error) }
+      );
+    }
   });
 
   // Start the server with stdio transport
