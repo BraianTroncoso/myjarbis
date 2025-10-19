@@ -1,0 +1,37 @@
+{
+  "name": "myjarvis",
+  "version": "0.1.0",
+  "description": "AI Development Assistant System with persistent memory for Claude Code",
+  "keywords": [
+    "ai",
+    "claude",
+    "mcp",
+    "development",
+    "assistant",
+    "model-context-protocol",
+    "memory",
+    "workflow"
+  ],
+  "author": "Braian Troncoso <https://github.com/braiantroncoso>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/braiantroncoso/myjarvis"
+  },
+  "bugs": {
+    "url": "https://github.com/braiantroncoso/myjarvis/issues"
+  },
+  "homepage": "https://github.com/braiantroncoso/myjarvis#readme",
+  "scripts": {
+    "install-global": "./install.sh",
+    "build:mcp": "cd global/mcp-server && npm run build",
+    "dev:mcp": "cd global/mcp-server && npm run dev",
+    "test:structure": "ls -R global/ && echo '✓ Structure OK'"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "myjarvis": "./bin/myjarvis"
+  }
+}
