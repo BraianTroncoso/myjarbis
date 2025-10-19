@@ -12,19 +12,11 @@ Load MyJarvis context and prepare the workspace.
    - Read resource: `myjarvis://{project-name}/memory/knowledge`
    - Read resource: `myjarvis://{project-name}/context/daily`
 
-3. **Acknowledge** you're ready:
+3. **Acknowledge** you're ready (be concise):
    ```
-   Jarbis initialized for {project-name}
+   Jarbis ready for {project-name}
 
-   Context loaded:
-   - System instructions
-   - Project summary
-   - Knowledge base
-   - Daily context
-
-   MCP tools ready: search_code, get_context, update_memory
-
-   How can I help you today?
+   MCP tools loaded. How can I help?
    ```
 
 ## Important reminders after loading:
