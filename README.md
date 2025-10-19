@@ -125,7 +125,17 @@ This creates:
 claude
 ```
 
-### 3. Use Structured Workflow
+### 3. Initialize Jarbis (IMPORTANT!)
+
+```bash
+/jarbis
+```
+
+This loads MyJarvis context and configures Claude to use MCP tools automatically.
+
+**You should run `/jarbis` every time you start a new Claude session.**
+
+### 4. Use Structured Workflow
 
 #### Step 1: Plan First
 ```

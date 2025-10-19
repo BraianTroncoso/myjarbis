@@ -15,12 +15,12 @@
 
 set -e  # Exit on error
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Colors for output - Iron Man theme (red and gold)
+RED='\033[1;31m'      # Bright red (Iron Man red)
+GOLD='\033[1;33m'     # Bright yellow/gold (Iron Man gold)
+GREEN='\033[0;32m'    # Keep green for success
+YELLOW='\033[1;33m'   # Warning yellow
+NC='\033[0m'          # No Color
 
 # Installation paths
 INSTALL_DIR="$HOME/.myjarvis-global"
@@ -28,9 +28,12 @@ CLAUDE_CONFIG_DIR="$HOME/.config/claude"
 CLAUDE_MCP_CONFIG="$CLAUDE_CONFIG_DIR/mcp.json"
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MyJarvis Global Installation"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${RED}╔════════════════════════════════════════════════╗${NC}"
+echo -e "${RED}║${GOLD}              🤖 JARBIS INSTALLER              ${RED}║${NC}"
+echo -e "${RED}║${NC}      Persistent Memory for Claude Code       ${RED}║${NC}"
+echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
+echo -e "${GOLD}   Developed by Braian Axel Troncoso 🇦🇷${NC}"
+echo -e "${GOLD}   github.com/braiantroncoso${NC}"
 echo ""
 
 # Check if running from correct directory
@@ -41,7 +44,7 @@ if [ ! -f "package.json" ] || [ ! -d "global" ]; then
 fi
 
 # Check for Node.js
-echo -e "${BLUE}[1/7]${NC} Checking prerequisites..."
+echo -e "${GOLD}[1/7]${NC} Checking prerequisites..."
 if ! command -v node &> /dev/null; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
     echo "Please install Node.js 18+ from https://nodejs.org/"
@@ -67,7 +70,7 @@ echo -e "${GREEN}✓${NC} npm $(npm --version) found"
 
 # Create installation directory
 echo ""
-echo -e "${BLUE}[2/7]${NC} Creating installation directory..."
+echo -e "${GOLD}[2/7]${NC} Creating installation directory..."
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}Warning: $INSTALL_DIR already exists${NC}"
     read -p "Remove existing installation and continue? (y/n) " -n 1 -r
@@ -86,14 +89,14 @@ echo -e "${GREEN}✓${NC} Created $INSTALL_DIR"
 
 # Copy files
 echo ""
-echo -e "${BLUE}[3/7]${NC} Copying MyJarvis files..."
+echo -e "${GOLD}[3/7]${NC} Copying MyJarvis files..."
 cp -r global/* "$INSTALL_DIR/"
 cp -r bin "$INSTALL_DIR/"
 echo -e "${GREEN}✓${NC} Files copied to $INSTALL_DIR"
 
 # Initialize projects registry
 echo ""
-echo -e "${BLUE}[4/7]${NC} Initializing projects registry..."
+echo -e "${GOLD}[4/7]${NC} Initializing projects registry..."
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 if [ ! -f "$REGISTRY_FILE" ]; then
     cat > "$REGISTRY_FILE" << 'EOF'
@@ -111,20 +114,20 @@ fi
 
 # Install MCP server dependencies
 echo ""
-echo -e "${BLUE}[5/7]${NC} Installing MCP server dependencies..."
+echo -e "${GOLD}[5/7]${NC} Installing MCP server dependencies..."
 cd "$INSTALL_DIR/mcp-server"
 npm install --silent
 echo -e "${GREEN}✓${NC} Dependencies installed"
 
 # Build MCP server
 echo ""
-echo -e "${BLUE}[6/7]${NC} Building MCP server..."
+echo -e "${GOLD}[6/7]${NC} Building MCP server..."
 npm run build --silent
 echo -e "${GREEN}✓${NC} MCP server built successfully"
 
 # Configure Claude Code
 echo ""
-echo -e "${BLUE}[7/7]${NC} Configuring Claude Code..."
+echo -e "${GOLD}[7/7]${NC} Configuring Claude Code..."
 
 # MCP server path
 MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
@@ -142,7 +145,7 @@ else
     if claude mcp list 2>/dev/null | grep -q "myjarvis"; then
         echo -e "${YELLOW}!${NC} MyJarvis MCP server already configured"
     else
-        echo -e "${BLUE}Configuring MCP server...${NC}"
+        echo -e "${GOLD}Configuring MCP server...${NC}"
         claude mcp add myjarvis node "$MCP_SERVER_PATH" >/dev/null 2>&1
 
         # Verify it was added
@@ -157,7 +160,7 @@ fi
 
 # Add to PATH (optional)
 echo ""
-echo -e "${BLUE}Setting up CLI...${NC}"
+echo -e "${GOLD}Setting up CLI...${NC}"
 
 SHELL_RC=""
 if [ -n "$BASH_VERSION" ]; then
@@ -185,28 +188,31 @@ chmod +x "$INSTALL_DIR/bin/myjarvis-update"
 
 # Success message
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${GREEN}Installation completed successfully!${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${RED}╔════════════════════════════════════════════════╗${NC}"
+echo -e "${RED}║${GREEN}     ✓ INSTALLATION COMPLETED SUCCESSFULLY    ${RED}║${NC}"
+echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "Next steps:"
+echo -e "${GOLD}Next steps:${NC}"
 echo ""
-echo "1. Reload your shell:"
+echo -e "${GOLD}1.${NC} Reload your shell:"
 if [ -n "$SHELL_RC" ]; then
-    echo "   source $SHELL_RC"
+    echo "   ${GOLD}source $SHELL_RC${NC}"
 fi
 echo ""
-echo "2. Navigate to a project:"
-echo "   cd ~/projects/my-project"
+echo -e "${GOLD}2.${NC} Navigate to a project:"
+echo "   ${GOLD}cd ~/projects/my-project${NC}"
 echo ""
-echo "3. Initialize MyJarvis:"
-echo "   myjarvis init"
+echo -e "${GOLD}3.${NC} Initialize Jarbis:"
+echo "   ${GOLD}myjarvis init${NC}"
 echo ""
-echo "4. Start Claude Code:"
-echo "   claude"
+echo -e "${GOLD}4.${NC} Start Claude Code:"
+echo "   ${GOLD}claude${NC}"
 echo ""
-echo "For help:"
-echo "   myjarvis help"
+echo -e "${GOLD}5.${NC} Initialize context:"
+echo "   ${GOLD}/jarbis${NC}"
 echo ""
-echo "Documentation: https://github.com/braiantroncoso/myjarvis"
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GOLD}Documentation:${NC} github.com/braiantroncoso/myjarvis"
+echo -e "${GOLD}Created by:${NC} Braian Axel Troncoso 🇦🇷"
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
