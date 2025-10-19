@@ -34,7 +34,7 @@ show_help() {
     echo "Commands:"
     echo "  init        Initialize MyJarvis in the current project"
     echo "  list        List all projects registered with MyJarvis"
-    echo "  context     Generate fresh codebase context (codebase.txt)"
+    echo "  context     Refresh project context (re-analyze project structure)"
     echo "  update      Update MyJarvis global installation"
     echo "  help        Show this help message"
     echo ""
@@ -85,7 +85,7 @@ list_projects() {
     echo ""
 }
 
-# Generate codebase context
+# Generate/refresh project context
 generate_context() {
     if [ ! -d ".myjarvis" ]; then
         echo -e "${RED}Error: Not a MyJarvis project${NC}"
@@ -93,14 +93,59 @@ generate_context() {
         exit 1
     fi
 
-    if [ -f ".myjarvis/bin/generate-context.sh" ]; then
-        echo -e "${BLUE}Generating codebase context...${NC}"
-        bash .myjarvis/bin/generate-context.sh
-        echo -e "${GREEN}✓${NC} Context generated: .myjarvis/context/codebase.txt"
+    echo ""
+    echo -e "${BLUE}Refreshing project context...${NC}"
+    echo ""
+
+    # Detect framework from settings
+    if [ -f ".myjarvis/config/settings.json" ]; then
+        FRAMEWORK=$(grep -o '"framework"[[:space:]]*:[[:space:]]*"[^"]*"' .myjarvis/config/settings.json | cut -d'"' -f4)
+        PROJECT_NAME=$(basename "$(pwd)")
+
+        # Re-run appropriate analyzer
+        if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
+            echo -e "${BLUE}[1/2]${NC} Re-analyzing Laravel project..."
+            node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null && \
+                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
+                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
+
+        elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
+            echo -e "${BLUE}[1/2]${NC} Re-analyzing Express project..."
+            node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null && \
+                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
+                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
+
+        else
+            echo -e "${BLUE}[1/2]${NC} Re-analyzing project structure..."
+            if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
+                node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null && \
+                    echo -e "${GREEN}✓${NC} project-summary.md updated" || \
+                    echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
+            else
+                echo -e "${YELLOW}!${NC} Analyzer not found, skipping project-summary update"
+            fi
+        fi
     else
-        echo -e "${RED}Error: generate-context.sh not found${NC}"
-        exit 1
+        echo -e "${YELLOW}!${NC} Settings not found, skipping project-summary update"
     fi
+
+    # Generate codebase.txt (optional)
+    if [ -f ".myjarvis/bin/generate-context.sh" ]; then
+        echo ""
+        echo -e "${BLUE}[2/2]${NC} Generating codebase.txt (optional)..."
+        bash .myjarvis/bin/generate-context.sh
+        echo -e "${GREEN}✓${NC} codebase.txt generated"
+    fi
+
+    echo ""
+    echo -e "${GREEN}Context refresh complete!${NC}"
+    echo ""
+    echo "Updated files:"
+    echo "  - .myjarvis/context/project-summary.md (Claude reads this)"
+    if [ -f ".myjarvis/context/codebase.txt" ]; then
+        echo "  - .myjarvis/context/codebase.txt (optional reference)"
+    fi
+    echo ""
 }
 
 # Main command router

@@ -25,7 +25,7 @@ If something is NOT working:
 
 ### 2. Update Project Memory
 
-Use the `update_memory` tool to record what was built:
+**IMPORTANT:** Use the `update_memory` tool to record what was built:
 
 ```javascript
 update_memory({
@@ -62,7 +62,34 @@ update_memory({
 })
 ```
 
-### 3. Summarize What Was Done
+### 3. Refresh Project Summary
+
+**CRITICAL:** If you created new models, controllers, routes, or modified the project structure, refresh the project summary so it stays in sync:
+
+```bash
+myjarvis context
+```
+
+This re-analyzes the project and updates `project-summary.md` with the latest code structure.
+
+**When to refresh:**
+- Created new models/controllers/routes
+- Added relationships to models
+- Modified project structure significantly
+- After major features
+
+**When to skip:**
+- Only changed implementation details
+- Minor bug fixes
+- Code refactoring without structural changes
+
+Execute the command now if needed:
+
+```bash
+myjarvis context
+```
+
+### 4. Summarize What Was Done
 
 Provide a clear summary:
 
@@ -91,7 +118,7 @@ MEMORY UPDATED:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 4. Preview Next Phase (if applicable)
+### 5. Preview Next Phase (if applicable)
 
 If there are more phases in the plan:
 
