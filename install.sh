@@ -126,35 +126,33 @@ echo -e "${GREEN}✓${NC} MCP server built successfully"
 echo ""
 echo -e "${BLUE}[7/7]${NC} Configuring Claude Code..."
 
-# Create Claude config directory if it doesn't exist
-mkdir -p "$CLAUDE_CONFIG_DIR"
-
-# Create or update mcp.json
+# MCP server path
 MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
 
-if [ -f "$CLAUDE_MCP_CONFIG" ]; then
-    echo -e "${YELLOW}!${NC} Claude MCP config already exists"
-    echo "You need to manually add MyJarvis to your $CLAUDE_MCP_CONFIG"
+# Check if claude CLI is available
+if ! command -v claude &> /dev/null; then
+    echo -e "${YELLOW}!${NC} Claude Code CLI not found"
+    echo "Please install Claude Code first: https://claude.ai/claude-code"
     echo ""
-    echo "Add this to the 'mcpServers' section:"
-    echo ""
-    echo "  \"myjarvis\": {"
-    echo "    \"command\": \"node\","
-    echo "    \"args\": [\"$MCP_SERVER_PATH\"]"
-    echo "  }"
+    echo "After installing, run this command to configure MCP:"
+    echo "  claude mcp add myjarvis node $MCP_SERVER_PATH"
     echo ""
 else
-    cat > "$CLAUDE_MCP_CONFIG" << EOF
-{
-  "mcpServers": {
-    "myjarvis": {
-      "command": "node",
-      "args": ["$MCP_SERVER_PATH"]
-    }
-  }
-}
-EOF
-    echo -e "${GREEN}✓${NC} Created $CLAUDE_MCP_CONFIG"
+    # Check if myjarvis MCP server is already configured
+    if claude mcp list 2>/dev/null | grep -q "myjarvis"; then
+        echo -e "${YELLOW}!${NC} MyJarvis MCP server already configured"
+    else
+        echo -e "${BLUE}Configuring MCP server...${NC}"
+        claude mcp add myjarvis node "$MCP_SERVER_PATH" >/dev/null 2>&1
+
+        # Verify it was added
+        if claude mcp list 2>/dev/null | grep -q "myjarvis"; then
+            echo -e "${GREEN}✓${NC} MyJarvis MCP server configured successfully"
+        else
+            echo -e "${RED}✗${NC} Failed to configure MCP server"
+            echo "Please run manually: claude mcp add myjarvis node $MCP_SERVER_PATH"
+        fi
+    fi
 fi
 
 # Add to PATH (optional)

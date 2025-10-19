@@ -95,7 +95,8 @@ This will:
 myjarvis --version
 
 # Check MCP server is configured
-cat ~/.config/claude/mcp.json
+claude mcp list
+# Should show: myjarvis - ✓ Connected
 ```
 
 ---
@@ -383,6 +384,116 @@ Great! Let's continue with Phase 2.
 ```
 
 **Result:** Your knowledge-base.md now contains a permanent record of this implementation.
+
+---
+
+## Frequently Asked Questions (FAQ)
+
+### Installation & Setup
+
+**Q: Do I need to run `myjarvis init` in every project?**
+A: Yes, once per project. This detects the framework and generates initial context files specific to that project.
+
+**Q: Do I need to configure MCP for each project?**
+A: No! The MCP server is configured globally during installation. Once you run `./install.sh`, it works for all projects.
+
+**Q: I don't see any MCP logs when starting Claude. Is it working?**
+A: Logs are hidden by default. To verify MCP is working:
+- Run `claude mcp list` - you should see `myjarvis - ✓ Connected`
+- In Claude Code, ask: "What tools from MyJarvis do you have?"
+- When Claude uses a tool, you'll see `(MCP)` in the output
+
+**Q: The installation says "Claude Code CLI not found". What should I do?**
+A: Install Claude Code first from [https://claude.ai/claude-code](https://claude.ai/claude-code), then re-run `./install.sh`.
+
+### Using MyJarvis
+
+**Q: How do I know if Claude is using MyJarvis tools?**
+A: When Claude uses MyJarvis tools, you'll see them marked with `(MCP)`:
+```
+myjarvis - search_code (MCP)(projectName: "my-app", query: "User")
+```
+
+**Q: What's the difference between MyJarvis tools and Claude Code's native tools?**
+A:
+- **Native tools** (Read, Edit, Bash): Direct file/system operations
+- **MyJarvis tools**: Project-aware search, curated context, and persistent memory
+- MyJarvis tools are optimized to save tokens and provide better context
+
+**Q: Can I use MyJarvis without the /plan, /implement, /complete workflow?**
+A: Yes! The workflow commands are optional. You can use MyJarvis tools directly at any time:
+```
+Use search_code to find authentication logic in Backend
+Use get_context to understand how payments work
+```
+
+**Q: Do I have to use the structured workflow (/plan → /implement → /complete)?**
+A: It's recommended but not required. The workflow prevents chaotic development and maintains memory, but you can work freely if you prefer.
+
+### Memory & Context
+
+**Q: Where is project memory stored?**
+A: In your project's `.myjarvis/context/` folder:
+- `knowledge-base.md` - What you've built (append-only log)
+- `project-summary.md` - Project overview and structure
+- `daily.md` - Today's focus and recent changes
+
+**Q: How do I update the project context after making changes?**
+A: Run `myjarvis context` to refresh the project summary. This re-analyzes your codebase structure.
+
+**Q: Does MyJarvis send my code anywhere?**
+A: No. Everything runs locally. MyJarvis only reads/writes files in your project's `.myjarvis/` folder and communicates with Claude Code via MCP (local protocol).
+
+**Q: Can team members see the same context?**
+A: Yes! Commit `.myjarvis/` files (except `codebase.txt` which is in `.gitignore`). Team members will share the same knowledge base and project summary.
+
+### Troubleshooting
+
+**Q: Claude doesn't recognize MyJarvis tools. What's wrong?**
+A:
+1. Verify MCP is configured: `claude mcp list`
+2. If not listed, run: `claude mcp add myjarvis node ~/.myjarvis-global/mcp-server/build/index.js`
+3. Restart Claude Code
+4. Check the project is registered: `myjarvis list`
+
+**Q: `myjarvis init` fails with "framework not detected"**
+A: MyJarvis will use generic templates. You can manually edit `.myjarvis/prompts/system.md` to add framework-specific instructions.
+
+**Q: The project summary is outdated after I added new models/controllers**
+A: Run `myjarvis context` to regenerate `project-summary.md` with latest code structure.
+
+**Q: Can I use MyJarvis in Windows?**
+A: Yes, via WSL2 (Windows Subsystem for Linux). MyJarvis requires a Unix-like environment.
+
+**Q: Error: "Project not found in registry"**
+A: The project wasn't initialized. Run `myjarvis init` in the project directory.
+
+### Advanced
+
+**Q: Can I customize the system prompts?**
+A: Yes! Edit `.myjarvis/prompts/system.md` in your project. This controls Claude's behavior and guidelines.
+
+**Q: Can I add custom commands beyond /plan, /implement, /complete?**
+A: Yes! Add custom `.md` files to `.claude/commands/` in your project.
+
+**Q: How do I use MyJarvis with monorepos?**
+A: Run `myjarvis init` in each subproject that needs its own context. Each will be registered independently.
+
+**Q: Can I use multiple MCP servers alongside MyJarvis?**
+A: Yes! Claude Code supports multiple MCP servers. Use `claude mcp add` to configure additional servers.
+
+**Q: How do I uninstall MyJarvis?**
+A:
+```bash
+# Remove MCP configuration
+claude mcp remove myjarvis
+
+# Remove global installation
+rm -rf ~/.myjarvis-global
+
+# Remove CLI from PATH (edit your shell RC file)
+# Remove the line: export PATH="$HOME/.myjarvis-global/bin:$PATH"
+```
 
 ---
 
