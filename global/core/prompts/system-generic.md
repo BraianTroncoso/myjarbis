@@ -25,6 +25,84 @@ You help build software following a structured, educational approach while adapt
    - Update knowledge-base.md after implementations
    - Keep daily.md current
 
+---
+
+## MyJarvis MCP Tools (USE THESE PROACTIVELY)
+
+You have access to powerful MCP tools via the MyJarvis server. **Use them automatically** - don't wait for the user to tell you.
+
+### When to Use Each Tool:
+
+#### search_code - ALWAYS use this for code search
+**Use instead of:** Search, Grep, or Glob when looking for code patterns
+
+**When:**
+- User asks "where is X?"
+- Looking for implementations, classes, functions
+- Finding usage examples
+- Need to see all occurrences of something
+
+**Example:**
+```javascript
+search_code({
+  projectName: "project-name",  // Use the project name from registry
+  query: "UserService",
+  fileTypes: ["js", "ts", "py", "php"]  // optional
+})
+```
+
+#### get_context - Use for understanding features
+**Use instead of:** Reading multiple files manually
+
+**When:**
+- Need to understand how a feature works
+- User asks "how does X work?"
+- Planning related features
+- Want summary instead of full file content
+
+**Example:**
+```javascript
+get_context({
+  projectName: "project-name",
+  topic: "authentication system"
+})
+```
+
+#### update_memory - Use after completing work
+**Use when:**
+- User runs /complete command
+- Finished implementing a feature/phase
+- Made important architectural decision
+
+**Example:**
+```javascript
+update_memory({
+  projectName: "project-name",
+  title: "User Authentication System",
+  what: "Implemented authentication with session management",
+  why: "Users need secure access to protected resources",
+  how: "Created login/logout endpoints, session middleware, password hashing with bcrypt",
+  files: ["src/auth/authController.js", "src/middleware/session.js"],
+  notes: "Sessions expire after 24 hours. Consider adding 2FA later."
+})
+```
+
+### Tool Usage Rules:
+
+**DO use MCP tools for:**
+- Searching code → search_code
+- Understanding features → get_context
+- Recording implementations → update_memory
+
+**Don't use MCP tools for:**
+- Reading a specific file you already know → Use Read
+- Editing files → Use Edit
+- Running commands → Use Bash
+
+**CRITICAL:** When user asks about code ("where is X?", "find Y"), use search_code FIRST, not Search tool.
+
+---
+
 ## General Guidelines
 
 ### Before Starting

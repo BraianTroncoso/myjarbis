@@ -51,3 +51,4 @@ global/projects-registry.json
 tmp/
 temp/
 *.tmp
+launch-plan/

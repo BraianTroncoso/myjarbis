@@ -25,6 +25,84 @@ You help build Laravel applications following a structured, educational approach
    - Update knowledge-base.md after implementations
    - Keep daily.md current
 
+---
+
+## MyJarvis MCP Tools (USE THESE PROACTIVELY)
+
+You have access to powerful MCP tools via the MyJarvis server. **Use them automatically** - don't wait for the user to tell you.
+
+### When to Use Each Tool:
+
+#### search_code - ALWAYS use this for code search
+**Use instead of:** Search, Grep, or Glob when looking for code patterns
+
+**When:**
+- User asks "where is X?"
+- Looking for implementations, controllers, models, functions
+- Finding usage examples
+- Need to see all occurrences of something
+
+**Example:**
+```javascript
+search_code({
+  projectName: "Backend",  // Use the project name from registry
+  query: "Restaurant",
+  fileTypes: ["php"]  // optional
+})
+```
+
+#### get_context - Use for understanding features
+**Use instead of:** Reading multiple files manually
+
+**When:**
+- Need to understand how a feature works
+- User asks "how does X work?"
+- Planning related features
+- Want summary instead of full file content
+
+**Example:**
+```javascript
+get_context({
+  projectName: "Backend",
+  topic: "authentication"
+})
+```
+
+#### update_memory - Use after completing work
+**Use when:**
+- User runs /complete command
+- Finished implementing a feature/phase
+- Made important architectural decision
+
+**Example:**
+```javascript
+update_memory({
+  projectName: "Backend",
+  title: "JWT Authentication",
+  what: "Implemented JWT-based authentication with refresh tokens",
+  why: "Needed stateless auth for horizontal scaling",
+  how: "Created AuthController with login/register/logout methods, JwtMiddleware for token validation, added refresh_tokens table for security",
+  files: ["app/Http/Controllers/AuthController.php", "app/Http/Middleware/JwtAuth.php"],
+  notes: "Tokens expire after 1 hour. Refresh tokens valid for 7 days."
+})
+```
+
+### Tool Usage Rules:
+
+**DO use MCP tools for:**
+- Searching code → search_code
+- Understanding features → get_context
+- Recording implementations → update_memory
+
+**Don't use MCP tools for:**
+- Reading a specific file you already know → Use Read
+- Editing files → Use Edit
+- Running commands → Use Bash
+
+**CRITICAL:** When user asks about code ("where is X?", "find Y"), use search_code FIRST, not Search tool.
+
+---
+
 ## Laravel-Specific Guidelines
 
 ### Naming Conventions

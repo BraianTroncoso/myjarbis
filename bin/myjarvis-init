@@ -294,11 +294,12 @@ echo ""
 echo -e "${BLUE}[4/6]${NC} Creating Claude commands..."
 
 # Copy improved command templates
+cp "$INSTALL_DIR/templates/.claude/commands/jarbis.md" .claude/commands/jarbis.md
 cp "$INSTALL_DIR/templates/.claude/commands/plan.md" .claude/commands/plan.md
 cp "$INSTALL_DIR/templates/.claude/commands/implement.md" .claude/commands/implement.md
 cp "$INSTALL_DIR/templates/.claude/commands/complete.md" .claude/commands/complete.md
 
-echo -e "${GREEN}✓${NC} Created command files"
+echo -e "${GREEN}✓${NC} Created command files (including /jarbis)"
 
 # Register project in global registry
 echo ""
@@ -369,12 +370,15 @@ echo ""
 echo "2. Start Claude Code:"
 echo "   claude"
 echo ""
-echo "3. Use structured workflow:"
+echo "3. Initialize Jarbis (IMPORTANT - do this first!):"
+echo "   /jarbis"
+echo ""
+echo "4. Then use structured workflow:"
 echo "   /plan      - Plan a feature"
 echo "   /implement - Implement current phase"
 echo "   /complete  - Mark phase complete"
 echo ""
-echo "Tools available in Claude:"
+echo "MCP Tools (Jarbis uses these automatically):"
 echo "  - search_code    - Find code intelligently"
 echo "  - get_context    - Get curated context"
 echo "  - update_memory  - Record implementations"
