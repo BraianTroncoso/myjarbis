@@ -107,13 +107,43 @@ After implementing the phase:
 
 Before marking phase complete, verify:
 
+### SOLID Principles
+- [ ] Single Responsibility: Each class/module has one clear purpose
+- [ ] Open/Closed: Used interfaces/abstractions for extensibility
+- [ ] Liskov Substitution: Implementations are interchangeable
+- [ ] Interface Segregation: No unnecessary dependencies
+- [ ] Dependency Inversion: Depend on abstractions, not concretions
+
+### Code Quality
+- [ ] DRY: No repeated logic (extracted into reusable functions)
+- [ ] KISS: Solution is simple and clear, not over-engineered
+- [ ] YAGNI: Only implemented what was needed, no speculative features
+
+### Security
+- [ ] Input validation implemented
+- [ ] User input sanitized
+- [ ] No sensitive data exposed in responses
+- [ ] Secrets stored in .env, not in code
+- [ ] Authentication/authorization checks in place (if applicable)
+
+### Testing
+- [ ] Critical paths tested
+- [ ] Edge cases covered
+- [ ] Tests passing
+
+### Error Handling
+- [ ] Errors caught and handled appropriately
+- [ ] Custom exceptions used for domain errors
+- [ ] Database transactions used where needed
+- [ ] Errors logged properly
+- [ ] User-friendly error messages returned
+
+### General
 - [ ] Code follows project conventions
-- [ ] All edge cases handled
-- [ ] Errors are caught and handled
-- [ ] Input is validated
-- [ ] Code is commented where needed
+- [ ] Type hints/typing used (if applicable)
 - [ ] Variable/function names are clear
 - [ ] No hardcoded values (use config/env)
+- [ ] Code is commented where needed
 - [ ] Tested and working
 
 ## Error Handling

@@ -103,6 +103,115 @@ update_memory({
 
 ---
 
+## Software Engineering Principles (APPLY ALWAYS)
+
+### SOLID Principles
+
+**Single Responsibility Principle (SRP)**
+- One class = one reason to change
+- Controllers handle HTTP, Services handle business logic, Models handle data
+- Extract complex logic into dedicated classes
+
+**Open/Closed Principle (OCP)**
+- Use interfaces for extensibility
+- Add new features by extending, not modifying existing code
+
+**Liskov Substitution Principle (LSP)**
+- Subclasses must be interchangeable with parent classes
+- Honor contracts and interfaces
+
+**Interface Segregation Principle (ISP)**
+- Many specific interfaces better than one general interface
+- Classes shouldn't depend on methods they don't use
+
+**Dependency Inversion Principle (DIP)**
+- Depend on abstractions (interfaces), not concrete implementations
+- Use dependency injection (Laravel's container)
+
+### Design Patterns (Use When Appropriate)
+
+**Repository Pattern** - Separate data access from business logic
+**Service Pattern** - Encapsulate business logic
+**Factory Pattern** - Complex object creation
+**Observer Pattern** - Event-driven architecture (Laravel Events)
+**Strategy Pattern** - Interchangeable algorithms
+
+### Code Quality Principles
+
+**DRY (Don't Repeat Yourself)** - Extract repeated logic into reusable methods/classes
+**KISS (Keep It Simple)** - Prefer simplicity over cleverness
+**YAGNI (You Aren't Gonna Need It)** - Don't build features you don't need yet
+
+### Security (CRITICAL)
+
+**Always validate and sanitize input:**
+- Use Form Requests for validation
+- Never trust user input
+- Use Laravel's built-in protection (CSRF, SQL injection via Eloquent)
+
+**Authentication & Authorization:**
+- Use Laravel's auth system
+- Implement proper role/permission checks
+- Never expose sensitive data in responses
+
+**Environment Variables:**
+- Store secrets in .env, never in code
+- Use config() to access, never env() in application code
+
+### Testing
+
+**Write tests for:**
+- Critical business logic
+- API endpoints
+- Edge cases and error scenarios
+
+**Test types:**
+- Feature tests for end-to-end flows
+- Unit tests for services/business logic
+- Consider TDD for complex features
+
+### Type Hinting & Strict Types
+
+**Use strict types in PHP 8+:**
+```php
+declare(strict_types=1);
+
+public function create(array $data): User
+{
+    // Type safety enforced
+}
+```
+
+**Benefits:**
+- Catch errors at development time
+- Better IDE support
+- Self-documenting code
+
+### Error Handling
+
+**Proper error handling:**
+- Use try/catch for expected failures
+- Create custom exceptions for domain errors
+- Use database transactions for critical operations
+- Log errors appropriately (don't expose to users)
+- Return meaningful error messages
+
+**Example:**
+```php
+DB::beginTransaction();
+try {
+    $order = $this->orderService->create($data);
+    DB::commit();
+    return $order;
+} catch (PaymentException $e) {
+    DB::rollBack();
+    Log::error('Payment failed', ['error' => $e->getMessage()]);
+    throw $e;
+}
+```
+
+---
+
 ## Laravel-Specific Guidelines
 
 ### Naming Conventions

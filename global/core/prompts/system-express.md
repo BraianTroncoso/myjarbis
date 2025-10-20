@@ -103,6 +103,151 @@ update_memory({
 
 ---
 
+## Software Engineering Principles (APPLY ALWAYS)
+
+### SOLID Principles
+
+**Single Responsibility Principle (SRP)**
+- One module/class = one reason to change
+- Routes handle routing, Controllers handle logic, Services handle business rules
+- Extract complex logic into dedicated modules
+
+**Open/Closed Principle (OCP)**
+- Use interfaces/abstractions for extensibility
+- Add new features by extending, not modifying existing code
+
+**Liskov Substitution Principle (LSP)**
+- Implementations must be interchangeable
+- Honor contracts and interfaces
+
+**Interface Segregation Principle (ISP)**
+- Many specific interfaces better than one general interface
+- Modules shouldn't depend on methods they don't use
+
+**Dependency Inversion Principle (DIP)**
+- Depend on abstractions, not concrete implementations
+- Use dependency injection (constructor injection)
+
+### Design Patterns (Use When Appropriate)
+
+**Repository Pattern** - Separate data access from business logic
+**Service Pattern** - Encapsulate business logic
+**Factory Pattern** - Complex object creation
+**Middleware Pattern** - Request/response processing (Express native)
+**Strategy Pattern** - Interchangeable algorithms
+
+### Code Quality Principles
+
+**DRY (Don't Repeat Yourself)** - Extract repeated logic into reusable functions/modules
+**KISS (Keep It Simple)** - Prefer simplicity over cleverness
+**YAGNI (You Aren't Gonna Need It)** - Don't build features you don't need yet
+
+### Security (CRITICAL)
+
+**Always validate and sanitize input:**
+- Use express-validator or joi
+- Never trust user input
+- Sanitize before database operations
+
+**Authentication & Authorization:**
+- Use JWT or sessions securely
+- Implement proper permission checks
+- Never expose sensitive data in responses
+
+**Environment Variables:**
+- Store secrets in .env, never in code
+- Use process.env for configuration
+- Add .env to .gitignore
+
+**Security Headers:**
+- Use helmet middleware
+- Enable CORS properly
+- Implement rate limiting
+
+### Testing
+
+**Write tests for:**
+- Critical business logic
+- API endpoints (use supertest)
+- Edge cases and error scenarios
+
+**Test types:**
+- Integration tests for API routes
+- Unit tests for services/business logic
+- Consider TDD for complex features
+
+### Type Hinting (TypeScript recommended)
+
+**Use TypeScript for type safety:**
+```typescript
+interface User {
+    id: number;
+    email: string;
+    name: string;
+}
+
+function createUser(data: CreateUserDto): Promise<User> {
+    // Type safety enforced
+}
+```
+
+**Benefits:**
+- Catch errors at compile time
+- Better IDE support
+- Self-documenting code
+
+**If using JavaScript, use JSDoc:**
+```javascript
+/**
+ * @param {Object} data
+ * @param {string} data.email
+ * @returns {Promise<User>}
+ */
+async function createUser(data) { }
+```
+
+### Error Handling
+
+**Proper error handling:**
+- Use try/catch for async operations
+- Create custom error classes for domain errors
+- Use database transactions for critical operations
+- Implement error handling middleware (always last)
+- Log errors appropriately (don't expose to users)
+
+**Example:**
+```javascript
+// Custom error class
+class PaymentError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'PaymentError';
+        this.statusCode = 400;
+    }
+}
+
+// Route handler
+router.post('/orders', async (req, res, next) => {
+    try {
+        const order = await orderService.create(req.body);
+        res.json({ success: true, data: order });
+    } catch (error) {
+        next(error); // Pass to error middleware
+    }
+});
+
+// Error middleware (last)
+app.use((err, req, res, next) => {
+    logger.error(err.message, { stack: err.stack });
+    res.status(err.statusCode || 500).json({
+        success: false,
+        message: err.message
+    });
+});
+```
+
+---
+
 ## Express-Specific Guidelines
 
 ### Project Structure

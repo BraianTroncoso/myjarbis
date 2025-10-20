@@ -103,6 +103,116 @@ update_memory({
 
 ---
 
+## Software Engineering Principles (APPLY ALWAYS)
+
+### SOLID Principles
+
+**Single Responsibility Principle (SRP)**
+- One module/class = one reason to change
+- Separate concerns: presentation, business logic, data access
+- Extract complex logic into dedicated modules
+
+**Open/Closed Principle (OCP)**
+- Use interfaces/abstractions for extensibility
+- Add new features by extending, not modifying existing code
+
+**Liskov Substitution Principle (LSP)**
+- Implementations must be interchangeable with their abstractions
+- Honor contracts and interfaces
+
+**Interface Segregation Principle (ISP)**
+- Many specific interfaces better than one general interface
+- Modules shouldn't depend on functionality they don't use
+
+**Dependency Inversion Principle (DIP)**
+- Depend on abstractions, not concrete implementations
+- Use dependency injection where possible
+
+### Design Patterns (Use When Appropriate)
+
+**Repository Pattern** - Separate data access from business logic
+**Service Pattern** - Encapsulate business logic
+**Factory Pattern** - Complex object creation
+**Observer Pattern** - Event-driven architecture
+**Strategy Pattern** - Interchangeable algorithms
+**Singleton Pattern** - Single instance (use sparingly)
+
+### Code Quality Principles
+
+**DRY (Don't Repeat Yourself)** - Extract repeated logic into reusable functions/modules
+**KISS (Keep It Simple)** - Prefer simplicity over cleverness
+**YAGNI (You Aren't Gonna Need It)** - Don't build features you don't need yet
+
+### Security (CRITICAL)
+
+**Always validate and sanitize input:**
+- Never trust user input
+- Validate on both client and server
+- Use parameterized queries to prevent SQL injection
+- Escape output to prevent XSS
+
+**Authentication & Authorization:**
+- Implement proper authentication
+- Check permissions before operations
+- Never expose sensitive data in responses
+
+**Environment Variables:**
+- Store secrets in environment variables, never in code
+- Use .env files (and add to .gitignore)
+- Never commit credentials to version control
+
+**General Security:**
+- Keep dependencies updated
+- Use HTTPS in production
+- Implement rate limiting
+- Follow security best practices for your stack
+
+### Testing
+
+**Write tests for:**
+- Critical business logic
+- User-facing features
+- Edge cases and error scenarios
+
+**Test types:**
+- Unit tests for business logic
+- Integration tests for workflows
+- End-to-end tests for critical paths
+- Consider TDD for complex features
+
+### Type Safety
+
+**Use type systems when available:**
+- TypeScript for JavaScript projects
+- Type hints for Python
+- Strong typing for compiled languages
+
+**Benefits:**
+- Catch errors at development/compile time
+- Better IDE support and autocomplete
+- Self-documenting code
+- Easier refactoring
+
+### Error Handling
+
+**Proper error handling:**
+- Use try/catch for expected failures
+- Create custom error classes for domain-specific errors
+- Use transactions for critical database operations
+- Log errors appropriately (don't expose internals to users)
+- Return meaningful error messages
+
+**Error handling pattern:**
+```
+1. Catch expected errors and handle gracefully
+2. Log unexpected errors with context
+3. Return user-friendly messages (never stack traces)
+4. Use transactions to maintain data integrity
+5. Clean up resources in finally blocks
+```
+
+---
+
 ## General Guidelines
 
 ### Before Starting
