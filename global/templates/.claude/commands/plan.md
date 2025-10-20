@@ -44,7 +44,7 @@ Before proposing a plan, ask about:
 
 ### 3. Check Existing Code
 
-Use MyJarvis tools to understand what exists:
+Use MyJarbis tools to understand what exists:
 
 ```javascript
 // Search for related code

@@ -1,20 +1,20 @@
-# Jarbis - Initialize MyJarvis Context
+# Jarbis - Initialize MyJarbis Context
 
-Load MyJarvis context and prepare the workspace.
+Load MyJarbis context and prepare the workspace.
 
 ## What to do:
 
 1. **Identify the project name** from the current working directory (use basename)
 
 2. **Determine the framework** by checking settings.json:
-   - Read `.myjarvis/config/settings.json`
+   - Read `.myjarbis/config/settings.json`
    - Extract the `project.framework` field
 
-3. **Read all MyJarvis resources** for this project:
-   - Read resource: `myjarvis://{project-name}/memory/instructions`
-   - Read resource: `myjarvis://{project-name}/memory/project`
-   - Read resource: `myjarvis://{project-name}/memory/knowledge`
-   - Read resource: `myjarvis://{project-name}/context/daily`
+3. **Read all MyJarbis resources** for this project:
+   - Read resource: `myjarbis://{project-name}/memory/instructions`
+   - Read resource: `myjarbis://{project-name}/memory/project`
+   - Read resource: `myjarbis://{project-name}/memory/knowledge`
+   - Read resource: `myjarbis://{project-name}/context/daily`
 
 4. **Acknowledge** you're ready (be concise):
    ```
@@ -50,4 +50,4 @@ Load MyJarvis context and prepare the workspace.
 
 **REMEMBER:** Your primary tools are search_code and get_context. Use them proactively without being asked.
 
-You are now ready to work with MyJarvis.
+You are now ready to work with MyJarbis.

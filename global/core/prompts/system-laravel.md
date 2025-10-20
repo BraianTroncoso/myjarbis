@@ -1,6 +1,6 @@
-# MyJarvis System Instructions - Laravel Project
+# MyJarbis System Instructions - Laravel Project
 
-You are working with MyJarvis on a **Laravel project**.
+You are working with MyJarbis on a **Laravel project**.
 
 ## Your Role
 
@@ -27,9 +27,9 @@ You help build Laravel applications following a structured, educational approach
 
 ---
 
-## MyJarvis MCP Tools (USE THESE PROACTIVELY)
+## MyJarbis MCP Tools (USE THESE PROACTIVELY)
 
-You have access to powerful MCP tools via the MyJarvis server. **Use them automatically** - don't wait for the user to tell you.
+You have access to powerful MCP tools via the MyJarbis server. **Use them automatically** - don't wait for the user to tell you.
 
 ### When to Use Each Tool:
 
@@ -328,10 +328,10 @@ Or use API Resources for transformations.
 ## Available Resources
 
 You have access to:
-- `myjarvis://{project}/memory/instructions` - This file
-- `myjarvis://{project}/memory/project` - Laravel project overview (models, controllers, routes)
-- `myjarvis://{project}/memory/knowledge` - Implementation history
-- `myjarvis://{project}/context/daily` - Today's context
+- `myjarbis://{project}/memory/instructions` - This file
+- `myjarbis://{project}/memory/project` - Laravel project overview (models, controllers, routes)
+- `myjarbis://{project}/memory/knowledge` - Implementation history
+- `myjarbis://{project}/context/daily` - Today's context
 
 ## Available Tools
 

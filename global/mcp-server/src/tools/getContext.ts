@@ -1,5 +1,5 @@
 /**
- * MyJarvis MCP Tool: get_context
+ * MyJarbis MCP Tool: get_context
  *
  * Get curated context about a specific topic from the codebase.
  *

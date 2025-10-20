@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# MyJarvis Project Initialization Script
+# MyJarbis Project Initialization Script
 #
-# This script initializes MyJarvis in the current project:
-# 1. Creates .myjarvis/ folder structure
+# This script initializes MyJarbis in the current project:
+# 1. Creates .myjarbis/ folder structure
 # 2. Copies templates (prompts, config, scripts)
 # 3. Detects project framework
 # 4. Generates project summary
@@ -22,7 +22,7 @@ YELLOW='\033[1;33m'   # Warning yellow
 NC='\033[0m'          # No Color
 
 # Paths
-INSTALL_DIR="$HOME/.myjarvis-global"
+INSTALL_DIR="$HOME/.myjarbis-global"
 TEMPLATES_DIR="$INSTALL_DIR/templates"
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 CURRENT_DIR="$(pwd)"
@@ -38,8 +38,8 @@ echo -e "${GOLD}Path:${NC}    $CURRENT_DIR"
 echo ""
 
 # Check if already initialized
-if [ -d ".myjarvis" ]; then
-    echo -e "${YELLOW}Warning: .myjarvis/ folder already exists${NC}"
+if [ -d ".myjarbis" ]; then
+    echo -e "${YELLOW}Warning: .myjarbis/ folder already exists${NC}"
     read -p "Reinitialize? This will overwrite existing files (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -75,10 +75,10 @@ else
     echo -e "${YELLOW}!${NC} Framework: Generic"
 fi
 
-# Create .myjarvis folder structure
+# Create .myjarbis folder structure
 echo ""
-echo -e "${GOLD}[2/6]${NC} Creating .myjarvis folder structure..."
-mkdir -p .myjarvis/{bin,context,prompts,config}
+echo -e "${GOLD}[2/6]${NC} Creating .myjarbis folder structure..."
+mkdir -p .myjarbis/{bin,context,prompts,config}
 mkdir -p .claude/commands
 echo -e "${GREEN}✓${NC} Created folder structure"
 
@@ -88,17 +88,17 @@ echo -e "${GOLD}[3/6]${NC} Analyzing project and setting up templates..."
 
 # Copy framework-specific system.md
 if [ "$FRAMEWORK" = "laravel" ]; then
-    cp "$INSTALL_DIR/core/prompts/system-laravel.md" .myjarvis/prompts/system.md
+    cp "$INSTALL_DIR/core/prompts/system-laravel.md" .myjarbis/prompts/system.md
 elif [ "$FRAMEWORK" = "express" ]; then
-    cp "$INSTALL_DIR/core/prompts/system-express.md" .myjarvis/prompts/system.md
+    cp "$INSTALL_DIR/core/prompts/system-express.md" .myjarbis/prompts/system.md
 else
-    cp "$INSTALL_DIR/core/prompts/system-generic.md" .myjarvis/prompts/system.md
+    cp "$INSTALL_DIR/core/prompts/system-generic.md" .myjarbis/prompts/system.md
 fi
 
 # Run appropriate analyzer to generate project-summary.md
 if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
     echo -e "${GOLD}Running Laravel analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << 'EOF'
+    node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << 'EOF'
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -113,7 +113,7 @@ TODO: Update with actual structure
 EOF
 elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
     echo -e "${GOLD}Running Express analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << EOF
+    node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -130,7 +130,7 @@ else
     # Use generic analyzer
     echo -e "${GOLD}Running generic analyzer...${NC}"
     if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
-        node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarvis/context/project-summary.md 2>/dev/null || cat > .myjarvis/context/project-summary.md << EOF
+        node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -144,7 +144,7 @@ Project initialized on $(date +%Y-%m-%d).
 TODO: Update with actual structure
 EOF
     else
-        cat > .myjarvis/context/project-summary.md << EOF
+        cat > .myjarbis/context/project-summary.md << EOF
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -167,14 +167,14 @@ TODO: List main components/modules
 
 ## Development Notes
 
-- Initialized with MyJarvis on $(date +%Y-%m-%d)
+- Initialized with MyJarbis on $(date +%Y-%m-%d)
 - Framework detected: $FRAMEWORK
 EOF
     fi
 fi
 
 # knowledge-base.md (context)
-cat > .myjarvis/context/knowledge-base.md << 'EOF'
+cat > .myjarbis/context/knowledge-base.md << 'EOF'
 # Knowledge Base
 
 This file contains a chronological record of everything built in this project.
@@ -192,7 +192,7 @@ This serves as project memory for Claude and documentation for the team.
 EOF
 
 # daily.md (context)
-cat > .myjarvis/context/daily.md << EOF
+cat > .myjarbis/context/daily.md << EOF
 # Daily Context - $(date +%Y-%m-%d)
 
 ## Today's Focus
@@ -201,7 +201,7 @@ TODO: What are we working on today?
 
 ## Recent Changes
 
-- Project initialized with MyJarvis
+- Project initialized with MyJarbis
 
 ## Current Status
 
@@ -220,7 +220,7 @@ Last updated: $(date +%Y-%m-%d)
 EOF
 
 # settings.json (config)
-cat > .myjarvis/config/settings.json << EOF
+cat > .myjarbis/config/settings.json << EOF
 {
   "project": {
     "name": "$PROJECT_NAME",
@@ -238,12 +238,12 @@ cat > .myjarvis/config/settings.json << EOF
 EOF
 
 # generate-context.sh (bin)
-cat > .myjarvis/bin/generate-context.sh << 'EOF'
+cat > .myjarbis/bin/generate-context.sh << 'EOF'
 #!/bin/bash
 # Generate codebase.txt - a text dump of the entire codebase
 # Useful for giving Claude full project context
 
-OUTPUT=".myjarvis/context/codebase.txt"
+OUTPUT=".myjarbis/context/codebase.txt"
 
 echo "Generating codebase context..."
 echo "# Codebase Context - Generated $(date)" > "$OUTPUT"
@@ -256,7 +256,7 @@ find . -type f \
   -not -path "*/.git/*" \
   -not -path "*/build/*" \
   -not -path "*/dist/*" \
-  -not -path "*/.myjarvis/*" \
+  -not -path "*/.myjarbis/*" \
   -not -name "*.min.js" \
   -not -name "package-lock.json" \
   | while read file; do
@@ -268,14 +268,14 @@ done
 
 echo "✓ Generated: $OUTPUT"
 EOF
-chmod +x .myjarvis/bin/generate-context.sh
+chmod +x .myjarbis/bin/generate-context.sh
 
 # daily.sh (bin)
-cat > .myjarvis/bin/daily.sh << 'EOF'
+cat > .myjarbis/bin/daily.sh << 'EOF'
 #!/bin/bash
 # Update daily.md with current date
 
-DAILY_FILE=".myjarvis/context/daily.md"
+DAILY_FILE=".myjarbis/context/daily.md"
 TODAY=$(date +%Y-%m-%d)
 
 # Update header
@@ -285,7 +285,7 @@ rm -f "${DAILY_FILE}.bak"
 
 echo "✓ Updated daily.md"
 EOF
-chmod +x .myjarvis/bin/daily.sh
+chmod +x .myjarbis/bin/daily.sh
 
 echo -e "${GREEN}✓${NC} Created initial files"
 
@@ -335,18 +335,18 @@ echo ""
 echo -e "${GOLD}[6/6]${NC} Updating .gitignore..."
 
 if [ -f ".gitignore" ]; then
-    if ! grep -q ".myjarvis/context/codebase.txt" .gitignore; then
+    if ! grep -q ".myjarbis/context/codebase.txt" .gitignore; then
         echo "" >> .gitignore
-        echo "# MyJarvis" >> .gitignore
-        echo ".myjarvis/context/codebase.txt" >> .gitignore
+        echo "# MyJarbis" >> .gitignore
+        echo ".myjarbis/context/codebase.txt" >> .gitignore
         echo -e "${GREEN}✓${NC} Updated .gitignore"
     else
         echo -e "${YELLOW}!${NC} .gitignore already configured"
     fi
 else
     cat > .gitignore << 'EOF'
-# MyJarvis
-.myjarvis/context/codebase.txt
+# MyJarbis
+.myjarbis/context/codebase.txt
 EOF
     echo -e "${GREEN}✓${NC} Created .gitignore"
 fi
@@ -358,7 +358,7 @@ echo -e "${RED}║${GREEN}       ✓ PROJECT INITIALIZED SUCCESSFULLY     ${RED}
 echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${GOLD}Framework:${NC} $FRAMEWORK"
-echo -e "${GOLD}Structure:${NC} .myjarvis/ and .claude/"
+echo -e "${GOLD}Structure:${NC} .myjarbis/ and .claude/"
 echo ""
 echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GOLD}Quick Start:${NC}"

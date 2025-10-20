@@ -1,5 +1,5 @@
 {
-  "name": "myjarvis",
+  "name": "myjarbis",
   "version": "0.1.0",
   "description": "AI Development Assistant System with persistent memory for Claude Code",
   "keywords": [
@@ -16,12 +16,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/braiantroncoso/myjarvis"
+    "url": "https://github.com/braiantroncoso/myjarbis"
   },
   "bugs": {
-    "url": "https://github.com/braiantroncoso/myjarvis/issues"
+    "url": "https://github.com/braiantroncoso/myjarbis/issues"
   },
-  "homepage": "https://github.com/braiantroncoso/myjarvis#readme",
+  "homepage": "https://github.com/braiantroncoso/myjarbis#readme",
   "scripts": {
     "install-global": "./install.sh",
     "build:mcp": "cd global/mcp-server && npm run build",
@@ -32,6 +32,6 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "myjarvis": "./bin/myjarvis"
+    "myjarbis": "./bin/myjarbis"
   }
 }

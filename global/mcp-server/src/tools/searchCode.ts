@@ -1,5 +1,5 @@
 /**
- * MyJarvis MCP Tool: search_code
+ * MyJarbis MCP Tool: search_code
  *
  * Intelligent code search using ripgrep or grep.
  *

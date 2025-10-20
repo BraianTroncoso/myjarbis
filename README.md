@@ -1,8 +1,8 @@
-# MyJarvis - AI Development Assistant System
+# MyJarbis - AI Development Assistant System
 
 > **Persistent memory and structured workflows for Claude Code**
 
-MyJarvis is a development assistant system that enhances Claude Code with:
+MyJarbis is a development assistant system that enhances Claude Code with:
 - **Persistent Memory** via Model Context Protocol (MCP)
 - **Structured Workflows** to prevent chaotic development
 - **Educational Mode** that explains what, why, and how
@@ -18,7 +18,7 @@ When working with AI assistants like Claude Code, you often face:
 - **Context overload** - explaining the same project structure repeatedly
 - **No learning trail** - hard to understand what was built and why
 
-**MyJarvis solves this** by giving Claude a "memory system" and enforcing a structured workflow.
+**MyJarbis solves this** by giving Claude a "memory system" and enforcing a structured workflow.
 
 ---
 
@@ -33,13 +33,13 @@ When working with AI assistants like Claude Code, you often face:
                      │ MCP Protocol (Model Context Protocol)
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│           ~/.myjarvis-global/mcp-server/                │
+│           ~/.myjarbis-global/mcp-server/                │
 │              (ONE server for ALL projects)              │
 │                                                          │
 │  Resources:                                             │
-│  • myjarvis://project-name/memory/instructions          │
-│  • myjarvis://project-name/memory/project               │
-│  • myjarvis://project-name/memory/knowledge             │
+│  • myjarbis://project-name/memory/instructions          │
+│  • myjarbis://project-name/memory/project               │
+│  • myjarbis://project-name/memory/knowledge             │
 │                                                          │
 │  Tools:                                                 │
 │  • search_code - Intelligent code search                │
@@ -50,7 +50,7 @@ When working with AI assistants like Claude Code, you often face:
                      │ Reads/Writes
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Project A/.myjarvis/        Project B/.myjarvis/       │
+│  Project A/.myjarbis/        Project B/.myjarbis/       │
 │  ├── context/                ├── context/               │
 │  │   ├── project-summary.md  │   ├── project-summary.md │
 │  │   ├── knowledge-base.md   │   ├── knowledge-base.md  │
@@ -75,28 +75,28 @@ When working with AI assistants like Claude Code, you often face:
 
 ```bash
 # Clone the repository
-git clone https://github.com/braiantroncoso/myjarvis.git
-cd myjarvis
+git clone https://github.com/braiantroncoso/myjarbis.git
+cd myjarbis
 
 # Run installation script
 ./install.sh
 ```
 
 This will:
-1. Copy MyJarvis to `~/.myjarvis-global/`
+1. Copy MyJarbis to `~/.myjarbis-global/`
 2. Install and build MCP server
-3. Configure Claude Code to use MyJarvis
-4. Add `myjarvis` CLI to your PATH
+3. Configure Claude Code to use MyJarbis
+4. Add `myjarbis` CLI to your PATH
 
 ### Verify Installation
 
 ```bash
 # Check CLI is available
-myjarvis --version
+myjarbis --version
 
 # Check MCP server is configured
 claude mcp list
-# Should show: myjarvis - ✓ Connected
+# Should show: myjarbis - ✓ Connected
 ```
 
 ---
@@ -109,12 +109,12 @@ claude mcp list
 # Navigate to your project
 cd ~/projects/my-laravel-app
 
-# Initialize MyJarvis
-myjarvis init
+# Initialize MyJarbis
+myjarbis init
 ```
 
 This creates:
-- `.myjarvis/` folder with context, prompts, and config
+- `.myjarbis/` folder with context, prompts, and config
 - `.claude/commands/` with /plan, /implement, /complete commands
 - Auto-detects framework (Laravel, Express, Next.js, etc.)
 - Generates project summary and structure
@@ -131,7 +131,7 @@ claude
 /jarbis
 ```
 
-This loads MyJarvis context and configures Claude to use MCP tools automatically.
+This loads MyJarbis context and configures Claude to use MCP tools automatically.
 
 **You should run `/jarbis` every time you start a new Claude session.**
 
@@ -180,7 +180,7 @@ Claude will:
 
 ## Educational Mode
 
-MyJarvis enforces **educational mode** - Claude ALWAYS explains:
+MyJarbis enforces **educational mode** - Claude ALWAYS explains:
 
 1. **¿Qué hace?** - What does this do?
 2. **¿Por qué así?** - Why this approach?
@@ -214,7 +214,7 @@ IMPLEMENTATION
 
 ## Memory System
 
-MyJarvis maintains project memory across sessions:
+MyJarbis maintains project memory across sessions:
 
 ### Context Files
 
@@ -247,30 +247,30 @@ MyJarvis maintains project memory across sessions:
 
 ```bash
 # Initialize current project
-myjarvis init
+myjarbis init
 
 # List all registered projects
-myjarvis list
+myjarbis list
 
 # Generate fresh codebase context
-myjarvis context
+myjarbis context
 
-# Update MyJarvis global installation
-myjarvis update
+# Update MyJarbis global installation
+myjarbis update
 
 # Show help
-myjarvis help
+myjarbis help
 ```
 
 ---
 
 ## Project Structure
 
-After `myjarvis init`, your project will have:
+After `myjarbis init`, your project will have:
 
 ```
 your-project/
-├── .myjarvis/
+├── .myjarbis/
 │   ├── bin/
 │   │   ├── generate-context.sh    # Generate codebase.txt
 │   │   └── daily.sh                # Update daily.md
@@ -295,23 +295,23 @@ your-project/
 
 ## How MCP Resources Work
 
-When Claude Code connects to MyJarvis, it can access:
+When Claude Code connects to MyJarbis, it can access:
 
 ```
-myjarvis://my-laravel-app/memory/instructions
-→ Reads: .myjarvis/prompts/system.md
+myjarbis://my-laravel-app/memory/instructions
+→ Reads: .myjarbis/prompts/system.md
 → Contains: Rules, workflow, educational mode settings
 
-myjarvis://my-laravel-app/memory/project
-→ Reads: .myjarvis/context/project-summary.md
+myjarbis://my-laravel-app/memory/project
+→ Reads: .myjarbis/context/project-summary.md
 → Contains: Project overview, tech stack, architecture
 
-myjarvis://my-laravel-app/memory/knowledge
-→ Reads: .myjarvis/context/knowledge-base.md
+myjarbis://my-laravel-app/memory/knowledge
+→ Reads: .myjarbis/context/knowledge-base.md
 → Contains: Everything we've built, chronological log
 
-myjarvis://my-laravel-app/context/daily
-→ Reads: .myjarvis/context/daily.md
+myjarbis://my-laravel-app/context/daily
+→ Reads: .myjarbis/context/daily.md
 → Contains: Today's focus, recent changes
 ```
 
@@ -401,7 +401,7 @@ Great! Let's continue with Phase 2.
 
 ### Installation & Setup
 
-**Q: Do I need to run `myjarvis init` in every project?**
+**Q: Do I need to run `myjarbis init` in every project?**
 A: Yes, once per project. This detects the framework and generates initial context files specific to that project.
 
 **Q: Do I need to configure MCP for each project?**
@@ -409,29 +409,29 @@ A: No! The MCP server is configured globally during installation. Once you run `
 
 **Q: I don't see any MCP logs when starting Claude. Is it working?**
 A: Logs are hidden by default. To verify MCP is working:
-- Run `claude mcp list` - you should see `myjarvis - ✓ Connected`
-- In Claude Code, ask: "What tools from MyJarvis do you have?"
+- Run `claude mcp list` - you should see `myjarbis - ✓ Connected`
+- In Claude Code, ask: "What tools from MyJarbis do you have?"
 - When Claude uses a tool, you'll see `(MCP)` in the output
 
 **Q: The installation says "Claude Code CLI not found". What should I do?**
 A: Install Claude Code first from [https://claude.ai/claude-code](https://claude.ai/claude-code), then re-run `./install.sh`.
 
-### Using MyJarvis
+### Using MyJarbis
 
-**Q: How do I know if Claude is using MyJarvis tools?**
-A: When Claude uses MyJarvis tools, you'll see them marked with `(MCP)`:
+**Q: How do I know if Claude is using MyJarbis tools?**
+A: When Claude uses MyJarbis tools, you'll see them marked with `(MCP)`:
 ```
-myjarvis - search_code (MCP)(projectName: "my-app", query: "User")
+myjarbis - search_code (MCP)(projectName: "my-app", query: "User")
 ```
 
-**Q: What's the difference between MyJarvis tools and Claude Code's native tools?**
+**Q: What's the difference between MyJarbis tools and Claude Code's native tools?**
 A:
 - **Native tools** (Read, Edit, Bash): Direct file/system operations
-- **MyJarvis tools**: Project-aware search, curated context, and persistent memory
-- MyJarvis tools are optimized to save tokens and provide better context
+- **MyJarbis tools**: Project-aware search, curated context, and persistent memory
+- MyJarbis tools are optimized to save tokens and provide better context
 
-**Q: Can I use MyJarvis without the /plan, /implement, /complete workflow?**
-A: Yes! The workflow commands are optional. You can use MyJarvis tools directly at any time:
+**Q: Can I use MyJarbis without the /plan, /implement, /complete workflow?**
+A: Yes! The workflow commands are optional. You can use MyJarbis tools directly at any time:
 ```
 Use search_code to find authentication logic in Backend
 Use get_context to understand how payments work
@@ -443,66 +443,66 @@ A: It's recommended but not required. The workflow prevents chaotic development 
 ### Memory & Context
 
 **Q: Where is project memory stored?**
-A: In your project's `.myjarvis/context/` folder:
+A: In your project's `.myjarbis/context/` folder:
 - `knowledge-base.md` - What you've built (append-only log)
 - `project-summary.md` - Project overview and structure
 - `daily.md` - Today's focus and recent changes
 
 **Q: How do I update the project context after making changes?**
-A: Run `myjarvis context` to refresh the project summary. This re-analyzes your codebase structure.
+A: Run `myjarbis context` to refresh the project summary. This re-analyzes your codebase structure.
 
-**Q: Does MyJarvis send my code anywhere?**
-A: No. Everything runs locally. MyJarvis only reads/writes files in your project's `.myjarvis/` folder and communicates with Claude Code via MCP (local protocol).
+**Q: Does MyJarbis send my code anywhere?**
+A: No. Everything runs locally. MyJarbis only reads/writes files in your project's `.myjarbis/` folder and communicates with Claude Code via MCP (local protocol).
 
 **Q: Can team members see the same context?**
-A: Yes! Commit `.myjarvis/` files (except `codebase.txt` which is in `.gitignore`). Team members will share the same knowledge base and project summary.
+A: Yes! Commit `.myjarbis/` files (except `codebase.txt` which is in `.gitignore`). Team members will share the same knowledge base and project summary.
 
 ### Troubleshooting
 
-**Q: Claude doesn't recognize MyJarvis tools. What's wrong?**
+**Q: Claude doesn't recognize MyJarbis tools. What's wrong?**
 A:
 1. Verify MCP is configured: `claude mcp list`
-2. If not listed, run: `claude mcp add myjarvis node ~/.myjarvis-global/mcp-server/build/index.js`
+2. If not listed, run: `claude mcp add myjarbis node ~/.myjarbis-global/mcp-server/build/index.js`
 3. Restart Claude Code
-4. Check the project is registered: `myjarvis list`
+4. Check the project is registered: `myjarbis list`
 
-**Q: `myjarvis init` fails with "framework not detected"**
-A: MyJarvis will use generic templates. You can manually edit `.myjarvis/prompts/system.md` to add framework-specific instructions.
+**Q: `myjarbis init` fails with "framework not detected"**
+A: MyJarbis will use generic templates. You can manually edit `.myjarbis/prompts/system.md` to add framework-specific instructions.
 
 **Q: The project summary is outdated after I added new models/controllers**
-A: Run `myjarvis context` to regenerate `project-summary.md` with latest code structure.
+A: Run `myjarbis context` to regenerate `project-summary.md` with latest code structure.
 
-**Q: Can I use MyJarvis in Windows?**
-A: Yes, via WSL2 (Windows Subsystem for Linux). MyJarvis requires a Unix-like environment.
+**Q: Can I use MyJarbis in Windows?**
+A: Yes, via WSL2 (Windows Subsystem for Linux). MyJarbis requires a Unix-like environment.
 
 **Q: Error: "Project not found in registry"**
-A: The project wasn't initialized. Run `myjarvis init` in the project directory.
+A: The project wasn't initialized. Run `myjarbis init` in the project directory.
 
 ### Advanced
 
 **Q: Can I customize the system prompts?**
-A: Yes! Edit `.myjarvis/prompts/system.md` in your project. This controls Claude's behavior and guidelines.
+A: Yes! Edit `.myjarbis/prompts/system.md` in your project. This controls Claude's behavior and guidelines.
 
 **Q: Can I add custom commands beyond /plan, /implement, /complete?**
 A: Yes! Add custom `.md` files to `.claude/commands/` in your project.
 
-**Q: How do I use MyJarvis with monorepos?**
-A: Run `myjarvis init` in each subproject that needs its own context. Each will be registered independently.
+**Q: How do I use MyJarbis with monorepos?**
+A: Run `myjarbis init` in each subproject that needs its own context. Each will be registered independently.
 
-**Q: Can I use multiple MCP servers alongside MyJarvis?**
+**Q: Can I use multiple MCP servers alongside MyJarbis?**
 A: Yes! Claude Code supports multiple MCP servers. Use `claude mcp add` to configure additional servers.
 
-**Q: How do I uninstall MyJarvis?**
+**Q: How do I uninstall MyJarbis?**
 A:
 ```bash
 # Remove MCP configuration
-claude mcp remove myjarvis
+claude mcp remove myjarbis
 
 # Remove global installation
-rm -rf ~/.myjarvis-global
+rm -rf ~/.myjarbis-global
 
 # Remove CLI from PATH (edit your shell RC file)
-# Remove the line: export PATH="$HOME/.myjarvis-global/bin:$PATH"
+# Remove the line: export PATH="$HOME/.myjarbis-global/bin:$PATH"
 ```
 
 ---
@@ -520,14 +520,14 @@ Contributions welcome! Please:
 
 ## License
 
-MIT License - feel free to use MyJarvis in your projects!
+MIT License - feel free to use MyJarbis in your projects!
 
 ---
 
 ## Issues & Support
 
-- **Bug reports**: [GitHub Issues](https://github.com/braiantroncoso/myjarvis/issues)
-- **Questions**: [GitHub Discussions](https://github.com/braiantroncoso/myjarvis/discussions)
+- **Bug reports**: [GitHub Issues](https://github.com/braiantroncoso/myjarbis/issues)
+- **Questions**: [GitHub Discussions](https://github.com/braiantroncoso/myjarbis/discussions)
 
 ---
 

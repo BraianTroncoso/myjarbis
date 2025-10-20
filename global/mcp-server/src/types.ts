@@ -1,14 +1,14 @@
 /**
- * MyJarvis MCP Server - Type Definitions
+ * MyJarbis MCP Server - Type Definitions
  *
  * This file defines all TypeScript types used throughout the MCP server.
  */
 
 /**
- * Configuration for a single project registered with MyJarvis
+ * Configuration for a single project registered with MyJarbis
  *
- * Each project that runs `myjarvis init` gets registered here,
- * allowing the MCP server to locate its .myjarvis/ folder.
+ * Each project that runs `myjarbis init` gets registered here,
+ * allowing the MCP server to locate its .myjarbis/ folder.
  */
 export interface ProjectConfig {
   /** Unique project name (used in resource URIs) */
@@ -28,9 +28,9 @@ export interface ProjectConfig {
 }
 
 /**
- * Registry of all projects initialized with MyJarvis
+ * Registry of all projects initialized with MyJarbis
  *
- * Stored in: ~/.myjarvis-global/projects-registry.json
+ * Stored in: ~/.myjarbis-global/projects-registry.json
  *
  * Structure:
  * {
@@ -47,7 +47,7 @@ export interface ProjectsRegistry {
  * MCP Resource definition
  *
  * Resources are files that Claude can read via the MCP protocol.
- * Each resource has a unique URI like: myjarvis://project-name/memory/instructions
+ * Each resource has a unique URI like: myjarbis://project-name/memory/instructions
  */
 export interface ResourceDefinition {
   /** Unique URI for this resource */
@@ -83,24 +83,24 @@ export interface RegistryFile {
 }
 
 /**
- * Memory file paths within a project's .myjarvis/ folder
+ * Memory file paths within a project's .myjarbis/ folder
  *
- * These are the standard files that MyJarvis manages.
+ * These are the standard files that MyJarbis manages.
  */
 export interface MemoryPaths {
-  /** .myjarvis/prompts/system.md - Claude's instructions */
+  /** .myjarbis/prompts/system.md - Claude's instructions */
   instructions: string;
 
-  /** .myjarvis/context/project-summary.md - Project overview */
+  /** .myjarbis/context/project-summary.md - Project overview */
   projectSummary: string;
 
-  /** .myjarvis/context/knowledge-base.md - Implementation log */
+  /** .myjarbis/context/knowledge-base.md - Implementation log */
   knowledgeBase: string;
 
-  /** .myjarvis/context/daily.md - Today's context */
+  /** .myjarbis/context/daily.md - Today's context */
   daily: string;
 
-  /** .myjarvis/context/codebase.txt - Generated code dump */
+  /** .myjarbis/context/codebase.txt - Generated code dump */
   codebase?: string;
 }
 
@@ -116,15 +116,15 @@ export enum ErrorType {
 }
 
 /**
- * Custom error class for MyJarvis MCP operations
+ * Custom error class for MyJarbis MCP operations
  */
-export class MyJarvisError extends Error {
+export class MyJarbisError extends Error {
   constructor(
     public type: ErrorType,
     message: string,
     public details?: any
   ) {
     super(message);
-    this.name = 'MyJarvisError';
+    this.name = 'MyJarbisError';
   }
 }

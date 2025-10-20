@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * MyJarvis MCP Server
+ * MyJarbis MCP Server
  *
  * This server implements the Model Context Protocol (MCP) to provide
  * persistent memory capabilities to Claude Code.
  *
  * Architecture:
  * - ONE server instance serves ALL projects
- * - Projects register themselves via `myjarvis init`
- * - Server reads from each project's .myjarvis/ folder
- * - Resources exposed as: myjarvis://project-name/memory/instructions
+ * - Projects register themselves via `myjarbis init`
+ * - Server reads from each project's .myjarbis/ folder
+ * - Resources exposed as: myjarbis://project-name/memory/instructions
  *
  * Protocol: MCP over stdio (standard input/output)
  * Communication: Claude Code <-> This Server <-> Project Files
@@ -34,7 +34,7 @@ import {
   RegistryFile,
   ResourceDefinition,
   MemoryPaths,
-  MyJarvisError,
+  MyJarbisError,
   ErrorType,
 } from './types.js';
 import { searchCode, SearchCodeParams } from './tools/searchCode.js';
@@ -47,9 +47,9 @@ const __dirname = path.dirname(__filename);
 
 /**
  * Path to the global projects registry
- * Location: ~/.myjarvis-global/projects-registry.json
+ * Location: ~/.myjarbis-global/projects-registry.json
  */
-const REGISTRY_PATH = path.join(homedir(), '.myjarvis-global', 'projects-registry.json');
+const REGISTRY_PATH = path.join(homedir(), '.myjarbis-global', 'projects-registry.json');
 
 /**
  * Load the projects registry from disk
@@ -59,40 +59,40 @@ const REGISTRY_PATH = path.join(homedir(), '.myjarvis-global', 'projects-registr
 function loadProjectsRegistry(): ProjectsRegistry {
   try {
     if (!fs.existsSync(REGISTRY_PATH)) {
-      console.error('[MyJarvis] Registry not found, returning empty registry');
+      console.error('[MyJarbis] Registry not found, returning empty registry');
       return {};
     }
 
     const content = fs.readFileSync(REGISTRY_PATH, 'utf-8');
     const registryFile: RegistryFile = JSON.parse(content);
 
-    console.error(`[MyJarvis] Loaded ${Object.keys(registryFile.projects).length} projects from registry`);
+    console.error(`[MyJarbis] Loaded ${Object.keys(registryFile.projects).length} projects from registry`);
     return registryFile.projects;
   } catch (error) {
-    console.error('[MyJarvis] Error loading registry:', error);
+    console.error('[MyJarbis] Error loading registry:', error);
     return {};
   }
 }
 
 /**
- * Get the absolute path to a project's .myjarvis/ folder
+ * Get the absolute path to a project's .myjarbis/ folder
  *
  * @param projectName - Name of the project
- * @returns Absolute path to .myjarvis/ folder
- * @throws MyJarvisError if project not found
+ * @returns Absolute path to .myjarbis/ folder
+ * @throws MyJarbisError if project not found
  */
 function getProjectPath(projectName: string, registry: ProjectsRegistry): string {
   const project = registry[projectName];
 
   if (!project) {
-    throw new MyJarvisError(
+    throw new MyJarbisError(
       ErrorType.PROJECT_NOT_FOUND,
-      `Project "${projectName}" not found in registry. Did you run 'myjarvis init'?`,
+      `Project "${projectName}" not found in registry. Did you run 'myjarbis init'?`,
       { projectName, availableProjects: Object.keys(registry) }
     );
   }
 
-  return path.join(project.path, '.myjarvis');
+  return path.join(project.path, '.myjarbis');
 }
 
 /**
@@ -102,14 +102,14 @@ function getProjectPath(projectName: string, registry: ProjectsRegistry): string
  * @returns Object with paths to all memory files
  */
 function getMemoryPaths(projectName: string, registry: ProjectsRegistry): MemoryPaths {
-  const myjarvisPath = getProjectPath(projectName, registry);
+  const myjarbisPath = getProjectPath(projectName, registry);
 
   return {
-    instructions: path.join(myjarvisPath, 'prompts', 'system.md'),
-    projectSummary: path.join(myjarvisPath, 'context', 'project-summary.md'),
-    knowledgeBase: path.join(myjarvisPath, 'context', 'knowledge-base.md'),
-    daily: path.join(myjarvisPath, 'context', 'daily.md'),
-    codebase: path.join(myjarvisPath, 'context', 'codebase.txt'),
+    instructions: path.join(myjarbisPath, 'prompts', 'system.md'),
+    projectSummary: path.join(myjarbisPath, 'context', 'project-summary.md'),
+    knowledgeBase: path.join(myjarbisPath, 'context', 'knowledge-base.md'),
+    daily: path.join(myjarbisPath, 'context', 'daily.md'),
+    codebase: path.join(myjarbisPath, 'context', 'codebase.txt'),
   };
 }
 
@@ -134,7 +134,7 @@ function readProjectFile(filePath: string): string {
 
     return content;
   } catch (error) {
-    throw new MyJarvisError(
+    throw new MyJarbisError(
       ErrorType.FILE_READ_ERROR,
       `Failed to read file: ${filePath}`,
       { error: error instanceof Error ? error.message : String(error) }
@@ -143,24 +143,24 @@ function readProjectFile(filePath: string): string {
 }
 
 /**
- * Parse a MyJarvis resource URI
+ * Parse a MyJarbis resource URI
  *
- * Format: myjarvis://project-name/memory/instructions
- *         myjarvis://project-name/memory/project
- *         myjarvis://project-name/memory/knowledge
- *         myjarvis://project-name/context/daily
+ * Format: myjarbis://project-name/memory/instructions
+ *         myjarbis://project-name/memory/project
+ *         myjarbis://project-name/memory/knowledge
+ *         myjarbis://project-name/context/daily
  *
  * @param uri - Resource URI to parse
  * @returns { projectName, resourceType, resourceName }
  */
 function parseResourceURI(uri: string): { projectName: string; category: string; resourceName: string } {
-  const match = uri.match(/^myjarvis:\/\/([^\/]+)\/([^\/]+)\/([^\/]+)$/);
+  const match = uri.match(/^myjarbis:\/\/([^\/]+)\/([^\/]+)\/([^\/]+)$/);
 
   if (!match) {
-    throw new MyJarvisError(
+    throw new MyJarbisError(
       ErrorType.INVALID_URI,
-      `Invalid MyJarvis URI format: ${uri}`,
-      { expectedFormat: 'myjarvis://project-name/category/resource-name' }
+      `Invalid MyJarbis URI format: ${uri}`,
+      { expectedFormat: 'myjarbis://project-name/category/resource-name' }
     );
   }
 
@@ -177,25 +177,25 @@ function parseResourceURI(uri: string): { projectName: string; category: string;
 function generateResourcesForProject(projectName: string): ResourceDefinition[] {
   return [
     {
-      uri: `myjarvis://${projectName}/memory/instructions`,
+      uri: `myjarbis://${projectName}/memory/instructions`,
       name: `${projectName} - System Instructions`,
       description: 'Claude\'s behavior rules, workflow guidelines, and educational mode settings',
       mimeType: 'text/markdown',
     },
     {
-      uri: `myjarvis://${projectName}/memory/project`,
+      uri: `myjarbis://${projectName}/memory/project`,
       name: `${projectName} - Project Summary`,
       description: 'High-level project overview, architecture, tech stack, and structure',
       mimeType: 'text/markdown',
     },
     {
-      uri: `myjarvis://${projectName}/memory/knowledge`,
+      uri: `myjarbis://${projectName}/memory/knowledge`,
       name: `${projectName} - Knowledge Base`,
       description: 'Chronological log of everything built, decisions made, and lessons learned',
       mimeType: 'text/markdown',
     },
     {
-      uri: `myjarvis://${projectName}/context/daily`,
+      uri: `myjarbis://${projectName}/context/daily`,
       name: `${projectName} - Daily Context`,
       description: 'Today\'s focus, recent changes, and current work-in-progress',
       mimeType: 'text/markdown',
@@ -207,7 +207,7 @@ function generateResourcesForProject(projectName: string): ResourceDefinition[] 
  * Main server setup
  */
 async function main() {
-  console.error('[MyJarvis] Starting MCP Server...');
+  console.error('[MyJarbis] Starting MCP Server...');
 
   // Load projects registry
   const registry = loadProjectsRegistry();
@@ -215,7 +215,7 @@ async function main() {
   // Create MCP server instance
   const server = new Server(
     {
-      name: 'myjarvis-mcp-server',
+      name: 'myjarbis-mcp-server',
       version: '0.1.0',
     },
     {
@@ -232,7 +232,7 @@ async function main() {
    * Returns resources for ALL registered projects
    */
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    console.error('[MyJarvis] Listing resources...');
+    console.error('[MyJarbis] Listing resources...');
 
     const allResources: ResourceDefinition[] = [];
 
@@ -242,7 +242,7 @@ async function main() {
       allResources.push(...projectResources);
     }
 
-    console.error(`[MyJarvis] Returning ${allResources.length} resources from ${Object.keys(registry).length} projects`);
+    console.error(`[MyJarbis] Returning ${allResources.length} resources from ${Object.keys(registry).length} projects`);
 
     return {
       resources: allResources,
@@ -256,7 +256,7 @@ async function main() {
    */
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const uri = request.params.uri;
-    console.error(`[MyJarvis] Reading resource: ${uri}`);
+    console.error(`[MyJarbis] Reading resource: ${uri}`);
 
     try {
       // Parse URI to extract project and resource info
@@ -280,7 +280,7 @@ async function main() {
             filePath = memoryPaths.knowledgeBase;
             break;
           default:
-            throw new MyJarvisError(
+            throw new MyJarbisError(
               ErrorType.RESOURCE_NOT_FOUND,
               `Unknown memory resource: ${resourceName}`,
               { validResources: ['instructions', 'project', 'knowledge'] }
@@ -292,14 +292,14 @@ async function main() {
             filePath = memoryPaths.daily;
             break;
           default:
-            throw new MyJarvisError(
+            throw new MyJarbisError(
               ErrorType.RESOURCE_NOT_FOUND,
               `Unknown context resource: ${resourceName}`,
               { validResources: ['daily'] }
             );
         }
       } else {
-        throw new MyJarvisError(
+        throw new MyJarbisError(
           ErrorType.INVALID_URI,
           `Unknown category: ${category}`,
           { validCategories: ['memory', 'context'] }
@@ -309,7 +309,7 @@ async function main() {
       // Read the file
       const content = readProjectFile(filePath);
 
-      console.error(`[MyJarvis] Successfully read: ${path.basename(filePath)} (${content.length} bytes)`);
+      console.error(`[MyJarbis] Successfully read: ${path.basename(filePath)} (${content.length} bytes)`);
 
       return {
         contents: [
@@ -321,13 +321,13 @@ async function main() {
         ],
       };
     } catch (error) {
-      if (error instanceof MyJarvisError) {
-        console.error(`[MyJarvis] Error: ${error.message}`, error.details);
+      if (error instanceof MyJarbisError) {
+        console.error(`[MyJarbis] Error: ${error.message}`, error.details);
         throw error;
       }
 
-      console.error('[MyJarvis] Unexpected error:', error);
-      throw new MyJarvisError(
+      console.error('[MyJarbis] Unexpected error:', error);
+      throw new MyJarbisError(
         ErrorType.FILE_READ_ERROR,
         'Unexpected error reading resource',
         { error: String(error) }
@@ -341,7 +341,7 @@ async function main() {
    * Tools are functions that Claude can call
    */
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    console.error('[MyJarvis] Listing tools...');
+    console.error('[MyJarbis] Listing tools...');
 
     return {
       tools: [
@@ -448,7 +448,7 @@ async function main() {
    */
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    console.error(`[MyJarvis] Tool called: ${name}`);
+    console.error(`[MyJarbis] Tool called: ${name}`);
 
     try {
       switch (name) {
@@ -492,20 +492,20 @@ async function main() {
         }
 
         default:
-          throw new MyJarvisError(
+          throw new MyJarbisError(
             ErrorType.RESOURCE_NOT_FOUND,
             `Unknown tool: ${name}`,
             { requestedTool: name, availableTools: ['search_code', 'get_context', 'update_memory'] }
           );
       }
     } catch (error) {
-      if (error instanceof MyJarvisError) {
-        console.error(`[MyJarvis] Tool error: ${error.message}`, error.details);
+      if (error instanceof MyJarbisError) {
+        console.error(`[MyJarbis] Tool error: ${error.message}`, error.details);
         throw error;
       }
 
-      console.error('[MyJarvis] Unexpected tool error:', error);
-      throw new MyJarvisError(
+      console.error('[MyJarbis] Unexpected tool error:', error);
+      throw new MyJarbisError(
         ErrorType.FILE_READ_ERROR,
         `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`,
         { tool: name, error: String(error) }
@@ -517,11 +517,11 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('[MyJarvis] MCP Server running and ready for connections');
+  console.error('[MyJarbis] MCP Server running and ready for connections');
 }
 
 // Run the server
 main().catch((error) => {
-  console.error('[MyJarvis] Fatal error:', error);
+  console.error('[MyJarbis] Fatal error:', error);
   process.exit(1);
 });

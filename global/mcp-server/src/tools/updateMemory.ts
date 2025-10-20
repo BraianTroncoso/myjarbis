@@ -1,5 +1,5 @@
 /**
- * MyJarvis MCP Tool: update_memory
+ * MyJarbis MCP Tool: update_memory
  *
  * Update the project's knowledge base with new information.
  *
@@ -10,7 +10,7 @@
  *
  * HOW IT WORKS:
  * 1. Takes a memory entry (what was built, why, how)
- * 2. Appends to .myjarvis/context/knowledge-base.md
+ * 2. Appends to .myjarbis/context/knowledge-base.md
  * 3. Maintains chronological order with timestamps
  * 4. Validates entry format before writing
  *
@@ -167,7 +167,7 @@ export async function updateMemory(
   // Get knowledge base path
   const knowledgeBasePath = path.join(
     project.path,
-    '.myjarvis',
+    '.myjarbis',
     'context',
     'knowledge-base.md'
   );
@@ -212,7 +212,7 @@ export async function readKnowledgeBase(
 
   const knowledgeBasePath = path.join(
     project.path,
-    '.myjarvis',
+    '.myjarbis',
     'context',
     'knowledge-base.md'
   );

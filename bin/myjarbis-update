@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #
-# MyJarvis Update Script
+# MyJarbis Update Script
 #
-# Updates the global MyJarvis installation:
+# Updates the global MyJarbis installation:
 # 1. Pulls latest changes (if git repo)
 # 2. Rebuilds MCP server
 # 3. Optionally updates templates in existing projects
@@ -19,17 +19,17 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Paths
-INSTALL_DIR="$HOME/.myjarvis-global"
+INSTALL_DIR="$HOME/.myjarbis-global"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MyJarvis Update"
+echo "  MyJarbis Update"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 # Check if installed
 if [ ! -d "$INSTALL_DIR" ]; then
-    echo -e "${RED}Error: MyJarvis is not installed${NC}"
+    echo -e "${RED}Error: MyJarbis is not installed${NC}"
     echo "Run the installation script first"
     exit 1
 fi
@@ -44,7 +44,7 @@ if [ -d ".git" ]; then
     echo -e "${GREEN}✓${NC} Updated from repository"
 else
     echo -e "${YELLOW}!${NC} Not a git repository, skipping update"
-    echo "To enable updates, clone MyJarvis instead of copying files"
+    echo "To enable updates, clone MyJarbis instead of copying files"
 fi
 
 # Reinstall dependencies
@@ -66,7 +66,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${GREEN}Update completed!${NC}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "MyJarvis has been updated to the latest version."
+echo "MyJarbis has been updated to the latest version."
 echo ""
 echo "If you have Claude Code running, restart it to use the updated version:"
 echo "  - Close Claude Code"

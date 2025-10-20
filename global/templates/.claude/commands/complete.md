@@ -67,7 +67,7 @@ update_memory({
 **CRITICAL:** If you created new models, controllers, routes, or modified the project structure, refresh the project summary so it stays in sync:
 
 ```bash
-myjarvis context
+myjarbis context
 ```
 
 This re-analyzes the project and updates `project-summary.md` with the latest code structure.
@@ -86,7 +86,7 @@ This re-analyzes the project and updates `project-summary.md` with the latest co
 Execute the command now if needed:
 
 ```bash
-myjarvis context
+myjarbis context
 ```
 
 ### 4. Summarize What Was Done
@@ -210,4 +210,4 @@ update_memory({
 })
 ```
 
-The memory update is CRUCIAL - it's how MyJarvis remembers what was built across sessions.
+The memory update is CRUCIAL - it's how MyJarbis remembers what was built across sessions.
