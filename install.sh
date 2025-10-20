@@ -89,7 +89,7 @@ echo -e "${GREEN}✓${NC} Created $INSTALL_DIR"
 
 # Copy files
 echo ""
-echo -e "${GOLD}[3/7]${NC} Copying MyJarvis files..."
+echo -e "${GOLD}[3/7]${NC} Copying MyJarbis files..."
 cp -r global/* "$INSTALL_DIR/"
 cp -r bin "$INSTALL_DIR/"
 echo -e "${GREEN}✓${NC} Files copied to $INSTALL_DIR"
