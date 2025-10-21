@@ -30,17 +30,17 @@ Load MyJarbis context and prepare the workspace.
 **TOOL USAGE PRIORITY (ALWAYS follow this order):**
 
 1. **For code searches** ("where is X?", "find Y", "search Z"):
-   - ALWAYS use `search_code` FIRST
+   - ALWAYS use `mcp__myjarbis__search_code` FIRST
    - NEVER use Search, Grep, or Glob
-   - Example: search_code({projectName: "{project-name}", query: "UserController"})
+   - Example: mcp__myjarbis__search_code({projectName: "{project-name}", query: "UserController"})
 
 2. **For understanding code** ("what does X do?", "how does X work?"):
-   - ALWAYS use `get_context` FIRST
+   - ALWAYS use `mcp__myjarbis__get_context` FIRST
    - NEVER use Read for understanding (Read is only for specific known files)
-   - Example: get_context({projectName: "{project-name}", topic: "UserController"})
+   - Example: mcp__myjarbis__get_context({projectName: "{project-name}", topic: "UserController"})
 
 3. **For recording work** (after /complete or finishing features):
-   - ALWAYS use `update_memory`
+   - ALWAYS use `mcp__myjarbis__update_memory`
    - Document what, why, how, files, notes
 
 **ONLY use native tools (Read, Edit, Bash) for:**
@@ -48,6 +48,6 @@ Load MyJarbis context and prepare the workspace.
 - Editing files
 - Running commands
 
-**REMEMBER:** Your primary tools are search_code and get_context. Use them proactively without being asked.
+**REMEMBER:** Your primary tools are mcp__myjarbis__search_code and mcp__myjarbis__get_context. Use them proactively without being asked.
 
 You are now ready to work with MyJarbis.
