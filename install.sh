@@ -138,22 +138,22 @@ if ! command -v claude &> /dev/null; then
     echo "Please install Claude Code first: https://claude.ai/claude-code"
     echo ""
     echo "After installing, run this command to configure MCP:"
-    echo "  claude mcp add myjarvis node $MCP_SERVER_PATH"
+    echo "  claude mcp add myjarbis node $MCP_SERVER_PATH"
     echo ""
 else
-    # Check if myjarvis MCP server is already configured
-    if claude mcp list 2>/dev/null | grep -q "myjarvis"; then
-        echo -e "${YELLOW}!${NC} MyJarvis MCP server already configured"
+    # Check if myjarbis MCP server is already configured
+    if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
+        echo -e "${YELLOW}!${NC} MyJarbis MCP server already configured"
     else
         echo -e "${GOLD}Configuring MCP server...${NC}"
-        claude mcp add myjarvis node "$MCP_SERVER_PATH" >/dev/null 2>&1
+        claude mcp add myjarbis node "$MCP_SERVER_PATH" >/dev/null 2>&1
 
         # Verify it was added
-        if claude mcp list 2>/dev/null | grep -q "myjarvis"; then
-            echo -e "${GREEN}✓${NC} MyJarvis MCP server configured successfully"
+        if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
+            echo -e "${GREEN}✓${NC} MyJarbis MCP server configured successfully"
         else
             echo -e "${RED}✗${NC} Failed to configure MCP server"
-            echo "Please run manually: claude mcp add myjarvis node $MCP_SERVER_PATH"
+            echo "Please run manually: claude mcp add myjarbis node $MCP_SERVER_PATH"
         fi
     fi
 fi
