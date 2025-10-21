@@ -384,3 +384,54 @@ echo -e "  ${GOLD}update_memory${NC}  - Record implementations"
 echo ""
 echo -e "${GOLD}Created by:${NC} Braian Axel Troncoso 🇦🇷"
 echo ""
+
+# Configure Claude Code to use global MCP servers
+echo ""
+echo -e "${GOLD}[7/7]${NC} Configuring Claude Code MCP servers..."
+
+# Use Python to safely update .claude.json
+# Use Python to safely update .claude.json
+python3 << 'PYTHON_EOF'
+import json
+import os
+
+claude_config = os.path.expanduser('~/.claude.json')
+
+# Load existing config
+if os.path.exists(claude_config):
+    with open(claude_config, 'r') as f:
+        data = json.load(f)
+else:
+    data = {'projects': {}}
+
+# Ensure projects key exists
+if 'projects' not in data:
+    data['projects'] = {}
+
+# Get current project path
+project_path = os.getcwd()
+
+# Ensure project entry exists
+if project_path not in data['projects']:
+    data['projects'][project_path] = {}
+
+# Configure MCP server LOCALLY for this project
+mcp_server_path = os.path.expanduser('~/.myjarbis-global/mcp-server/build/index.js')
+data['projects'][project_path]['mcpServers'] = {
+    'myjarbis': {
+        'type': 'stdio',
+        'command': 'node',
+        'args': [mcp_server_path],
+        'env': {}
+    }
+}
+
+# Save config
+with open(claude_config, 'w') as f:
+    json.dump(data, f, indent=2)
+
+print("✓ Configured MCP server locally for this project")
+PYTHON_EOF
+
+echo -e "${GREEN}✓${NC} Claude Code configured to use global MCP servers"
+
