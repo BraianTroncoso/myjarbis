@@ -1,29 +1,13 @@
 # Jarbis - Initialize MyJarbis Context
 
-Load MyJarbis context and prepare the workspace.
+Read `.myjarbis/config/settings.json` and extract the `project.name` and `project.framework` fields. Use the EXACT project name (do not modify or infer) to load `myjarbis://{exact-project-name}/context/full`.
 
-## What to do:
+Respond with:
+```
+Jarbis ready for {project-name} ({framework})
 
-1. **Identify the project name** from the current working directory (use basename)
-
-2. **Determine the framework** by checking settings.json:
-   - Read `.myjarbis/config/settings.json`
-   - Extract the `project.framework` field
-
-3. **Read all MyJarbis resources** for this project:
-   - Read resource: `myjarbis://{project-name}/memory/instructions`
-   - Read resource: `myjarbis://{project-name}/memory/project`
-   - Read resource: `myjarbis://{project-name}/memory/knowledge`
-   - Read resource: `myjarbis://{project-name}/context/daily`
-
-4. **Acknowledge** you're ready (be concise):
-   ```
-   Jarbis ready for {project-name} ({framework})
-
-   MCP tools loaded. How can I help?
-   ```
-
-   If framework is "generic", just show: `Jarbis ready for {project-name}`
+MCP tools loaded. How can I help?
+```
 
 ## CRITICAL RULES (Follow these STRICTLY):
 

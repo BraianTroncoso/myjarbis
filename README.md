@@ -94,10 +94,20 @@ This will:
 # Check CLI is available
 myjarbis --version
 
+# Run health check
+myjarbis doctor
+
 # Check MCP server is configured
 claude mcp list
 # Should show: myjarbis - ✓ Connected
 ```
+
+The `myjarbis doctor` command verifies:
+- MyJarbis installation
+- Claude Code integration
+- MCP server configuration
+- Current project status (if in a project)
+- Common issues
 
 ---
 
@@ -249,6 +259,9 @@ MyJarbis maintains project memory across sessions:
 # Initialize current project
 myjarbis init
 
+# Run diagnostics (verify installation and setup)
+myjarbis doctor
+
 # List all registered projects
 myjarbis list
 
@@ -298,6 +311,11 @@ your-project/
 When Claude Code connects to MyJarbis, it can access:
 
 ```
+myjarbis://my-laravel-app/context/full
+→ Combines all context files into one resource (optimized for performance)
+→ Contains: System instructions + Project summary + Knowledge base + Daily context
+→ Used by /jarbis command for fast initialization
+
 myjarbis://my-laravel-app/memory/instructions
 → Reads: .myjarbis/prompts/system.md
 → Contains: Rules, workflow, educational mode settings
@@ -315,7 +333,7 @@ myjarbis://my-laravel-app/context/daily
 → Contains: Today's focus, recent changes
 ```
 
-Claude automatically reads these on session start.
+The `/jarbis` command uses the `context/full` resource for optimal performance (one MCP call instead of four).
 
 ---
 
@@ -461,10 +479,12 @@ A: Yes! Commit `.myjarbis/` files (except `codebase.txt` which is in `.gitignore
 
 **Q: Claude doesn't recognize MyJarbis tools. What's wrong?**
 A:
-1. Verify MCP is configured: `claude mcp list`
-2. If not listed, run: `claude mcp add myjarbis node ~/.myjarbis-global/mcp-server/build/index.js`
-3. Restart Claude Code
-4. Check the project is registered: `myjarbis list`
+1. Run diagnostics first: `myjarbis doctor`
+2. Check specific issues reported by doctor
+3. Verify MCP is configured: `claude mcp list`
+4. If not listed, run: `claude mcp add myjarbis node ~/.myjarbis-global/mcp-server/build/index.js`
+5. Restart Claude Code
+6. Check the project is registered: `myjarbis list`
 
 **Q: `myjarbis init` fails with "framework not detected"**
 A: MyJarbis will use generic templates. You can manually edit `.myjarbis/prompts/system.md` to add framework-specific instructions.
@@ -542,16 +562,27 @@ Built with:
 
 ## Roadmap
 
-- [x] Phase 1: Project structure
-- [ ] Phase 2: MCP server foundation
-- [ ] Phase 3: MCP tools implementation
-- [ ] Phase 4: Installation scripts
-- [ ] Phase 5: Project initialization system
-- [ ] Phase 6: Claude commands
-- [ ] Phase 7: Framework analyzers (Laravel, Express, Next.js)
-- [ ] Phase 8: Advanced context tools
-- [ ] Phase 9: Team collaboration features
-- [ ] Phase 10: VS Code extension
+### Completed ✅
+- [x] MCP server foundation with resource protocol
+- [x] MCP tools (search_code, get_context, update_memory)
+- [x] Installation scripts (install.sh)
+- [x] Project initialization system (myjarbis init)
+- [x] Claude commands (/jarbis, /plan, /implement, /complete)
+- [x] Framework analyzers (Laravel, Express, Generic)
+- [x] Diagnostic tool (myjarbis doctor)
+- [x] Performance optimization (context/full resource)
+- [x] Multi-project support
+
+### In Progress 🚧
+- [ ] Enhanced search with better result grouping
+- [ ] Code structure overview tool (list_structure)
+- [ ] Improved documentation and examples
+
+### Future 🔮
+- [ ] Code indexing for faster searches
+- [ ] Team collaboration sync features
+- [ ] VS Code extension
+- [ ] Support for more frameworks (React, Vue, Django, etc.)
 
 ---
 

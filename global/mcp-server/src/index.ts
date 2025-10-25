@@ -177,6 +177,12 @@ function parseResourceURI(uri: string): { projectName: string; category: string;
 function generateResourcesForProject(projectName: string): ResourceDefinition[] {
   return [
     {
+      uri: `myjarbis://${projectName}/context/full`,
+      name: `${projectName} - Full Context`,
+      description: 'Complete project context: system instructions, project summary, knowledge base, and daily context combined',
+      mimeType: 'text/markdown',
+    },
+    {
       uri: `myjarbis://${projectName}/memory/instructions`,
       name: `${projectName} - System Instructions`,
       description: 'Claude\'s behavior rules, workflow guidelines, and educational mode settings',
@@ -288,6 +294,52 @@ async function main() {
         }
       } else if (category === 'context') {
         switch (resourceName) {
+          case 'full':
+            // Special case: combine all context files into one
+            const instructions = readProjectFile(memoryPaths.instructions);
+            const projectSummary = readProjectFile(memoryPaths.projectSummary);
+            const knowledgeBase = readProjectFile(memoryPaths.knowledgeBase);
+            const daily = readProjectFile(memoryPaths.daily);
+
+            const combinedContent = `# ${projectName} - Complete Context
+
+---
+
+## System Instructions
+
+${instructions}
+
+---
+
+## Project Summary
+
+${projectSummary}
+
+---
+
+## Knowledge Base
+
+${knowledgeBase}
+
+---
+
+## Daily Context
+
+${daily}
+`;
+
+            console.error(`[MyJarbis] Successfully generated full context (${combinedContent.length} bytes)`);
+
+            return {
+              contents: [
+                {
+                  uri,
+                  mimeType: 'text/markdown',
+                  text: combinedContent,
+                },
+              ],
+            };
+
           case 'daily':
             filePath = memoryPaths.daily;
             break;
@@ -295,7 +347,7 @@ async function main() {
             throw new MyJarbisError(
               ErrorType.RESOURCE_NOT_FOUND,
               `Unknown context resource: ${resourceName}`,
-              { validResources: ['daily'] }
+              { validResources: ['full', 'daily'] }
             );
         }
       } else {

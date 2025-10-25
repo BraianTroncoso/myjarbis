@@ -33,6 +33,7 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  init        Initialize MyJarbis in the current project"
+    echo "  doctor      Run diagnostics to verify installation and setup"
     echo "  list        List all projects registered with MyJarbis"
     echo "  context     Refresh project context (re-analyze project structure)"
     echo "  update      Update MyJarbis global installation"
@@ -41,6 +42,7 @@ show_help() {
     echo "Examples:"
     echo "  cd ~/projects/my-app"
     echo "  myjarbis init              # Initialize project"
+    echo "  myjarbis doctor            # Check if everything works"
     echo "  myjarbis list              # See all projects"
     echo ""
     echo "Documentation:"
@@ -157,6 +159,15 @@ case "${1:-help}" in
             exit 1
         fi
         exec "$INSTALL_DIR/bin/myjarbis-init"
+        ;;
+
+    doctor)
+        if [ ! -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
+            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
+            echo "Please run the installation script"
+            exit 1
+        fi
+        exec "$INSTALL_DIR/bin/myjarbis-doctor"
         ;;
 
     list)
