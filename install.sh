@@ -45,16 +45,17 @@ fi
 
 # Check for Node.js
 echo -e "${GOLD}[1/7]${NC} Checking prerequisites..."
+echo -e "${NC}      Verifying Node.js and npm are installed...${NC}"
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}Error: Node.js is not installed${NC}"
-    echo "Please install Node.js 18+ from https://nodejs.org/"
+    echo -e "${RED}✗${NC} Error: Node.js is not installed"
+    echo "   Please install Node.js 18+ from https://nodejs.org/"
     exit 1
 fi
 
 NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
 if [ "$NODE_VERSION" -lt 18 ]; then
-    echo -e "${RED}Error: Node.js version 18 or higher required${NC}"
-    echo "Current version: $(node --version)"
+    echo -e "${RED}✗${NC} Error: Node.js version 18 or higher required"
+    echo "   Current version: $(node --version)"
     exit 1
 fi
 
@@ -62,18 +63,20 @@ echo -e "${GREEN}✓${NC} Node.js $(node --version) found"
 
 # Check for npm
 if ! command -v npm &> /dev/null; then
-    echo -e "${RED}Error: npm is not installed${NC}"
+    echo -e "${RED}✗${NC} Error: npm is not installed"
     exit 1
 fi
 
 echo -e "${GREEN}✓${NC} npm $(npm --version) found"
+echo -e "${NC}      → Node.js is required to run the MCP server${NC}"
 
 # Create installation directory
 echo ""
 echo -e "${GOLD}[2/7]${NC} Creating installation directory..."
+echo -e "${NC}      Target: $INSTALL_DIR${NC}"
 if [ -d "$INSTALL_DIR" ]; then
-    echo -e "${YELLOW}Warning: $INSTALL_DIR already exists${NC}"
-    read -p "Remove existing installation and continue? (y/n) " -n 1 -r
+    echo -e "${YELLOW}!${NC} Directory already exists"
+    read -p "      Remove existing installation and continue? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf "$INSTALL_DIR"
@@ -86,17 +89,38 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 echo -e "${GREEN}✓${NC} Created $INSTALL_DIR"
+echo -e "${NC}      → This folder will contain the global MCP server and CLI tools${NC}"
 
 # Copy files
 echo ""
 echo -e "${GOLD}[3/7]${NC} Copying MyJarbis files..."
+echo -e "${NC}      Copying core files, templates, and CLI tools...${NC}"
 cp -r global/* "$INSTALL_DIR/"
 cp -r bin "$INSTALL_DIR/"
-echo -e "${GREEN}✓${NC} Files copied to $INSTALL_DIR"
+
+# Verify critical files were copied
+CRITICAL_FILES=(
+    "$INSTALL_DIR/mcp-server/package.json"
+    "$INSTALL_DIR/templates/.claude/commands/jarbis.md"
+    "$INSTALL_DIR/bin/myjarbis"
+    "$INSTALL_DIR/bin/myjarbis-init"
+    "$INSTALL_DIR/bin/myjarbis-doctor"
+)
+
+for file in "${CRITICAL_FILES[@]}"; do
+    if [ ! -f "$file" ]; then
+        echo -e "${RED}✗${NC} Error: Critical file missing: $file"
+        exit 1
+    fi
+done
+
+echo -e "${GREEN}✓${NC} Files copied successfully"
+echo -e "${NC}      → Includes: MCP server, templates, analyzers, and CLI tools${NC}"
 
 # Initialize projects registry
 echo ""
 echo -e "${GOLD}[4/7]${NC} Initializing projects registry..."
+echo -e "${NC}      Creating registry to track all your projects...${NC}"
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 if [ ! -f "$REGISTRY_FILE" ]; then
     cat > "$REGISTRY_FILE" << 'EOF'
@@ -111,23 +135,35 @@ EOF
 else
     echo -e "${YELLOW}!${NC} Projects registry already exists (keeping existing)"
 fi
+echo -e "${NC}      → Registry location: $REGISTRY_FILE${NC}"
+echo -e "${NC}      → One MCP server serves all your projects${NC}"
 
 # Install MCP server dependencies
 echo ""
 echo -e "${GOLD}[5/7]${NC} Installing MCP server dependencies..."
+echo -e "${NC}      Running npm install (this may take 30-60 seconds)...${NC}"
 cd "$INSTALL_DIR/mcp-server"
-npm install --silent
+npm install 2>&1 | grep -v "npm WARN" || true
 echo -e "${GREEN}✓${NC} Dependencies installed"
+echo -e "${NC}      → Installed: @modelcontextprotocol/sdk, zod, and others${NC}"
 
 # Build MCP server
 echo ""
 echo -e "${GOLD}[6/7]${NC} Building MCP server..."
-npm run build --silent
-echo -e "${GREEN}✓${NC} MCP server built successfully"
+echo -e "${NC}      Compiling TypeScript to JavaScript...${NC}"
+npm run build 2>&1 | tail -1
+if [ -f "build/index.js" ]; then
+    echo -e "${GREEN}✓${NC} MCP server built successfully"
+    echo -e "${NC}      → Build output: $INSTALL_DIR/mcp-server/build/index.js${NC}"
+else
+    echo -e "${RED}✗${NC} Build failed - index.js not found"
+    exit 1
+fi
 
 # Configure Claude Code
 echo ""
 echo -e "${GOLD}[7/7]${NC} Configuring Claude Code..."
+echo -e "${NC}      Registering MCP server with Claude Code CLI...${NC}"
 
 # MCP server path
 MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
@@ -135,25 +171,27 @@ MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
 # Check if claude CLI is available
 if ! command -v claude &> /dev/null; then
     echo -e "${YELLOW}!${NC} Claude Code CLI not found"
-    echo "Please install Claude Code first: https://claude.ai/claude-code"
+    echo "      Please install Claude Code first: https://claude.ai/claude-code"
     echo ""
-    echo "After installing, run this command to configure MCP:"
-    echo "  claude mcp add myjarbis node $MCP_SERVER_PATH"
+    echo "      After installing, run this command to configure MCP:"
+    echo "      ${GOLD}claude mcp add myjarbis node $MCP_SERVER_PATH${NC}"
     echo ""
 else
     # Check if myjarbis MCP server is already configured
     if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
         echo -e "${YELLOW}!${NC} MyJarbis MCP server already configured"
+        echo -e "${NC}      → Verify with: ${GOLD}claude mcp list${NC}"
     else
-        echo -e "${GOLD}Configuring MCP server...${NC}"
         claude mcp add myjarbis node "$MCP_SERVER_PATH" >/dev/null 2>&1
 
         # Verify it was added
         if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
             echo -e "${GREEN}✓${NC} MyJarbis MCP server configured successfully"
+            echo -e "${NC}      → Verify with: ${GOLD}claude mcp list${NC}"
         else
-            echo -e "${RED}✗${NC} Failed to configure MCP server"
-            echo "Please run manually: claude mcp add myjarbis node $MCP_SERVER_PATH"
+            echo -e "${RED}✗${NC} Failed to configure MCP server automatically"
+            echo "      Please run manually:"
+            echo "      ${GOLD}claude mcp add myjarbis node $MCP_SERVER_PATH${NC}"
         fi
     fi
 fi
@@ -161,6 +199,7 @@ fi
 # Add to PATH (optional)
 echo ""
 echo -e "${GOLD}Setting up CLI...${NC}"
+echo -e "${NC}      Adding myjarbis command to your PATH...${NC}"
 
 SHELL_RC=""
 if [ -n "$BASH_VERSION" ]; then
@@ -175,7 +214,7 @@ if [ -n "$SHELL_RC" ]; then
         echo "# MyJarbis CLI" >> "$SHELL_RC"
         echo "export PATH=\"\$HOME/.myjarbis-global/bin:\$PATH\"" >> "$SHELL_RC"
         echo -e "${GREEN}✓${NC} Added MyJarbis to PATH in $SHELL_RC"
-        echo -e "${YELLOW}!${NC} Run 'source $SHELL_RC' or restart your terminal"
+        echo -e "${YELLOW}!${NC} Important: Run ${GOLD}source $SHELL_RC${NC} or restart your terminal"
     else
         echo -e "${YELLOW}!${NC} MyJarbis already in PATH"
     fi
@@ -185,6 +224,8 @@ fi
 chmod +x "$INSTALL_DIR/bin/myjarbis"
 chmod +x "$INSTALL_DIR/bin/myjarbis-init"
 chmod +x "$INSTALL_DIR/bin/myjarbis-update"
+chmod +x "$INSTALL_DIR/bin/myjarbis-doctor"
+echo -e "${GREEN}✓${NC} CLI commands ready: ${GOLD}myjarbis${NC}, ${GOLD}myjarbis doctor${NC}"
 
 # Success message
 echo ""
@@ -192,27 +233,47 @@ echo -e "${RED}╔════════════════════�
 echo -e "${RED}║${GREEN}     ✓ INSTALLATION COMPLETED SUCCESSFULLY    ${RED}║${NC}"
 echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${GOLD}Next steps:${NC}"
-echo ""
-echo -e "${GOLD}1.${NC} Reload your shell:"
-if [ -n "$SHELL_RC" ]; then
-    echo -e "   ${GOLD}source $SHELL_RC${NC}"
-fi
-echo ""
-echo -e "${GOLD}2.${NC} Navigate to a project:"
-echo -e "   ${GOLD}cd ~/projects/my-project${NC}"
-echo ""
-echo -e "${GOLD}3.${NC} Initialize Jarbis:"
-echo -e "   ${GOLD}myjarbis init${NC}"
-echo ""
-echo -e "${GOLD}4.${NC} Start Claude Code:"
-echo -e "   ${GOLD}claude${NC}"
-echo ""
-echo -e "${GOLD}5.${NC} Initialize context:"
-echo -e "   ${GOLD}/jarbis${NC}"
+echo -e "${GOLD}What was installed:${NC}"
+echo -e "  ${GREEN}✓${NC} MCP server at ${GOLD}$INSTALL_DIR${NC}"
+echo -e "  ${GREEN}✓${NC} CLI tools: ${GOLD}myjarbis${NC}, ${GOLD}myjarbis doctor${NC}, ${GOLD}myjarbis init${NC}"
+echo -e "  ${GREEN}✓${NC} Templates for Laravel, Express, and generic projects"
+echo -e "  ${GREEN}✓${NC} Claude Code MCP integration configured"
 echo ""
 echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GOLD}Documentation:${NC} github.com/braiantroncoso/myjarbis"
-echo -e "${GOLD}Created by:${NC} Braian Axel Troncoso 🇦🇷"
+echo -e "${GOLD}[ QUICK START ]${NC}"
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "${GOLD}1. Reload your shell:${NC}"
+if [ -n "$SHELL_RC" ]; then
+    echo -e "   ${GREEN}\$ source $SHELL_RC${NC}"
+fi
+echo ""
+echo -e "${GOLD}2. Verify installation:${NC}"
+echo -e "   ${GREEN}\$ myjarbis doctor${NC}"
+echo -e "   ${NC}(Checks everything is working correctly)${NC}"
+echo ""
+echo -e "${GOLD}3. Navigate to your project:${NC}"
+echo -e "   ${GREEN}\$ cd ~/projects/my-project${NC}"
+echo ""
+echo -e "${GOLD}4. Initialize MyJarbis:${NC}"
+echo -e "   ${GREEN}\$ myjarbis init${NC}"
+echo -e "   ${NC}(Detects framework, creates .myjarbis folder)${NC}"
+echo ""
+echo -e "${GOLD}5. Start coding with Claude:${NC}"
+echo -e "   ${GREEN}\$ claude${NC}"
+echo -e "   ${GREEN}> /jarbis${NC}   ${NC}← Load project context${NC}"
+echo -e "   ${GREEN}> /plan${NC}    ${NC}← Plan your feature${NC}"
+echo ""
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GOLD}Helpful Commands:${NC}"
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${GOLD}myjarbis help${NC}      - Show all commands"
+echo -e "  ${GOLD}myjarbis doctor${NC}    - Run health check"
+echo -e "  ${GOLD}myjarbis list${NC}      - List registered projects"
+echo -e "  ${GOLD}myjarbis context${NC}   - Refresh project analysis"
+echo ""
+echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${NC}Documentation: ${GOLD}github.com/braiantroncoso/myjarbis${NC}"
+echo -e "${NC}Need help? Run ${GOLD}myjarbis doctor${NC} to diagnose issues${NC}"
 echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
