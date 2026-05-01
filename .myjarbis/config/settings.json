@@ -1,0 +1,22 @@
+{
+  "project": {
+    "name": "myjarbis",
+    "framework": "generic"
+  },
+  "mcp": {
+    "enabled": true
+  },
+  "context": {
+    "autoGenerateCodebase": false,
+    "maxCodebaseSize": "10MB"
+  },
+  "version": "0.2.0",
+  "shared": false,
+  "search_default_scope": "module",
+  "story_pattern": "[A-Z]+-S?\\d+(\\.\\d+)?",
+  "auto_module_select_when_single": true,
+  "skills": {
+    "materialize_on_session_start": true,
+    "cleanup_module_skills_on_session_end": false
+  }
+}
