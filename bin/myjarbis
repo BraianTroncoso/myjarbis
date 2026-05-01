@@ -139,21 +139,28 @@ generate_context() {
 # Main command router
 case "${1:-help}" in
     init)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
-            echo "Please run the installation script"
-            exit 1
+        # Resolve script: prefer $INSTALL_DIR/bin (production install
+        # layout), fall back to $INSTALL_DIR/../bin (dev layout where
+        # MYJARBIS_INSTALL_DIR points to <repo>/global).
+        if [ -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-init"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-init" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-init"
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-init"
+        echo -e "${RED}Error: myjarbis-init not found${NC}"
+        echo "Please run the installation script (./install.sh) or set MYJARBIS_INSTALL_DIR"
+        exit 1
         ;;
 
     doctor)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
-            echo "Please run the installation script"
-            exit 1
+        if [ -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-doctor"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-doctor" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-doctor"
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-doctor"
+        echo -e "${RED}Error: myjarbis-doctor not found${NC}"
+        echo "Please run the installation script (./install.sh) or set MYJARBIS_INSTALL_DIR"
+        exit 1
         ;;
 
     list)
@@ -165,11 +172,13 @@ case "${1:-help}" in
         ;;
 
     update)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
-            exit 1
+        if [ -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-update"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-update" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-update"
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-update"
+        echo -e "${RED}Error: myjarbis-update not found${NC}"
+        exit 1
         ;;
 
     import|module|skill|stats)
