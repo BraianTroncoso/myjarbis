@@ -52,6 +52,14 @@ import {
   saveObservation,
   saveObservationInputSchema,
 } from './tools/observations.js';
+import {
+  searchCodeAlias,
+  searchCodeInputSchema,
+  getContextAlias,
+  getContextInputSchema,
+  updateMemoryAlias,
+  updateMemoryInputSchema,
+} from './tools/legacy.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -148,6 +156,34 @@ function buildToolRegistry(): RegisteredTool[] {
         'the active session. Requires start_session first.',
       inputSchema: saveObservationInputSchema,
       handler: (ctx, args) => saveObservation(ctx, args),
+    },
+
+    // Legacy v0.1 aliases (kept for backwards compatibility with old
+    // .claude/commands/*.md). They delegate to the v0.2 tools.
+    {
+      name: 'search_code',
+      description:
+        '[LEGACY v0.1] Routes to search(scope=project). v0.1 grepped source ' +
+        'files; v0.2 runs FTS5 over context. Prefer the new `search` tool.',
+      inputSchema: searchCodeInputSchema,
+      handler: (ctx, args) => searchCodeAlias(ctx, args),
+    },
+    {
+      name: 'get_context',
+      description:
+        '[LEGACY v0.1] Routes to search(scope=project) using `topic` as query. ' +
+        'For full module content prefer `load_module` directly.',
+      inputSchema: getContextInputSchema,
+      handler: (ctx, args) => getContextAlias(ctx, args),
+    },
+    {
+      name: 'update_memory',
+      description:
+        '[LEGACY v0.1] Routes to save_observation(kind=progress) with ' +
+        'What/Why/How concatenated into content. Prefer `save_observation` ' +
+        'for granular kinds (decision/gotcha/progress/error/discovery).',
+      inputSchema: updateMemoryInputSchema,
+      handler: (ctx, args) => updateMemoryAlias(ctx, args),
     },
   ];
 }
