@@ -99,34 +99,16 @@ generate_context() {
     echo -e "${BLUE}Refreshing project context...${NC}"
     echo ""
 
-    # Detect framework from settings
+    # Project structure analysis is delegated to Claude via the
+    # framework-detect skill (introduced in Phase 3 of the v0.2 upgrade).
+    # The legacy JS analyzers (global/core/analyzers/*.js) never existed
+    # in the repo — the previous code attempted to call them and silently
+    # fell back to a static template, masking the bug.
     if [ -f ".myjarbis/config/settings.json" ]; then
-        FRAMEWORK=$(grep -o '"framework"[[:space:]]*:[[:space:]]*"[^"]*"' .myjarbis/config/settings.json | cut -d'"' -f4)
-        PROJECT_NAME=$(basename "$(pwd)")
-
-        # Re-run appropriate analyzer
-        if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing Laravel project..."
-            node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
-                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-
-        elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing Express project..."
-            node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
-                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-
-        else
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing project structure..."
-            if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
-                node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                    echo -e "${GREEN}✓${NC} project-summary.md updated" || \
-                    echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-            else
-                echo -e "${YELLOW}!${NC} Analyzer not found, skipping project-summary update"
-            fi
-        fi
+        echo -e "${BLUE}[1/2]${NC} project-summary.md update skipped"
+        echo -e "       ${NC}Re-analysis now happens inside Claude via the${NC}"
+        echo -e "       ${NC}'framework-detect' skill. Open Claude in this${NC}"
+        echo -e "       ${NC}project and ask the agent to refresh the summary.${NC}"
     else
         echo -e "${YELLOW}!${NC} Settings not found, skipping project-summary update"
     fi

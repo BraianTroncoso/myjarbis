@@ -95,10 +95,12 @@ else
     cp "$INSTALL_DIR/core/prompts/system-generic.md" .myjarbis/prompts/system.md
 fi
 
-# Run appropriate analyzer to generate project-summary.md
-if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
-    echo -e "${GOLD}Running Laravel analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << 'EOF'
+# Project structure analysis is delegated to Claude via the
+# 'framework-detect' skill (Phase 3 of the v0.2 upgrade). The legacy
+# JS analyzers under global/core/analyzers/ never existed — calls
+# silently fell back to a template, masking the bug. We now write
+# the template directly and let the agent enrich it on first session.
+cat > .myjarbis/context/project-summary.md << EOF
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -109,53 +111,9 @@ Project initialized on $(date +%Y-%m-%d).
 
 ## Project Structure
 
-TODO: Update with actual structure
-EOF
-elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
-    echo -e "${GOLD}Running Express analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
-EOF
-else
-    # Use generic analyzer
-    echo -e "${GOLD}Running generic analyzer...${NC}"
-    if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
-        node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
-EOF
-    else
-        cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
+TODO: Will be enriched by the framework-detect skill on first
+Claude session. Run 'claude' from this directory and the agent
+will analyze the codebase and update this file.
 
 ## Architecture
 
@@ -170,8 +128,6 @@ TODO: List main components/modules
 - Initialized with MyJarbis on $(date +%Y-%m-%d)
 - Framework detected: $FRAMEWORK
 EOF
-    fi
-fi
 
 # knowledge-base.md (context)
 cat > .myjarbis/context/knowledge-base.md << 'EOF'
