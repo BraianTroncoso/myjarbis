@@ -299,6 +299,106 @@ function runSkill(argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: stats
+// ─────────────────────────────────────────────────────────────────────
+
+function runStats(_argv: string[]): void {
+  const ctx = ServerContext.initialize();
+  try {
+    const project = ctx.requireProject();
+    const sql = (q: string) => ctx.db.db.prepare(q);
+
+    const moduleCounts = sql(
+      `SELECT status, COUNT(*) AS n FROM modules WHERE project_id = ? GROUP BY status`,
+    ).all(project.id) as Array<{ status: string; n: number }>;
+    const moduleTotal = moduleCounts.reduce((a, c) => a + c.n, 0);
+
+    const pcKinds = sql(
+      `SELECT kind, COUNT(*) AS n FROM project_context WHERE project_id = ? GROUP BY kind ORDER BY n DESC`,
+    ).all(project.id) as Array<{ kind: string; n: number }>;
+
+    const mcKinds = sql(
+      `SELECT kind, COUNT(*) AS n FROM module_context mc
+        JOIN modules m ON m.id = mc.module_id WHERE m.project_id = ?
+        GROUP BY kind ORDER BY n DESC`,
+    ).all(project.id) as Array<{ kind: string; n: number }>;
+
+    const mcByModule = sql(
+      `SELECT m.name, COUNT(mc.id) AS n FROM modules m
+         LEFT JOIN module_context mc ON mc.module_id = m.id
+        WHERE m.project_id = ? GROUP BY m.id ORDER BY m.name`,
+    ).all(project.id) as Array<{ name: string; n: number }>;
+
+    const skillsTotal = sql(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN module_id IS NULL THEN 1 ELSE 0 END) AS project_level,
+         SUM(CASE WHEN module_id IS NOT NULL THEN 1 ELSE 0 END) AS module_level,
+         SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled
+       FROM skills WHERE project_id = ?`,
+    ).get(project.id) as { total: number; project_level: number; module_level: number; enabled: number };
+
+    const sessionsAgg = sql(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS open,
+         MAX(ended_at) AS last_ended_at
+       FROM sessions s
+       JOIN modules m ON m.id = s.module_id
+       WHERE m.project_id = ?`,
+    ).get(project.id) as { total: number; open: number; last_ended_at: string | null };
+
+    const obsKinds = sql(
+      `SELECT o.kind, COUNT(*) AS n FROM observations o
+        JOIN sessions s ON s.id = o.session_id
+        JOIN modules m  ON m.id = s.module_id
+       WHERE m.project_id = ? GROUP BY o.kind ORDER BY n DESC`,
+    ).all(project.id) as Array<{ kind: string; n: number }>;
+    const obsTotal = obsKinds.reduce((a, c) => a + c.n, 0);
+
+    const result = {
+      project: {
+        id: project.id,
+        name: project.name,
+        path: project.path,
+        framework: project.framework,
+      },
+      modules: {
+        total: moduleTotal,
+        by_status: Object.fromEntries(moduleCounts.map((r) => [r.status, r.n])),
+      },
+      project_context: {
+        total: pcKinds.reduce((a, c) => a + c.n, 0),
+        by_kind: Object.fromEntries(pcKinds.map((r) => [r.kind, r.n])),
+      },
+      module_context: {
+        total: mcKinds.reduce((a, c) => a + c.n, 0),
+        by_kind: Object.fromEntries(mcKinds.map((r) => [r.kind, r.n])),
+        by_module: Object.fromEntries(mcByModule.map((r) => [r.name, r.n])),
+      },
+      skills: {
+        total: skillsTotal.total ?? 0,
+        project_level: skillsTotal.project_level ?? 0,
+        module_level: skillsTotal.module_level ?? 0,
+        enabled: skillsTotal.enabled ?? 0,
+      },
+      sessions: {
+        total: sessionsAgg.total ?? 0,
+        open: sessionsAgg.open ?? 0,
+        last_ended_at: sessionsAgg.last_ended_at,
+      },
+      observations: {
+        total: obsTotal,
+        by_kind: Object.fromEntries(obsKinds.map((r) => [r.kind, r.n])),
+      },
+    };
+    printJson(result);
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
@@ -315,6 +415,8 @@ export function main(argv: string[]): void {
         return runModule(rest);
       case 'skill':
         return runSkill(rest);
+      case 'stats':
+        return runStats(rest);
       default:
         fail(`Unknown subcommand: ${cmd}`);
     }
