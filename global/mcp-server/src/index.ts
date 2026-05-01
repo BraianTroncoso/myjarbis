@@ -60,6 +60,7 @@ import {
   updateMemoryAlias,
   updateMemoryInputSchema,
 } from './tools/legacy.js';
+import { importMd, importMdInputSchema } from './tools/import.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -156,6 +157,15 @@ function buildToolRegistry(): RegisteredTool[] {
         'the active session. Requires start_session first.',
       inputSchema: saveObservationInputSchema,
       handler: (ctx, args) => saveObservation(ctx, args),
+    },
+    {
+      name: 'import_md',
+      description:
+        'Reads a .md file and upserts it as a project_context or ' +
+        'module_context entry. Idempotent by SHA-256 hash + (target, ' +
+        'source_path, kind). target = "project" | "module:<name>".',
+      inputSchema: importMdInputSchema,
+      handler: (ctx, args) => importMd(ctx, args),
     },
 
     // Legacy v0.1 aliases (kept for backwards compatibility with old
