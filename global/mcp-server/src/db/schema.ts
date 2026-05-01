@@ -248,26 +248,11 @@ CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
   VALUES (new.id, new.title, new.content, new.tags, new.story_local_id);
 END;
 
--- ─────────────────────────────────────────────────────────────────
--- Touch updated_at on UPDATE for context/skills tables
--- ─────────────────────────────────────────────────────────────────
-CREATE TRIGGER IF NOT EXISTS project_context_touch AFTER UPDATE ON project_context
-WHEN old.updated_at = new.updated_at
-BEGIN
-  UPDATE project_context SET updated_at = datetime('now') WHERE id = new.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS module_context_touch AFTER UPDATE ON module_context
-WHEN old.updated_at = new.updated_at
-BEGIN
-  UPDATE module_context SET updated_at = datetime('now') WHERE id = new.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS skills_touch AFTER UPDATE ON skills
-WHEN old.updated_at = new.updated_at
-BEGIN
-  UPDATE skills SET updated_at = datetime('now') WHERE id = new.id;
-END;
+-- updated_at is touched explicitly by the application layer in the
+-- corresponding UPSERT statements (db/index.ts). We avoid AFTER UPDATE
+-- "touch" triggers here because they cascade with the FTS5 sync triggers
+-- and can corrupt the contentless FTS5 index (SQLITE_CORRUPT_VTAB) when
+-- the same row receives two UPDATEs in the same statement.
 `;
 
 // ───────────────────────────────────────────────────────────────────
