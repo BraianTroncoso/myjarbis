@@ -61,6 +61,14 @@ import {
   updateMemoryInputSchema,
 } from './tools/legacy.js';
 import { importMd, importMdInputSchema, importJson, importJsonInputSchema } from './tools/import.js';
+import {
+  listSkills,
+  listSkillsInputSchema,
+  addSkill,
+  addSkillInputSchema,
+  materializeSkills,
+  materializeSkillsInputSchema,
+} from './tools/skills.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -175,6 +183,32 @@ function buildToolRegistry(): RegisteredTool[] {
         'with optional overrides. Useful for Jira/Linear bulk exports.',
       inputSchema: importJsonInputSchema,
       handler: (ctx, args) => importJson(ctx, args),
+    },
+    {
+      name: 'list_skills',
+      description:
+        'Lists skills of the active project. scope="all"|"project"|"module"|"session" ' +
+        '(session = project-level + active module). Optional `only_enabled`.',
+      inputSchema: listSkillsInputSchema,
+      handler: (ctx, args) => listSkills(ctx, args),
+    },
+    {
+      name: 'add_skill',
+      description:
+        'Creates or updates a skill. Without `module` it\'s project-level ' +
+        '(always loaded for this project). With `module` it\'s module-level ' +
+        '(only loaded when that module is in session). Idempotent by hash.',
+      inputSchema: addSkillInputSchema,
+      handler: (ctx, args) => addSkill(ctx, args),
+    },
+    {
+      name: 'materialize_skills',
+      description:
+        'Renders the active skill set to <project>/.claude/skills/myjarbis-<name>/' +
+        'SKILL.md. Cleans stale myjarbis-* folders by default. Called from ' +
+        'the SessionStart hook and on /module switch.',
+      inputSchema: materializeSkillsInputSchema,
+      handler: (ctx, args) => materializeSkills(ctx, args),
     },
 
     // Legacy v0.1 aliases (kept for backwards compatibility with old
