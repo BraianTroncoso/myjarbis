@@ -21,7 +21,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Paths
-INSTALL_DIR="$HOME/.myjarbis-global"
+INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 
 # Show help
@@ -37,6 +37,10 @@ show_help() {
     echo "  list        List all projects registered with MyJarbis"
     echo "  context     Refresh project context (re-analyze project structure)"
     echo "  update      Update MyJarbis global installation"
+    echo "  import      Import a .md or .json file into the project DB"
+    echo "  module      Manage modules (add/list)"
+    echo "  skill       Manage skills (add/list/edit/delete/enable/disable)"
+    echo "  stats       Show counts per table for the active project"
     echo "  help        Show this help message"
     echo ""
     echo "Examples:"
@@ -168,12 +172,23 @@ case "${1:-help}" in
         exec "$INSTALL_DIR/bin/myjarbis-update"
         ;;
 
+    import|module|skill|stats)
+        # v0.2 subcommands delegated to the node CLI helper
+        CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
+        if [ ! -f "$CLI_JS" ]; then
+            echo -e "${RED}Error: cli.js not found at $CLI_JS${NC}"
+            echo "Re-run the installer or rebuild: cd $INSTALL_DIR/mcp-server && npm run build"
+            exit 1
+        fi
+        exec node "$CLI_JS" "$@"
+        ;;
+
     help|--help|-h)
         show_help
         ;;
 
     --version|-v)
-        echo "MyJarbis v0.1.0"
+        echo "MyJarbis v0.2.0"
         ;;
 
     *)
