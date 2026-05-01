@@ -21,6 +21,8 @@ import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
 import { startSession, endSession, resume } from './tools/session.js';
+import { seedNewProject } from './db/migrate.js';
+import { SCHEMA_VERSION } from './db/schema.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -400,6 +402,116 @@ function runStats(_argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: init-project
+//
+// Called by bin/myjarbis-init AFTER it has prepared .myjarbis/ skeleton.
+// This finalizes v0.2 setup: writes settings.json, opens/seeds memory.db,
+// inserts the 6 baseline skills, and materializes project-level skills
+// to .claude/skills/. Idempotent.
+// ─────────────────────────────────────────────────────────────────────
+
+function runInitProject(argv: string[]): void {
+  const { flags } = parseFlags(argv);
+  const name = flags.name as string | undefined;
+  const framework = flags.framework as string | undefined;
+  if (!name) fail('Usage: cli.js init-project --name=<project> [--framework=<fw>] [--shared=true|false]');
+
+  const projectPath = process.cwd();
+
+  // 1. seedNewProject (creates memory.db + project + _general module +
+  //    6 baseline skills, idempotent)
+  const seed = seedNewProject(projectPath, { name, framework });
+
+  // 2. Write settings.json v0.2 schema (preserve existing fields if any)
+  const myjarbisDir = path.join(projectPath, '.myjarbis');
+  const configDir = path.join(myjarbisDir, 'config');
+  fs.mkdirSync(configDir, { recursive: true });
+  const settingsPath = path.join(configDir, 'settings.json');
+  const existing = fs.existsSync(settingsPath)
+    ? (() => {
+        try {
+          return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        } catch {
+          return {};
+        }
+      })()
+    : {};
+  const sharedFlag = flags.shared === undefined ? false : String(flags.shared).toLowerCase() === 'true';
+  const settings = {
+    ...existing,
+    version: '0.2.0',
+    project: { name, framework: framework ?? null },
+    shared: existing.shared ?? sharedFlag,
+    search_default_scope: existing.search_default_scope ?? 'module',
+    story_pattern: existing.story_pattern ?? '[A-Z]+-S?\\d+(\\.\\d+)?',
+    auto_module_select_when_single: existing.auto_module_select_when_single ?? true,
+    skills: {
+      materialize_on_session_start:
+        existing.skills?.materialize_on_session_start ?? true,
+      cleanup_module_skills_on_session_end:
+        existing.skills?.cleanup_module_skills_on_session_end ?? false,
+    },
+  };
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+
+  // 3. Materialize project-level skills (no active session yet)
+  const ctx = ServerContext.initialize();
+  let materialized;
+  try {
+    materialized = materializeSkills(ctx, {});
+  } finally {
+    ctx.close();
+  }
+
+  // 4. Append .myjarbis/memory.db + .claude/skills/myjarbis-* to .gitignore
+  //    when shared === false. (When true, the user wants them committed.)
+  if (settings.shared === false) {
+    appendToGitignore(projectPath, [
+      '.myjarbis/memory.db',
+      '.myjarbis/memory.db-journal',
+      '.myjarbis/memory.db-wal',
+      '.myjarbis/memory.db-shm',
+      '.claude/skills/myjarbis-*/',
+    ]);
+  }
+
+  printJson({
+    project: { id: seed.projectId, name, framework: framework ?? null, path: projectPath },
+    schema_version: SCHEMA_VERSION,
+    seeded: { module_id: seed.moduleId, baseline_skills: seed.skills },
+    settings_path: settingsPath,
+    materialized_skills: {
+      written: materialized.written.length,
+      unchanged: materialized.unchanged.length,
+      removed: materialized.removed.length,
+    },
+    shared: settings.shared,
+  });
+}
+
+function appendToGitignore(projectPath: string, patterns: string[]): void {
+  const gi = path.join(projectPath, '.gitignore');
+  let existing = '';
+  try {
+    existing = fs.readFileSync(gi, 'utf-8');
+  } catch {
+    /* may not exist */
+  }
+  const lines = existing.split('\n');
+  const toAdd: string[] = [];
+  for (const p of patterns) {
+    if (!lines.some((l) => l.trim() === p)) toAdd.push(p);
+  }
+  if (toAdd.length === 0) return;
+  const block =
+    (existing && !existing.endsWith('\n') ? '\n' : '') +
+    (existing.includes('# MyJarbis (v0.2)') ? '' : '\n# MyJarbis (v0.2)\n') +
+    toAdd.join('\n') +
+    '\n';
+  fs.writeFileSync(gi, existing + block, 'utf-8');
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Subcommand: hook
 //
 // Bash hook scripts in .claude-plugin/scripts/ delegate to this helper.
@@ -742,6 +854,8 @@ export function main(argv: string[]): void {
         return runStats(rest);
       case 'hook':
         return runHook(rest);
+      case 'init-project':
+        return runInitProject(rest);
       default:
         fail(`Unknown subcommand: ${cmd}`);
     }
