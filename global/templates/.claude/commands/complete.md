@@ -1,213 +1,95 @@
-# Complete Mode - Finish and Document Phase
+# /complete — Close the phase and the session (v0.2)
 
-You are in **COMPLETION MODE**.
+The current phase is done (or the unit of work the user wants to
+close). Persist progress and close the session so the next opening
+of Claude can resume coherently.
 
-## Your Job
+## Step 1 — Verify
 
-Mark the current phase as complete, update project memory, and propose next steps.
+Before recording anything, confirm:
+- All planned work is in.
+- Tests / lints / type-check are green.
+- Manual smoke if applicable (the user signed off).
 
-## Steps
+If anything is broken, **do not** call `/complete` — fix first.
 
-### 1. Verify Implementation
+## Step 2 — Save a progress observation
 
-Check that everything works:
+Call `save_observation` with `kind: "progress"`:
 
-- [ ] All code from the phase is implemented
-- [ ] Tests pass (if tests exist)
-- [ ] Manual testing done
-- [ ] No errors or warnings
-- [ ] Edge cases handled
-
-If something is NOT working:
-- DO NOT mark complete
-- Fix issues first
-- Then run /complete again
-
-### 2. Update Project Memory
-
-**IMPORTANT:** Use the `update_memory` tool to record what was built:
-
-```javascript
-update_memory({
-    projectName: "[project-name]",
-    title: "[Phase Name - Brief Description]",
-    what: "[What was implemented - 1-2 sentences]",
-    why: "[Why this implementation approach - rationale]",
-    how: "[How it was implemented - technical details, can be multi-line]",
-    files: [
-        "[file1.ext]",
-        "[file2.ext]",
-        "[file3.ext]"
-    ],
-    notes: "[Optional: lessons learned, gotchas, future considerations]"
+```
+save_observation({
+  kind: "progress",
+  title: "<phase or story closed — imperative, ≤80 chars>",
+  content: "What was implemented (1–3 bullets). Then what was
+            verified (tests run, smoke done). Then any gotcha
+            worth surfacing.",
+  story_local_id: "<MM-S1.2 if a story-driven module>",
+  files: "<comma-separated paths touched, if relevant>",
+  tags: "phase-N, <module>, ..."
 })
 ```
 
-**Example:**
+If multiple stories closed in this session, save one progress entry
+per story; do not collapse them.
 
-```javascript
-update_memory({
-    projectName: "ecommerce-api",
-    title: "User Authentication - JWT Implementation",
-    what: "Implemented JWT-based authentication system with login, register, and token refresh",
-    why: "JWT provides stateless authentication perfect for API use, allowing horizontal scaling without session storage",
-    how: "Created AuthController with login/register methods, JwtMiddleware for token validation, added refresh token table for security, implemented token rotation on refresh",
-    files: [
-        "app/Http/Controllers/AuthController.php",
-        "app/Http/Middleware/JwtAuth.php",
-        "database/migrations/2024_10_19_create_refresh_tokens_table.php",
-        "routes/api.php"
-    ],
-    notes: "Tokens expire after 1 hour. Refresh tokens valid for 7 days. Consider adding rate limiting to auth endpoints in production."
+## Step 3 — End the session
+
+Call `end_session` with two fields. **Both must exist**:
+
+```
+end_session({
+  summary: "<retrospective: 1-3 bullets, what was done. NOT what's
+            next. NOT a celebration.>",
+  next_session: "<action-oriented "Retomar aquí" — see below>"
 })
 ```
 
-### 3. Refresh Project Summary
+### How to write `next_session` (CRITICAL)
 
-**CRITICAL:** If you created new models, controllers, routes, or modified the project structure, refresh the project summary so it stays in sync:
+This is the most important artifact MyJarbis produces. It is what
+the SessionStart hook injects when Claude opens next time.
 
-```bash
-myjarbis context
+Include, in this order:
+1. **What's done & approved** (so the next session doesn't redo).
+2. **What's open / pending review** (file paths, branch names,
+   PR URLs).
+3. **The single next concrete action.** Make it executable
+   ("run X", "open PR Y", "start MM-S1.4").
+4. **Blockers** if any (waiting on review, on data, ...).
+
+Do not write retrospectives here — that's `summary`. Keep
+`next_session` action-oriented and ≤ 10 lines.
+
+## Step 4 — Inform the user
+
+Output:
+
+```
+✓ /complete
+
+Module: <name>
+Phase/Story: <id or name>
+
+Progress saved:
+  • <one-liner of what was persisted>
+
+Session #<id> closed.
+
+Next session will resume with:
+> <next_session text>
 ```
 
-This re-analyzes the project and updates `project-summary.md` with the latest code structure.
+## When NOT to use /complete
 
-**When to refresh:**
-- Created new models/controllers/routes
-- Added relationships to models
-- Modified project structure significantly
-- After major features
+- The phase is half-done.
+- Tests are red.
+- The user is just pausing, not finishing — they should just close
+  Claude; the open session will be detected on next start.
 
-**When to skip:**
-- Only changed implementation details
-- Minor bug fixes
-- Code refactoring without structural changes
+## After /complete
 
-Execute the command now if needed:
-
-```bash
-myjarbis context
-```
-
-### 4. Summarize What Was Done
-
-Provide a clear summary:
-
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE COMPLETE: [Phase Name]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-WHAT WAS IMPLEMENTED:
-- [Item 1]
-- [Item 2]
-- [Item 3]
-
-FILES CREATED/MODIFIED:
-- [file1.ext]
-- [file2.ext]
-
-VALIDATION RESULTS:
-✓ Tests passing
-✓ Manual testing complete
-✓ No errors
-
-MEMORY UPDATED:
-✓ Knowledge base updated with implementation details
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### 5. Preview Next Phase (if applicable)
-
-If there are more phases in the plan:
-
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NEXT PHASE PREVIEW
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Phase [N]: [Name]
-
-This phase will:
-- [What will be implemented]
-- [What will be implemented]
-
-Building on what we just completed:
-- [How it connects]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-READY TO CONTINUE?
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Would you like to:
-1. Continue with next phase? (type: /implement Phase [N])
-2. Review what was built?
-3. Take a break and continue later?
-```
-
-If this was the LAST phase:
-
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FEATURE COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-All phases of [Feature Name] are complete!
-
-SUMMARY:
-- [High level summary of entire feature]
-- [What was accomplished]
-- [What is now possible]
-
-NEXT STEPS (optional):
-- [ ] Deploy to staging
-- [ ] Update API documentation
-- [ ] Notify team
-- [ ] Create tests for edge cases
-
-KNOWLEDGE BASE:
-✓ All phases documented in knowledge-base.md
-```
-
-## Important Notes
-
-### When to Use /complete
-
-Use this command when:
-- Current phase is fully implemented
-- Code is tested and working
-- You're ready to document what was built
-
-### When NOT to Use /complete
-
-Don't use if:
-- Code has errors
-- Tests are failing
-- Implementation is incomplete
-- You're stuck/blocked
-
-If blocked, explain the issue instead of marking complete.
-
-## Remember
-
-- **VERIFY everything works** before marking complete
-- **ALWAYS update memory** using update_memory tool
-- **SUMMARIZE clearly** what was accomplished
-- **PREVIEW next steps** to maintain momentum
-
-## Memory Update Template
-
-```javascript
-update_memory({
-    projectName: "",  // From project-summary.md
-    title: "",        // Brief, descriptive
-    what: "",         // What was built (brief)
-    why: "",          // Rationale for approach
-    how: "",          // Technical implementation details
-    files: [],        // Array of files created/modified
-    notes: ""         // Optional: gotchas, future considerations
-})
-```
-
-The memory update is CRUCIAL - it's how MyJarbis remembers what was built across sessions.
+The session is closed. To start a new piece of work:
+- Same module → `/jarbis` (or just send the next message — but
+  /jarbis is more explicit).
+- Different module → `/module <new-name>`.
