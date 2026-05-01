@@ -1,591 +1,293 @@
-# MyJarbis - AI Development Assistant System
+# MyJarbis — per-project orchestrator for Claude Code
 
-> **Persistent memory and structured workflows for Claude Code**
+> **Persistent memory + workflow + skills, scoped per project and per module.**
 
-MyJarbis is a development assistant system that enhances Claude Code with:
-- **Persistent Memory** via Model Context Protocol (MCP)
-- **Structured Workflows** to prevent chaotic development
-- **Educational Mode** that explains what, why, and how
-- **Multi-Project Support** - install once, use everywhere
+MyJarbis turns Claude Code into a project-aware orchestrator: it
+remembers what you decided, where you left off, and which workflow
+applies — without dumping everything into context every session.
 
----
+## Why this exists
 
-## What Problem Does This Solve?
+Claude Code by itself has no project memory. You repeat conventions,
+re-explain architecture, lose "what was I doing yesterday." Existing
+memory tools fix the persistence problem but treat memory as a flat
+bag.
 
-When working with AI assistants like Claude Code, you often face:
-- **No memory between sessions** - Claude forgets what you built yesterday
-- **Chaotic implementations** - jumping into code without planning
-- **Context overload** - explaining the same project structure repeatedly
-- **No learning trail** - hard to understand what was built and why
+In real projects, work is **vertical**. You don't work on "the codebase";
+you work on the Media Manager, then on Page Builder, then on Translations.
+Each vertical has its own workflow, plan, stories, and skills.
 
-**MyJarbis solves this** by giving Claude a "memory system" and enforcing a structured workflow.
+MyJarbis models that explicitly:
 
----
+```
+project
+  ├── project_context (practices, deps, conventions, specs — load once)
+  ├── modules (verticals — created explicitly)
+  │     ├── module_context (workflow, plan, stories, AC of the vertical)
+  │     ├── sessions (lifecycle: start → save observations → end)
+  │     │     └── observations (decisions, gotchas, progress)
+  │     └── skills (module-level — only loaded when this module is active)
+  └── skills (project-level — always loaded)
+```
+
+When you open Claude in a MyJarbis project, the SessionStart hook
+asks which module you're working on. Only that module's context +
+project-level core gets loaded into the session — token-efficient
+by design.
+
+## Install
+
+```bash
+git clone https://github.com/braiantroncoso/myjarbis.git
+cd myjarbis
+./install.sh
+```
+
+This installs to `~/.myjarbis-global/`, builds the MCP server (Node
++ better-sqlite3 + FTS5), registers `myjarbis` in your PATH, and
+configures Claude Code's MCP layer.
+
+Verify: `myjarbis doctor` should print 20+ green checks.
+
+## First project
+
+```bash
+cd ~/projects/my-app
+myjarbis init                # creates .myjarbis/memory.db, seeds 6 baseline skills
+myjarbis module add MM       # create your first vertical
+```
+
+Now bootstrap context from existing notes (the .md files you already
+keep in `agents/` or wherever):
+
+```bash
+# Project-level docs
+myjarbis import agents/WORKFLOW.md   --target=project --kind=workflow
+myjarbis import agents/PLAN.md       --target=project --kind=plan
+myjarbis import agents/ERRORS.md     --target=project --kind=error_log
+
+# Module-level docs (MM)
+myjarbis import agents/MM/WORKFLOW.md --target=module:MM --kind=workflow
+myjarbis import agents/MM/PLAN.md     --target=module:MM --kind=plan
+
+# Bulk JSON (e.g. Jira export)
+myjarbis import agents/MM/Jira_Bulk.json \
+  --target=module:MM --kind=story --mapping='stories[]'
+```
+
+Re-imports are **idempotent** (SHA-256 hash on content): unchanged
+files are no-ops, edited files update the row in place.
+
+## Daily flow
+
+```bash
+cd ~/projects/my-app
+claude
+```
+
+The SessionStart hook fires:
+
+```
+═══ MyJarbis · my-app (laravel) ═══
+Modules:
+  • MM, last session 2h ago
+  • PageBuilder (paused)
+
+Pick a module to begin (e.g., "let's work on MM").
+
+── Last "Retomar aquí" (MM, 2h ago) ──
+PR #1234 mergeado a MediaManager. Próxima sesión: arrancar MM-S1.4
+con la migración asset_translations. Branch suggerida:
+feature/mm-e1-s1.4-asset-translations.
+```
+
+You say "let's work on MM" → the agent calls `start_session("MM")`.
+It now has project core + MM context + the `next_session` from last
+time. Skills are materialized to `.claude/skills/myjarbis-*/` —
+**only the ones for project + MM**. Other modules' skills are not on
+disk.
+
+You work, discover a gotcha, save it. Take an arch decision, save
+it. When the phase is done:
+
+```
+/complete
+```
+
+→ `save_observation(kind=progress, ...)` + `end_session(summary, next_session)`.
+The next opening of Claude resumes from there.
+
+## Skills, scoped
+
+Skills are markdown files Claude Code loads at session start. In
+MyJarbis they live in the DB and are materialized to
+`<project>/.claude/skills/myjarbis-<name>/SKILL.md` based on which
+module is active.
+
+Two scopes:
+
+- **Project-level** (`module_id IS NULL`): always loaded for this project.
+- **Module-level** (`module_id` set): only loaded when that module
+  is the active session.
+
+Switching modules re-renders `.claude/skills/`: previous module's
+skills are removed, new module's appear.
+
+```bash
+# Add a project-wide skill
+myjarbis skill add commit-style --content-from=docs/commits.md
+
+# Add a skill that only matters when working in MM
+myjarbis skill add mm-pixel-perfect --module=MM --content-from=docs/mm-pixel.md
+
+# List, edit, enable/disable
+myjarbis skill list
+myjarbis skill edit mm-pixel-perfect --module=MM
+myjarbis skill disable commit-style
+```
+
+## Slash commands
+
+Each MyJarbis project ships these in `.claude/commands/`:
+
+| Command         | What it does                                                             |
+|-----------------|--------------------------------------------------------------------------|
+| `/jarbis`       | Detect project, list modules, ask user, `start_session`                  |
+| `/plan`         | Story-driven detect+audit OR free-form phase planning                    |
+| `/implement`    | Execute current phase, auto-save decision per logical commit             |
+| `/complete`     | `save_observation(progress)` + `end_session(summary, next_session)`      |
+| `/module <n>`   | Switch module (closes current session, opens new, re-renders skills)     |
+| `/module new <n>` | Create a new module                                                    |
+| `/resume`       | Show last `next_session` of active module (read-only)                    |
+| `/skill add`    | Add a skill inline                                                       |
+| `/skill edit`   | Edit a skill inline                                                      |
+| `/import`       | Import a .md or .json into the DB                                        |
+
+## What the hooks do automatically
+
+`.claude-plugin/hooks/hooks.json` registers 4 events:
+
+- **SessionStart (startup|clear)** → menu + auto-start if 1 module
+- **SessionStart (compact)** → recovery imperative after compaction
+- **UserPromptSubmit** → first-message ToolSearch + story-id detect
+  (regex `[A-Z]+-S?\d+(\.\d+)?` configurable) + 15-min save reminder
+- **Stop** → reminds to `/complete` if a session is open
+
+You don't invoke them; Claude Code does. They inject text that the
+agent reads as system context.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CLAUDE CODE                          │
-│         (You interact via /plan, /implement, etc.)      │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     │ MCP Protocol (Model Context Protocol)
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│           ~/.myjarbis-global/mcp-server/                │
-│              (ONE server for ALL projects)              │
-│                                                          │
-│  Resources:                                             │
-│  • myjarbis://project-name/memory/instructions          │
-│  • myjarbis://project-name/memory/project               │
-│  • myjarbis://project-name/memory/knowledge             │
-│                                                          │
-│  Tools:                                                 │
-│  • search_code - Intelligent code search                │
-│  • get_context - Curated context about topics           │
-│  • update_memory - Update knowledge base                │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     │ Reads/Writes
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│  Project A/.myjarbis/        Project B/.myjarbis/       │
-│  ├── context/                ├── context/               │
-│  │   ├── project-summary.md  │   ├── project-summary.md │
-│  │   ├── knowledge-base.md   │   ├── knowledge-base.md  │
-│  │   └── daily.md            │   └── daily.md           │
-│  ├── prompts/                ├── prompts/               │
-│  │   └── system.md           │   └── system.md          │
-│  └── config/                 └── config/                │
-│      └── settings.json           └── settings.json      │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  CLAUDE CODE (harness)                                          │
+│  • hooks  • slash commands  • skills loaded from disk           │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  MCP SERVER (Node/TS)                                           │
+│  Discovery:  current_project, list_modules, create_module       │
+│  Session:    start_session, end_session, resume                 │
+│  Read/Write: load_project_core, load_module, search,            │
+│              save_observation                                   │
+│  Skills:     list_skills, add_skill, materialize_skills         │
+│  Bootstrap:  import_md, import_json                             │
+│  Legacy:     search_code, get_context, update_memory            │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  SQLite (.myjarbis/memory.db) — better-sqlite3 + FTS5           │
+│  projects → project_context · modules · skills                  │
+│  modules → module_context · sessions → observations             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
----
+Each project has its own `memory.db`. The user decides per-project
+whether it's `shared: true` (commit it, the whole team loads the
+same context + skills) or `shared: false` (gitignored, personal).
 
-## Installation
+## Search, scoped
 
-### Prerequisites
-- **Node.js 18+** ([Download here](https://nodejs.org/))
-- **Claude Code** ([Get it here](https://claude.ai/claude-code))
-- **macOS or Linux** (Windows WSL2 supported)
+`search` is FTS5 over project_context, module_context, skills, and
+observations. Scopes:
 
-### Global Installation
+- `module` (default): active module + project_core only — token-saving
+- `project`: all modules of this project + project_core
+- `module_only`: only the active/named module
+- `observations`: only the session log
+- `skills`: only skill content
+
+Token saving is the point: with 5 modules and FTS5 over each, the
+default `module` scope returns hits only from the one you're in,
+not from the other 4.
+
+## Migrating from v0.1
+
+If you were on v0.1 (markdown-only `.myjarbis/context/*.md`),
+opening Claude on the project automatically migrates:
+
+- `knowledge-base.md` → observations under a `_general` module
+- `daily.md` → module_context (workflow)
+- `project-summary.md` → project_context (functional_spec)
+- `prompts/system.md` → project_context (convention)
+- 6 baseline skills seeded
+
+Backup is dumped to `~/.myjarbis-global/backups/<project>/<ts>/`.
+Legacy aliases (`search_code`, `get_context`, `update_memory`) keep
+working.
+
+## CLI reference
 
 ```bash
-# Clone the repository
-git clone https://github.com/braiantroncoso/myjarbis.git
-cd myjarbis
+myjarbis init               # initialize current project
+myjarbis doctor             # health check (25+ probes)
+myjarbis stats              # counts per table
+myjarbis list               # registered projects
+myjarbis update             # pull + rebuild MCP server
 
-# Run installation script
-./install.sh
+myjarbis module add <name> [--description=...]
+myjarbis module list
+
+myjarbis skill add <name> --content-from=<file> [--module=...] [--description=...] [--trigger=...]
+myjarbis skill list [--scope=all|project|module|session] [--module=<m>] [--only-enabled]
+myjarbis skill edit <name> [--module=...]
+myjarbis skill delete <name> [--module=...]
+myjarbis skill enable|disable <name> [--module=...]
+myjarbis skill materialize [--module=...] [--no-cleanup]
+
+myjarbis import <file.md>   --target=<project|module:NAME> --kind=<kind> [--tags=...]
+myjarbis import <file.json> --target=...                   --kind=<kind> --mapping='items[]'
+                                                            [--id-field=...] [--title-field=...]
 ```
 
-This will:
-1. Copy MyJarbis to `~/.myjarbis-global/`
-2. Install and build MCP server
-3. Configure Claude Code to use MyJarbis
-4. Add `myjarbis` CLI to your PATH
+## Settings
 
-### Verify Installation
+`.myjarbis/config/settings.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "project": { "name": "my-app", "framework": "laravel" },
+  "shared": false,
+  "search_default_scope": "module",
+  "story_pattern": "[A-Z]+-S?\\d+(\\.\\d+)?",
+  "auto_module_select_when_single": true,
+  "skills": {
+    "materialize_on_session_start": true,
+    "cleanup_module_skills_on_session_end": false
+  }
+}
+```
+
+## Tests
 
 ```bash
-# Check CLI is available
-myjarbis --version
-
-# Run health check
-myjarbis doctor
-
-# Check MCP server is configured
-claude mcp list
-# Should show: myjarbis - ✓ Connected
+tests/bootstrap-prolicht.sh   # 12 .md + 1 JSON bulk import idempotency
+tests/skills-lifecycle.sh     # baseline + module-level + cleanup on switch
 ```
-
-The `myjarbis doctor` command verifies:
-- MyJarbis installation
-- Claude Code integration
-- MCP server configuration
-- Current project status (if in a project)
-- Common issues
-
----
-
-## Usage
-
-### 1. Initialize a Project
-
-```bash
-# Navigate to your project
-cd ~/projects/my-laravel-app
-
-# Initialize MyJarbis
-myjarbis init
-```
-
-This creates:
-- `.myjarbis/` folder with context, prompts, and config
-- `.claude/commands/` with /plan, /implement, /complete commands
-- Auto-detects framework (Laravel, Express, Next.js, etc.)
-- Generates project summary and structure
-
-### 2. Start Claude Code
-
-```bash
-claude
-```
-
-### 3. Initialize Jarbis (IMPORTANT!)
-
-```bash
-/jarbis
-```
-
-This loads MyJarbis context and configures Claude to use MCP tools automatically.
-
-**You should run `/jarbis` every time you start a new Claude session.**
-
-### 4. Use Structured Workflow
-
-#### Step 1: Plan First
-```
-/plan
-
-I want to add user authentication with JWT tokens
-```
-
-Claude will:
-- Ask clarifying questions
-- Break work into phases
-- Propose architecture
-- **NOT implement anything yet**
-
-#### Step 2: Implement Phase by Phase
-```
-/implement
-
-Let's start with Phase 1: User model and migration
-```
-
-Claude will:
-- Focus ONLY on current phase
-- Explain every decision (educational mode)
-- Generate tests
-- Update documentation
-- Ask before making assumptions
-
-#### Step 3: Complete and Move Forward
-```
-/complete
-```
-
-Claude will:
-- Verify implementation works
-- Update knowledge-base.md
-- Show what was done
-- Preview next phase
-- Ask if you want to continue
-
----
-
-## Educational Mode
-
-MyJarbis enforces **educational mode** - Claude ALWAYS explains:
-
-1. **¿Qué hace?** - What does this do?
-2. **¿Por qué así?** - Why this approach?
-3. **¿Para qué sirve?** - What's the benefit?
-4. **¿Cómo se relaciona?** - How does it connect to other parts?
-
-Example:
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXPLANATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-We're creating a User model with a "roles" relationship.
-
-WHY: This allows flexible permission systems where users
-can have multiple roles (admin, editor, viewer, etc.)
-
-HOW IT WORKS: We'll use a many-to-many relationship via
-a pivot table (role_user), which is Laravel's standard
-approach for this pattern.
-
-BENEFIT: You can easily check permissions like:
-if ($user->hasRole('admin')) { ... }
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPLEMENTATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Code here...]
-```
-
----
-
-## Memory System
-
-MyJarbis maintains project memory across sessions:
-
-### Context Files
-
-| File | Purpose | Updated |
-|------|---------|---------|
-| `project-summary.md` | High-level project overview | Once at init |
-| `knowledge-base.md` | What we've built (append-only log) | After each phase |
-| `daily.md` | Today's focus and recent changes | Daily |
-| `system.md` | Claude's instructions and rules | Rarely |
-
-### How Memory Works
-
-1. **Every session**, Claude reads:
-   - Project summary (what this project is)
-   - Knowledge base (what we've built)
-   - Daily context (what we're working on now)
-
-2. **After each phase**, Claude updates:
-   - Knowledge base with new implementations
-   - Daily context with progress
-
-3. **You always have**:
-   - A searchable log of decisions
-   - Context for new team members
-   - Understanding of why things were built a certain way
-
----
-
-## CLI Commands
-
-```bash
-# Initialize current project
-myjarbis init
-
-# Run diagnostics (verify installation and setup)
-myjarbis doctor
-
-# List all registered projects
-myjarbis list
-
-# Generate fresh codebase context
-myjarbis context
-
-# Update MyJarbis global installation
-myjarbis update
-
-# Show help
-myjarbis help
-```
-
----
-
-## Project Structure
-
-After `myjarbis init`, your project will have:
-
-```
-your-project/
-├── .myjarbis/
-│   ├── bin/
-│   │   ├── generate-context.sh    # Generate codebase.txt
-│   │   └── daily.sh                # Update daily.md
-│   ├── context/
-│   │   ├── project-summary.md      # Project overview
-│   │   ├── knowledge-base.md       # Implementation log
-│   │   ├── daily.md                # Today's context
-│   │   └── codebase.txt            # Auto-generated code dump
-│   ├── prompts/
-│   │   └── system.md               # Claude's instructions
-│   └── config/
-│       └── settings.json           # Project settings
-│
-└── .claude/
-    └── commands/
-        ├── plan.md                 # /plan command
-        ├── implement.md            # /implement command
-        └── complete.md             # /complete command
-```
-
----
-
-## How MCP Resources Work
-
-When Claude Code connects to MyJarbis, it can access:
-
-```
-myjarbis://my-laravel-app/context/full
-→ Combines all context files into one resource (optimized for performance)
-→ Contains: System instructions + Project summary + Knowledge base + Daily context
-→ Used by /jarbis command for fast initialization
-
-myjarbis://my-laravel-app/memory/instructions
-→ Reads: .myjarbis/prompts/system.md
-→ Contains: Rules, workflow, educational mode settings
-
-myjarbis://my-laravel-app/memory/project
-→ Reads: .myjarbis/context/project-summary.md
-→ Contains: Project overview, tech stack, architecture
-
-myjarbis://my-laravel-app/memory/knowledge
-→ Reads: .myjarbis/context/knowledge-base.md
-→ Contains: Everything we've built, chronological log
-
-myjarbis://my-laravel-app/context/daily
-→ Reads: .myjarbis/context/daily.md
-→ Contains: Today's focus, recent changes
-```
-
-The `/jarbis` command uses the `context/full` resource for optimal performance (one MCP call instead of four).
-
----
-
-## Workflow Example
-
-### Scenario: Add Email Verification
-
-```bash
-# 1. Start Claude Code
-cd ~/projects/my-laravel-app
-claude
-```
-
-```
-# 2. Plan the feature
-/plan
-
-I want to add email verification for new users
-```
-
-Claude responds:
-```markdown
-PLANNING: Email Verification Feature
-
-Let me ask some questions first:
-
-1. Should existing users be affected?
-2. Can unverified users log in but with limited access?
-3. Do you want a custom verification email template?
-4. Should verification links expire? If yes, after how long?
-
-Based on your answers, I propose these phases:
-- Phase 1: Database migration (add email_verified_at)
-- Phase 2: Verification email and routes
-- Phase 3: Middleware for protected routes
-- Phase 4: Tests and edge cases
-
-Please answer the questions above, then we can proceed.
-```
-
-```
-# 3. Answer questions and implement
-Answers: 1) No, 2) Yes but can't post, 3) Yes, 4) Yes, 24 hours
-
-/implement Phase 1
-```
-
-Claude implements Phase 1 with explanations:
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXPLANATION: Database Migration
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-We're adding an `email_verified_at` timestamp column.
-
-WHY: Laravel's built-in verification system uses this exact
-column name. By following conventions, we get free helpers
-like $user->hasVerifiedEmail()
-
-[... detailed implementation with comments ...]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VALIDATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Run: php artisan migrate
-Expected: New column appears in users table
-```
-
-```
-# 4. Mark complete and continue
-/complete
-
-Great! Let's continue with Phase 2.
-
-/implement Phase 2
-```
-
-**Result:** Your knowledge-base.md now contains a permanent record of this implementation.
-
----
-
-## Frequently Asked Questions (FAQ)
-
-### Installation & Setup
-
-**Q: Do I need to run `myjarbis init` in every project?**
-A: Yes, once per project. This detects the framework and generates initial context files specific to that project.
-
-**Q: Do I need to configure MCP for each project?**
-A: No! The MCP server is configured globally during installation. Once you run `./install.sh`, it works for all projects.
-
-**Q: I don't see any MCP logs when starting Claude. Is it working?**
-A: Logs are hidden by default. To verify MCP is working:
-- Run `claude mcp list` - you should see `myjarbis - ✓ Connected`
-- In Claude Code, ask: "What tools from MyJarbis do you have?"
-- When Claude uses a tool, you'll see `(MCP)` in the output
-
-**Q: The installation says "Claude Code CLI not found". What should I do?**
-A: Install Claude Code first from [https://claude.ai/claude-code](https://claude.ai/claude-code), then re-run `./install.sh`.
-
-### Using MyJarbis
-
-**Q: How do I know if Claude is using MyJarbis tools?**
-A: When Claude uses MyJarbis tools, you'll see them marked with `(MCP)`:
-```
-myjarbis - search_code (MCP)(projectName: "my-app", query: "User")
-```
-
-**Q: What's the difference between MyJarbis tools and Claude Code's native tools?**
-A:
-- **Native tools** (Read, Edit, Bash): Direct file/system operations
-- **MyJarbis tools**: Project-aware search, curated context, and persistent memory
-- MyJarbis tools are optimized to save tokens and provide better context
-
-**Q: Can I use MyJarbis without the /plan, /implement, /complete workflow?**
-A: Yes! The workflow commands are optional. You can use MyJarbis tools directly at any time:
-```
-Use search_code to find authentication logic in Backend
-Use get_context to understand how payments work
-```
-
-**Q: Do I have to use the structured workflow (/plan → /implement → /complete)?**
-A: It's recommended but not required. The workflow prevents chaotic development and maintains memory, but you can work freely if you prefer.
-
-### Memory & Context
-
-**Q: Where is project memory stored?**
-A: In your project's `.myjarbis/context/` folder:
-- `knowledge-base.md` - What you've built (append-only log)
-- `project-summary.md` - Project overview and structure
-- `daily.md` - Today's focus and recent changes
-
-**Q: How do I update the project context after making changes?**
-A: Run `myjarbis context` to refresh the project summary. This re-analyzes your codebase structure.
-
-**Q: Does MyJarbis send my code anywhere?**
-A: No. Everything runs locally. MyJarbis only reads/writes files in your project's `.myjarbis/` folder and communicates with Claude Code via MCP (local protocol).
-
-**Q: Can team members see the same context?**
-A: Yes! Commit `.myjarbis/` files (except `codebase.txt` which is in `.gitignore`). Team members will share the same knowledge base and project summary.
-
-### Troubleshooting
-
-**Q: Claude doesn't recognize MyJarbis tools. What's wrong?**
-A:
-1. Run diagnostics first: `myjarbis doctor`
-2. Check specific issues reported by doctor
-3. Verify MCP is configured: `claude mcp list`
-4. If not listed, run: `claude mcp add myjarbis node ~/.myjarbis-global/mcp-server/build/index.js`
-5. Restart Claude Code
-6. Check the project is registered: `myjarbis list`
-
-**Q: `myjarbis init` fails with "framework not detected"**
-A: MyJarbis will use generic templates. You can manually edit `.myjarbis/prompts/system.md` to add framework-specific instructions.
-
-**Q: The project summary is outdated after I added new models/controllers**
-A: Run `myjarbis context` to regenerate `project-summary.md` with latest code structure.
-
-**Q: Can I use MyJarbis in Windows?**
-A: Yes, via WSL2 (Windows Subsystem for Linux). MyJarbis requires a Unix-like environment.
-
-**Q: Error: "Project not found in registry"**
-A: The project wasn't initialized. Run `myjarbis init` in the project directory.
-
-### Advanced
-
-**Q: Can I customize the system prompts?**
-A: Yes! Edit `.myjarbis/prompts/system.md` in your project. This controls Claude's behavior and guidelines.
-
-**Q: Can I add custom commands beyond /plan, /implement, /complete?**
-A: Yes! Add custom `.md` files to `.claude/commands/` in your project.
-
-**Q: How do I use MyJarbis with monorepos?**
-A: Run `myjarbis init` in each subproject that needs its own context. Each will be registered independently.
-
-**Q: Can I use multiple MCP servers alongside MyJarbis?**
-A: Yes! Claude Code supports multiple MCP servers. Use `claude mcp add` to configure additional servers.
-
-**Q: How do I uninstall MyJarbis?**
-A:
-```bash
-# Remove MCP configuration
-claude mcp remove myjarbis
-
-# Remove global installation
-rm -rf ~/.myjarbis-global
-
-# Remove CLI from PATH (edit your shell RC file)
-# Remove the line: export PATH="$HOME/.myjarbis-global/bin:$PATH"
-```
-
----
-
-## Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Commit with clear messages
-4. Push and create a Pull Request
-
----
 
 ## License
 
-MIT License - feel free to use MyJarbis in your projects!
+MIT.
 
----
-
-## Issues & Support
-
-- **Bug reports**: [GitHub Issues](https://github.com/braiantroncoso/myjarbis/issues)
-- **Questions**: [GitHub Discussions](https://github.com/braiantroncoso/myjarbis/discussions)
-
----
-
-## Credits
-
-Built with:
-- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) by Anthropic
-- [Claude Code](https://claude.ai/claude-code) by Anthropic
-- Inspired by the need for better AI-assisted development workflows
-
----
-
-## Roadmap
-
-### Completed ✅
-- [x] MCP server foundation with resource protocol
-- [x] MCP tools (search_code, get_context, update_memory)
-- [x] Installation scripts (install.sh)
-- [x] Project initialization system (myjarbis init)
-- [x] Claude commands (/jarbis, /plan, /implement, /complete)
-- [x] Framework analyzers (Laravel, Express, Generic)
-- [x] Diagnostic tool (myjarbis doctor)
-- [x] Performance optimization (context/full resource)
-- [x] Multi-project support
-
-### In Progress 🚧
-- [ ] Enhanced search with better result grouping
-- [ ] Code structure overview tool (list_structure)
-- [ ] Improved documentation and examples
-
-### Future 🔮
-- [ ] Code indexing for faster searches
-- [ ] Team collaboration sync features
-- [ ] VS Code extension
-- [ ] Support for more frameworks (React, Vue, Django, etc.)
-
----
-
-**Made with care for better AI-assisted development**
-
-*"Give your AI assistant a memory, get a development partner."*
+— Built by Braian Axel Troncoso 🇦🇷.
