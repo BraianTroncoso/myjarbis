@@ -1,163 +1,107 @@
-# Plan Mode - Planning Without Implementation
+# /plan — Plan Mode (v0.2)
 
-You are in **PLANNING MODE**.
+You are in **planning mode**. Goal: turn a user request into a clear,
+phased plan WITHOUT writing code yet.
 
-## Your Job
+The behavior depends on whether the active module is **story-driven**
+or **free-form**.
 
-**Plan features thoroughly. DO NOT implement anything yet.**
+## Step 0 — Detect the mode
 
-## Steps
+Before anything, look at the active module's `module_context` rows
+(loaded by `/jarbis` at session start). If you see entries with
+`kind=story` (typically imported from a Jira-bulk JSON), the module
+is **story-driven**. Otherwise it's **free-form**.
 
-### 1. Listen Carefully
+You can confirm with: `search` with `scope=module_only` and a known
+local-id pattern (e.g., the project's `story_pattern` regex).
 
-- Read what the user wants to implement
-- Don't jump to solutions immediately
-- Understand the full scope
+## Mode A — Story-driven module
 
-### 2. Ask Clarifying Questions
+Follow the `story-driven` skill: **detect → audit → execute → close**.
+For `/plan`, only do **detect** and **audit**. Implementation is `/implement`.
 
-Before proposing a plan, ask about:
+### Detect
 
-#### Scope & Requirements
-- What is the exact feature/problem?
-- What is the expected behavior?
-- Are there any specific constraints or requirements?
-- What should happen in edge cases?
+If the user mentioned a local-id (matched by the `story_pattern`):
+1. Call `search({ query: "<local-id>", scope: "module_only" })`.
+2. Confirm to the user: "Detected MM-S1.2 — '<summary>'. Avanzo con la
+   auditoría?".
+3. If multiple stories match: list them and ask which one.
 
-#### Data & Models
-- What data needs to be stored?
-- What are the relationships?
-- Are there existing models/tables to extend?
-- What fields are required vs optional?
+If the user did NOT mention a local-id:
+1. Call `search({ query: "<topic>", scope: "module" })` to surface
+   candidate stories.
+2. Propose the closest matches; let the user pick one.
 
-#### User Experience
-- Who will use this feature?
-- What's the expected flow?
-- What should users see/receive?
-- Are there permission/authorization requirements?
+### Audit
 
-#### Technical Concerns
-- Are there performance considerations?
-- Do we need caching?
-- What about error handling?
-- Are there third-party integrations?
+Once you know the target story, build a **gaps table**:
 
-### 3. Check Existing Code
+| Requirement (from AC) | Status (present/missing/partial) | Evidence |
+|-----------------------|----------------------------------|----------|
 
-Use MyJarbis tools to understand what exists:
+For each acceptance criterion in the story:
+- Use `search` with `scope=project` for code paths/identifiers.
+- Use the codebase tools (Bash/Read) for hard verification (run a
+  test, read a file).
+- Mark Status accordingly.
 
-```javascript
-// Search for related code
-search_code({ query: "related_feature", fileTypes: ["php", "js"] })
+If **all present**: tell the user the story is already Done — propose
+to `/complete` it without touching code.
 
-// Get context about existing implementations
-get_context({ topic: "similar feature or component" })
-```
+If gaps exist: propose a phase breakdown and the branch name
+convention based on the project's `WORKFLOW.md` if present
+(e.g., `feature/mm-e1-s1.2-<slug>`). Wait for user approval.
 
-### 4. Propose a Phase Breakdown
+## Mode B — Free-form module
 
-Break the work into clear, logical phases:
+For modules without `kind=story` rows (e.g., greenfield work).
 
-**Good phase breakdown example:**
+1. **Listen.** Re-read the user's request. Don't jump to solutions.
 
-```
-Phase 1: Database Layer
-- Create users table migration
-- Create User model with relationships
-- Set up factories and seeders
+2. **Ask.** Clarify before proposing a plan:
+   - Scope: what is in / out?
+   - Data: any models, tables, schemas to extend?
+   - UX: who uses this, what do they see?
+   - Tech: performance, errors, integrations?
 
-Phase 2: Business Logic
-- Create UserService for business logic
-- Implement registration logic
-- Implement authentication logic
+3. **Use existing context.** Before grepping code, check:
+   - `load_project_core` → conventions, deps, practices.
+   - `load_module` → what already exists in this module.
 
-Phase 3: API Layer
-- Create AuthController
-- Create Form Requests for validation
-- Define API routes
+4. **Propose phases.** Break work into 3–6 phases with clear
+   deliverables. Output:
 
-Phase 4: Testing
-- Create feature tests for registration
-- Create feature tests for login
-- Test edge cases
-```
+   ```
+   PLAN: <feature>
 
-**Why phases?**
-- Easier to review
-- Easier to test
-- Easier to debug
-- User can approve before continuing
+   Phase 1: <name>
+     - task
+     - task
+     WHY: <one-liner>
 
-### 5. Get Confirmation
+   Phase 2: <name>
+     ...
 
-- Present the plan clearly
-- Explain WHY each phase is needed
-- Wait for user approval
-- DO NOT start implementing
+   Once approved: `/implement Phase 1`
+   ```
 
-## Output Format
+5. **Wait for approval.** Do not start any implementation under
+   `/plan`.
 
-```markdown
-PLANNING: [Feature Name]
+## Output style
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QUESTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- ALWAYS surface what you read from the loaded context (don't pretend
+  you discovered it; cite the source row title).
+- Phase names are imperative ("Add X", "Refactor Y").
+- Respect any `practice` or `convention` rows in `project_context`
+  (e.g., commit message format, branch naming).
 
-Before I create a plan, I need to clarify:
+## What `/plan` does NOT do
 
-1. [Question about scope]
-2. [Question about data]
-3. [Question about behavior]
-4. [Question about edge cases]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROPOSED PLAN (after questions are answered)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Phase 1: [Name]
-- Task 1
-- Task 2
-- Task 3
-
-WHY: [Explanation of why this phase comes first]
-
-Phase 2: [Name]
-- Task 1
-- Task 2
-
-WHY: [Explanation]
-
-[... more phases ...]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NEXT STEPS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Once you approve this plan, we can start with:
-/implement Phase 1
-
-Or revise the plan based on your feedback.
-```
-
-## Important Rules
-
-- **NEVER start coding** in plan mode
-- **ALWAYS ask questions** if anything is unclear
-- **ALWAYS break work into phases** (not one huge implementation)
-- **ALWAYS explain WHY** each phase is structured that way
-- **WAIT for user confirmation** before any implementation
-
-## Remember
-
-Planning prevents:
-- Over-engineering
-- Implementing wrong requirements
-- Wasting time on wrong approaches
-- Chaotic code
-
-Good planning leads to:
-- Clear implementation path
-- Easier reviews
-- Better code quality
-- Fewer bugs
+- Write code.
+- Modify files.
+- Call `save_observation` (no progress yet — only `/complete` does that).
+- Switch modules. If the user mentions another vertical, ask if they
+  want to `/module <name>` first.
