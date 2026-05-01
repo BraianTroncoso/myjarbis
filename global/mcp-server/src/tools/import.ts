@@ -189,3 +189,267 @@ export function importMd(ctx: ServerContext, rawArgs: unknown): ImportResult {
     rowId: r.row.id,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// import_json
+// ─────────────────────────────────────────────────────────────────────
+
+export const importJsonInputSchema = {
+  type: 'object' as const,
+  properties: {
+    path: {
+      type: 'string' as const,
+      description: 'Path to the .json file. Absolute or relative to the project root.',
+    },
+    target: {
+      type: 'string' as const,
+      description: '"project" or "module:<name>".',
+    },
+    kind: {
+      type: 'string' as const,
+      description:
+        'Kind to assign to each generated context entry (e.g., "story" for ' +
+        'a Jira bulk export).',
+    },
+    mapping: {
+      type: 'string' as const,
+      description:
+        'Path-like selector pointing to the array to iterate. Examples: ' +
+        '"stories[]" (root.stories[]), "data.items[]" (root.data.items[]). ' +
+        'Without "[]" the value is treated as a single object and inserted as one row.',
+    },
+    id_field: {
+      type: 'string' as const,
+      description:
+        'Field name used as stable identifier for re-import idempotency. ' +
+        'If omitted, auto-detects: localId → id → key → name. Falls back to ' +
+        'the item index (re-import is brittle if the array order changes).',
+    },
+    title_field: {
+      type: 'string' as const,
+      description:
+        'Field name to use as the title. If omitted, auto-detects: ' +
+        'localId → id → name → title → summary → first key found.',
+    },
+    tags: {
+      type: 'string' as const,
+      description: 'Optional comma-separated tags applied to every imported entry.',
+    },
+  },
+  required: ['path', 'target', 'kind', 'mapping'],
+};
+
+const importJsonArgsZ = z
+  .object({
+    path: z.string().min(1),
+    target: z.string().regex(TARGET_REGEX),
+    kind: z.string().min(1).max(40),
+    mapping: z.string().min(1),
+    id_field: z.string().min(1).optional(),
+    title_field: z.string().min(1).optional(),
+    tags: z.string().optional(),
+  })
+  .strict();
+
+export interface ImportJsonResult {
+  target: string;
+  kind: ContextKind;
+  source_path: string;
+  total: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  missing_id_count: number;
+  sample: Array<{ id: string; title: string; status: 'inserted' | 'updated' | 'unchanged' }>;
+}
+
+export function importJson(ctx: ServerContext, rawArgs: unknown): ImportJsonResult {
+  const args = importJsonArgsZ.parse(rawArgs);
+  const project = ctx.requireProject();
+
+  const abs = resolveImportPath(ctx, args.path);
+  if (!fs.existsSync(abs)) {
+    throw new MyJarbisError(ErrorType.INVALID_INPUT, `File not found: ${abs}`);
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(fs.readFileSync(abs, 'utf-8'));
+  } catch (err) {
+    throw new MyJarbisError(
+      ErrorType.INVALID_INPUT,
+      `Invalid JSON in ${abs}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const items = resolveMapping(data, args.mapping);
+  const sourcePathBase = relativeFromProject(ctx, abs);
+  const target = parseTarget(args.target);
+  const kind = args.kind as ContextKind;
+
+  let mod: ReturnType<typeof ctx.requireModule> | undefined;
+  if (target.kind === 'module') {
+    mod = ctx.requireModule(target.moduleName!);
+  }
+
+  const stats = {
+    total: items.length,
+    inserted: 0,
+    updated: 0,
+    unchanged: 0,
+    missing_id_count: 0,
+  };
+  const sample: ImportJsonResult['sample'] = [];
+
+  ctx.db.tx(() => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (typeof item !== 'object' || item === null) continue;
+
+      const obj = item as Record<string, unknown>;
+      const id = pickId(obj, args.id_field);
+      const title = pickTitle(obj, args.title_field, id ?? `item-${i}`);
+      const content = renderItem(obj);
+      const finalId = id ?? `index-${i}`;
+      if (!id) stats.missing_id_count++;
+
+      const sourcePath = `${sourcePathBase}#${finalId}`;
+
+      const r =
+        target.kind === 'project'
+          ? ctx.db.projectContext.upsert({
+              projectId: project.id,
+              kind,
+              title,
+              content,
+              tags: args.tags,
+              sourcePath,
+            })
+          : ctx.db.moduleContext.upsert({
+              moduleId: mod!.id,
+              kind,
+              title,
+              content,
+              tags: args.tags,
+              sourcePath,
+            });
+
+      if (r.status === 'inserted') stats.inserted++;
+      else if (r.status === 'updated') stats.updated++;
+      else stats.unchanged++;
+
+      if (sample.length < 5) {
+        sample.push({ id: finalId, title, status: r.status });
+      }
+    }
+  });
+
+  return {
+    target: target.kind === 'project' ? 'project' : `module:${mod!.name}`,
+    kind,
+    source_path: sourcePathBase,
+    ...stats,
+    sample,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// import_json helpers
+// ─────────────────────────────────────────────────────────────────────
+
+/** Resolve a "stories[]" or "data.items[]" mapping into the array. */
+function resolveMapping(data: unknown, mapping: string): unknown[] {
+  const isArrayLike = mapping.endsWith('[]');
+  const segPath = isArrayLike ? mapping.slice(0, -2) : mapping;
+  const segments = segPath
+    .split('.')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  let cur: unknown = data;
+  for (const seg of segments) {
+    if (cur === null || typeof cur !== 'object') {
+      throw new MyJarbisError(
+        ErrorType.INVALID_INPUT,
+        `Mapping "${mapping}" cannot resolve segment "${seg}" (parent is not an object).`,
+      );
+    }
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+
+  if (isArrayLike) {
+    if (!Array.isArray(cur)) {
+      throw new MyJarbisError(
+        ErrorType.INVALID_INPUT,
+        `Mapping "${mapping}" expected an array but got ${typeof cur}.`,
+      );
+    }
+    return cur;
+  }
+  return [cur];
+}
+
+const ID_CANDIDATES = ['localId', 'local_id', 'id', 'key', 'name'];
+
+function pickId(obj: Record<string, unknown>, explicit?: string): string | null {
+  const probe = (k: string): string | null => {
+    const v = obj[k];
+    return typeof v === 'string' || typeof v === 'number' ? String(v) : null;
+  };
+  if (explicit) return probe(explicit);
+  for (const k of ID_CANDIDATES) {
+    const v = probe(k);
+    if (v) return v;
+  }
+  return null;
+}
+
+const TITLE_CANDIDATES = ['title', 'name', 'summary', 'localId', 'local_id', 'id', 'key'];
+
+function pickTitle(obj: Record<string, unknown>, explicit: string | undefined, fallback: string): string {
+  const probe = (k: string): string | null => {
+    const v = obj[k];
+    return typeof v === 'string' && v.trim() ? v.trim().slice(0, 200) : null;
+  };
+  if (explicit) {
+    const v = probe(explicit);
+    if (v) return v;
+  }
+  for (const k of TITLE_CANDIDATES) {
+    const v = probe(k);
+    if (v) return v;
+  }
+  return fallback;
+}
+
+/**
+ * Render a JSON item as a readable markdown document. Top-level scalar/array
+ * fields become "**key:** value" lines; objects become indented JSON for
+ * inspectability without being too verbose.
+ */
+function renderItem(obj: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string') {
+      // Long strings get a fenced block; short ones inline.
+      if (v.length > 200 || v.includes('\n')) {
+        lines.push(`**${k}:**\n${v.trim()}`);
+      } else {
+        lines.push(`**${k}:** ${v}`);
+      }
+    } else if (typeof v === 'number' || typeof v === 'boolean') {
+      lines.push(`**${k}:** ${v}`);
+    } else if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      if (v.every((e) => typeof e === 'string' || typeof e === 'number')) {
+        lines.push(`**${k}:** ${v.join(', ')}`);
+      } else {
+        lines.push(`**${k}:**\n\`\`\`json\n${JSON.stringify(v, null, 2)}\n\`\`\``);
+      }
+    } else if (typeof v === 'object') {
+      lines.push(`**${k}:**\n\`\`\`json\n${JSON.stringify(v, null, 2)}\n\`\`\``);
+    }
+  }
+  return lines.join('\n\n');
+}

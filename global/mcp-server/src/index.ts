@@ -60,7 +60,7 @@ import {
   updateMemoryAlias,
   updateMemoryInputSchema,
 } from './tools/legacy.js';
-import { importMd, importMdInputSchema } from './tools/import.js';
+import { importMd, importMdInputSchema, importJson, importJsonInputSchema } from './tools/import.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -166,6 +166,15 @@ function buildToolRegistry(): RegisteredTool[] {
         'source_path, kind). target = "project" | "module:<name>".',
       inputSchema: importMdInputSchema,
       handler: (ctx, args) => importMd(ctx, args),
+    },
+    {
+      name: 'import_json',
+      description:
+        'Reads a .json file and upserts each array item as a context entry. ' +
+        'mapping = "stories[]" or "data.items[]". Auto-detects id/title fields ' +
+        'with optional overrides. Useful for Jira/Linear bulk exports.',
+      inputSchema: importJsonInputSchema,
+      handler: (ctx, args) => importJson(ctx, args),
     },
 
     // Legacy v0.1 aliases (kept for backwards compatibility with old
