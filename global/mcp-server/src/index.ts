@@ -33,6 +33,14 @@ import {
   createModule,
   createModuleInputSchema,
 } from './tools/discovery.js';
+import {
+  startSession,
+  startSessionInputSchema,
+  endSession,
+  endSessionInputSchema,
+  resume,
+  resumeInputSchema,
+} from './tools/session.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -71,6 +79,31 @@ function buildToolRegistry(): RegisteredTool[] {
         'filesystem.',
       inputSchema: createModuleInputSchema,
       handler: (ctx, args) => createModule(ctx, args),
+    },
+    {
+      name: 'start_session',
+      description:
+        'Opens a session in the given module and loads project_context + ' +
+        'module_context + the previous session\'s next_session ("Retomar ' +
+        'aquí"). Returns session_id and the full bootstrap context.',
+      inputSchema: startSessionInputSchema,
+      handler: (ctx, args) => startSession(ctx, args),
+    },
+    {
+      name: 'end_session',
+      description:
+        'Closes the active session, persisting summary + next_session for ' +
+        'the next opening of Claude in this module.',
+      inputSchema: endSessionInputSchema,
+      handler: (ctx, args) => endSession(ctx, args),
+    },
+    {
+      name: 'resume',
+      description:
+        'Returns the last closed session\'s next_session ("Retomar aquí") ' +
+        'for the active module (or the named one). Read-only.',
+      inputSchema: resumeInputSchema,
+      handler: (ctx, args) => resume(ctx, args),
     },
   ];
 }
