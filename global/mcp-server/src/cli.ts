@@ -18,6 +18,7 @@ import * as path from 'path';
 import { ServerContext } from './context.js';
 import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
+import { listModules, createModule } from './tools/discovery.js';
 
 interface ParsedFlags {
   positional: string[];
@@ -110,6 +111,44 @@ function runImport(argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: module
+// ─────────────────────────────────────────────────────────────────────
+
+function runModule(argv: string[]): void {
+  const [sub, ...rest] = argv;
+  if (!sub) {
+    fail('Usage: myjarbis module <add|list> [args...]');
+  }
+  const ctx = ServerContext.initialize();
+  try {
+    if (sub === 'add') {
+      const { positional, flags } = parseFlags(rest);
+      const name = positional[0];
+      if (!name) fail('Usage: myjarbis module add <name> [--description=<desc>]');
+      const result = createModule(ctx, {
+        name,
+        description: flags.description as string | undefined,
+      });
+      printJson(result);
+      return;
+    }
+    if (sub === 'list') {
+      const { flags } = parseFlags(rest);
+      const includeStatus =
+        typeof flags['include-status'] === 'string'
+          ? (flags['include-status'] as string).split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined;
+      const result = listModules(ctx, includeStatus ? { include_status: includeStatus } : {});
+      printJson(result);
+      return;
+    }
+    fail(`Unknown module subcommand: ${sub}. Use add | list.`);
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
@@ -122,6 +161,8 @@ export function main(argv: string[]): void {
     switch (cmd) {
       case 'import':
         return runImport(rest);
+      case 'module':
+        return runModule(rest);
       default:
         fail(`Unknown subcommand: ${cmd}`);
     }
