@@ -1,10 +1,10 @@
-# MyJarvis Architecture
+# MyJarbis Architecture
 
-This document explains the technical architecture of MyJarvis.
+This document explains the technical architecture of MyJarbis.
 
 ## Overview
 
-MyJarvis is a development assistant system that enhances Claude Code with persistent memory and structured workflows using the Model Context Protocol (MCP).
+MyJarbis is a development assistant system that enhances Claude Code with persistent memory and structured workflows using the Model Context Protocol (MCP).
 
 ## High-Level Architecture
 
@@ -18,14 +18,14 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
                      │ Resources & Tools
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│           ~/.myjarvis-global/mcp-server/                │
+│           ~/.myjarbis-global/mcp-server/                │
 │              (Node.js MCP Server)                       │
 │                                                          │
 │  Resources:                                             │
-│  • myjarvis://{project}/memory/instructions             │
-│  • myjarvis://{project}/memory/project                  │
-│  • myjarvis://{project}/memory/knowledge                │
-│  • myjarvis://{project}/context/daily                   │
+│  • myjarbis://{project}/memory/instructions             │
+│  • myjarbis://{project}/memory/project                  │
+│  • myjarbis://{project}/memory/knowledge                │
+│  • myjarbis://{project}/context/daily                   │
 │                                                          │
 │  Tools:                                                 │
 │  • search_code - Intelligent code search                │
@@ -36,7 +36,7 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
                      │ File System Access
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│         ~/.myjarvis-global/projects-registry.json       │
+│         ~/.myjarbis-global/projects-registry.json       │
 │              (Projects Index)                           │
 │                                                          │
 │  {                                                      │
@@ -51,7 +51,7 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
                      │ Project Paths
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│     Project A/.myjarvis/        Project B/.myjarvis/    │
+│     Project A/.myjarbis/        Project B/.myjarbis/    │
 │     ├── context/                ├── context/            │
 │     │   ├── project-summary.md  │   ├── project-summary │
 │     │   ├── knowledge-base.md   │   ├── knowledge-base  │
@@ -91,7 +91,7 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 
 **Technology:** Node.js (JavaScript)
 
-**Purpose:** Extract project structure automatically during `myjarvis init`
+**Purpose:** Extract project structure automatically during `myjarbis init`
 
 **Analyzers:**
 - `laravel-analyzer.js` - Analyzes Laravel projects
@@ -120,21 +120,21 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 **Technology:** Bash scripts
 
 **Commands:**
-- `myjarvis` - Main CLI entry point
-  - `myjarvis init` - Initialize project
-  - `myjarvis list` - List registered projects
-  - `myjarvis context` - Refresh project analysis
-  - `myjarvis update` - Update global installation
-  - `myjarvis help` - Show help
+- `myjarbis` - Main CLI entry point
+  - `myjarbis init` - Initialize project
+  - `myjarbis list` - List registered projects
+  - `myjarbis context` - Refresh project analysis
+  - `myjarbis update` - Update global installation
+  - `myjarbis help` - Show help
 
-- `myjarvis-init` - Project initialization script
+- `myjarbis-init` - Project initialization script
   - Detects framework
-  - Creates `.myjarvis/` structure
+  - Creates `.myjarbis/` structure
   - Runs appropriate analyzer
   - Copies framework-specific templates
   - Registers project in global registry
 
-- `myjarvis-update` - Global installation updater
+- `myjarbis-update` - Global installation updater
   - Pulls latest changes (if git repo)
   - Rebuilds MCP server
   - Updates dependencies
@@ -163,13 +163,13 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 - `implement.md` - Implementation mode template
 - `complete.md` - Completion mode template
 
-### 5. Project Structure (`.myjarvis/` in each project)
+### 5. Project Structure (`.myjarbis/` in each project)
 
-**Created by:** `myjarvis init`
+**Created by:** `myjarbis init`
 
 **Structure:**
 ```
-.myjarvis/
+.myjarbis/
 ├── bin/
 │   ├── generate-context.sh    # Generate codebase.txt
 │   └── daily.sh                # Update daily.md
@@ -195,9 +195,9 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 2. Claude Code reads ~/.config/claude/mcp.json:
    {
      "mcpServers": {
-       "myjarvis": {
+       "myjarbis": {
          "command": "node",
-         "args": ["~/.myjarvis-global/mcp-server/build/index.js"]
+         "args": ["~/.myjarbis-global/mcp-server/build/index.js"]
        }
      }
    }
@@ -205,25 +205,25 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 3. Claude Code starts MCP server via stdio
 
 4. MCP server loads projects registry:
-   ~/.myjarvis-global/projects-registry.json
+   ~/.myjarbis-global/projects-registry.json
 
 5. Claude Code requests available resources:
    → ListResourcesRequest
 
 6. MCP server responds with all resources:
    [
-     "myjarvis://my-app/memory/instructions",
-     "myjarvis://my-app/memory/project",
-     "myjarvis://my-app/memory/knowledge",
-     "myjarvis://my-app/context/daily"
+     "myjarbis://my-app/memory/instructions",
+     "myjarbis://my-app/memory/project",
+     "myjarbis://my-app/memory/knowledge",
+     "myjarbis://my-app/context/daily"
    ]
 
 7. Claude Code automatically reads these resources:
    → ReadResourceRequest for each
 
 8. MCP server reads files from project:
-   /home/user/projects/my-app/.myjarvis/prompts/system.md
-   /home/user/projects/my-app/.myjarvis/context/project-summary.md
+   /home/user/projects/my-app/.myjarbis/prompts/system.md
+   /home/user/projects/my-app/.myjarbis/context/project-summary.md
    etc.
 
 9. Claude receives context and is ready
@@ -306,8 +306,8 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 
 **File Access:**
 - MCP server only reads files in registered project directories
-- Cannot access files outside of `.myjarvis/` without explicit project registration
-- No write access except to `.myjarvis/context/knowledge-base.md`
+- Cannot access files outside of `.myjarbis/` without explicit project registration
+- No write access except to `.myjarbis/context/knowledge-base.md`
 
 **Command Execution:**
 - Tools use `ripgrep` with strict filters
@@ -316,8 +316,8 @@ MyJarvis is a development assistant system that enhances Claude Code with persis
 
 **Data Storage:**
 - All data stored locally (no cloud)
-- Projects registry in `~/.myjarvis-global/`
-- Project data in project's `.myjarvis/` folder
+- Projects registry in `~/.myjarbis-global/`
+- Project data in project's `.myjarbis/` folder
 
 ## Performance
 
