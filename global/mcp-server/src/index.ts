@@ -41,6 +41,17 @@ import {
   resume,
   resumeInputSchema,
 } from './tools/session.js';
+import {
+  loadProjectCore,
+  loadProjectCoreInputSchema,
+  loadModule,
+  loadModuleInputSchema,
+} from './tools/context.js';
+import { search, searchInputSchema } from './tools/search.js';
+import {
+  saveObservation,
+  saveObservationInputSchema,
+} from './tools/observations.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool registry
@@ -104,6 +115,39 @@ function buildToolRegistry(): RegisteredTool[] {
         'for the active module (or the named one). Read-only.',
       inputSchema: resumeInputSchema,
       handler: (ctx, args) => resume(ctx, args),
+    },
+    {
+      name: 'load_project_core',
+      description:
+        'Returns ALL project_context entries (full content, not excerpts). ' +
+        'Optional `kinds` filter (e.g., ["practice", "convention"]).',
+      inputSchema: loadProjectCoreInputSchema,
+      handler: (ctx, args) => loadProjectCore(ctx, args),
+    },
+    {
+      name: 'load_module',
+      description:
+        'Returns ALL module_context entries (full content) of a module. ' +
+        'If `module` is omitted, uses the active session\'s module.',
+      inputSchema: loadModuleInputSchema,
+      handler: (ctx, args) => loadModule(ctx, args),
+    },
+    {
+      name: 'search',
+      description:
+        'FTS5 search across project_context / module_context / skills / ' +
+        'observations. Default scope "module" = active module + project core. ' +
+        'Other scopes: "project", "module_only", "observations", "skills".',
+      inputSchema: searchInputSchema,
+      handler: (ctx, args) => search(ctx, args),
+    },
+    {
+      name: 'save_observation',
+      description:
+        'Persists a decision / gotcha / progress / error / discovery under ' +
+        'the active session. Requires start_session first.',
+      inputSchema: saveObservationInputSchema,
+      handler: (ctx, args) => saveObservation(ctx, args),
     },
   ];
 }
