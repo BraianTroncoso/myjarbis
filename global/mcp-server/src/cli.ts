@@ -628,21 +628,71 @@ function runHookUserPromptSubmit(_rest: string[]): void {
     if (!project) return;
 
     const settings = readSettingsJson(ctx.projectPath);
+    const messages: string[] = [];
+
+    // 1. First-message: tell the agent to load the MyJarbis tools via ToolSearch.
+    //    State file keyed by project path so re-opens of Claude Code in the
+    //    same project re-fire the ToolSearch hint until at least one save
+    //    observation lands (proxy for "agent has been productive this session").
+    const firstMsgFlag = path.join(
+      os.tmpdir(),
+      `myjarbis-${path.basename(project.path)}-${project.id}-firstmsg`,
+    );
+    if (!fs.existsSync(firstMsgFlag)) {
+      messages.push(
+        `═══ MyJarbis · first message ═══\n` +
+        `If you haven't already, load MyJarbis tools via ToolSearch:\n` +
+        `  ToolSearch query: "select:current_project,list_modules,start_session,end_session,resume,load_project_core,load_module,search,save_observation,import_md,import_json,list_skills,add_skill,materialize_skills"\n` +
+        `Then call \`current_project\` and \`list_modules\` to confirm where you are.`,
+      );
+      try {
+        fs.writeFileSync(firstMsgFlag, String(Date.now()));
+      } catch {
+        // Best-effort.
+      }
+    }
+
+    // 2. Story-id detection via configured regex.
     const storyPattern = settings.story_pattern as string | undefined;
     if (storyPattern) {
       try {
         const re = new RegExp(storyPattern);
         const m = prompt.match(re);
         if (m && m[0]) {
-          console.log(
+          messages.push(
             `═══ MyJarbis · story detected (${m[0]}) ═══\n` +
             `Suggested next step: \`search\` with scope=module looking for "${m[0]}" in module_context kind=story before acting.`,
           );
-          return;
         }
       } catch {
         // Bad regex in settings — silently ignore.
       }
+    }
+
+    // 3. 15-minute nudge if no save_observation in this project recently.
+    const NUDGE_MIN = 15;
+    const lastObsRow = ctx.db.db.prepare(
+      `SELECT MAX(o.created_at) AS last
+         FROM observations o
+         JOIN sessions s ON s.id = o.session_id
+         JOIN modules m  ON m.id = s.module_id
+        WHERE m.project_id = ?`,
+    ).get(project.id) as { last: string | null } | undefined;
+
+    const lastIso = lastObsRow?.last ?? null;
+    if (lastIso) {
+      const lastMs = new Date(lastIso.replace(' ', 'T') + 'Z').getTime();
+      if (!Number.isNaN(lastMs) && Date.now() - lastMs > NUDGE_MIN * 60 * 1000) {
+        messages.push(
+          `═══ MyJarbis · save reminder ═══\n` +
+          `It has been over ${NUDGE_MIN} minutes since the last save_observation in this project. ` +
+          `Did you make any decisions, fix bugs, or discover something worth persisting?`,
+        );
+      }
+    }
+
+    if (messages.length > 0) {
+      console.log(messages.join('\n\n'));
     }
   } finally {
     ctx.close();
