@@ -20,6 +20,7 @@ import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
+import { startSession, endSession, resume } from './tools/session.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -399,6 +400,278 @@ function runStats(_argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: hook
+//
+// Bash hook scripts in .claude-plugin/scripts/ delegate to this helper.
+// Each hook prints a single block of context for Claude Code to inject.
+// Plain text output → goes into the SessionStart systemMessage.
+// We avoid throwing on missing project/modules — hooks must degrade
+// gracefully (the user might be in a non-MyJarbis directory).
+// ─────────────────────────────────────────────────────────────────────
+
+function runHook(argv: string[]): void {
+  const [event, ...rest] = argv;
+  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit>');
+
+  switch (event) {
+    case 'session-start':
+      return runHookSessionStart();
+    case 'post-compaction':
+      return runHookPostCompaction();
+    case 'session-stop':
+      return runHookSessionStop();
+    case 'user-prompt-submit':
+      return runHookUserPromptSubmit(rest);
+    default:
+      fail(`Unknown hook event: ${event}`);
+  }
+}
+
+function safeContext(): { ctx: ServerContext } | null {
+  try {
+    const ctx = ServerContext.initialize();
+    return { ctx };
+  } catch (err) {
+    console.error('[MyJarbis hook] failed to initialize:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'never';
+  const t = new Date(iso.replace(' ', 'T') + 'Z').getTime();
+  if (Number.isNaN(t)) return iso;
+  const diffMs = Date.now() - t;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
+function runHookSessionStart(): void {
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+
+  try {
+    const project = ctx.project;
+    if (!project) {
+      console.log(
+        `═══ MyJarbis ═══\n` +
+        `No MyJarbis project at ${ctx.projectPath}.\n` +
+        `Run \`myjarbis init\` from this directory to enable persistent memory.`,
+      );
+      return;
+    }
+
+    const modules = ctx.db.modules.listByProject(project.id);
+    const active = modules.filter((m) => m.status === 'active' || m.status === 'paused');
+
+    let header = `═══ MyJarbis · ${project.name}${project.framework ? ` (${project.framework})` : ''} ═══`;
+
+    if (active.length === 0) {
+      console.log(
+        `${header}\n` +
+        `No modules registered yet.\n` +
+        `Create one with: myjarbis module add <name>\n` +
+        `(Modules are verticals: e.g., MM, PageBuilder, Translations.)`,
+      );
+      return;
+    }
+
+    // Read settings.json for auto-select-when-single
+    const settings = readSettingsJson(ctx.projectPath);
+    const autoSelect = settings.auto_module_select_when_single !== false;
+
+    if (active.length === 1 && autoSelect) {
+      const only = active[0];
+      const session = startSession(ctx, { module: only.name });
+      const mat = materializeSkills(ctx, { module: only.name });
+      const resumed = session.previousSession?.nextSession;
+      const blocks: string[] = [
+        header,
+        `Module: ${only.name} (auto-selected — only one module)`,
+        `Session #${session.sessionId} started.`,
+        `Skills materialized: ${mat.written.length + mat.unchanged.length} (${mat.written.length} written, ${mat.removed.length} stale removed).`,
+      ];
+      if (resumed) {
+        blocks.push('', '── Retomar aquí ──', resumed);
+      } else {
+        blocks.push('', 'No previous session — starting fresh.');
+      }
+      console.log(blocks.join('\n'));
+      return;
+    }
+
+    // Multiple modules: print menu + last next_session of most recently
+    // ended one across all modules.
+    const lines: string[] = [header, '', `Modules:`];
+    for (const m of active) {
+      const last = ctx.db.sessions.findLastClosedByModule(m.id);
+      const tag = m.status === 'paused' ? ' (paused)' : '';
+      const last_tag = last?.ended_at ? `, last session ${relativeTime(last.ended_at)}` : ', no sessions yet';
+      lines.push(`  • ${m.name}${tag}${last_tag}`);
+    }
+    lines.push('', `Pick a module to begin (e.g., "let's work on ${active[0].name}").`);
+    lines.push(`Or create a new one: \`myjarbis module add <name>\`.`);
+
+    // Surface the most recent next_session, if any (helps remember what
+    // was being worked on last).
+    let mostRecent: { mod: string; ended_at: string; next: string } | null = null;
+    for (const m of active) {
+      const last = ctx.db.sessions.findLastClosedByModule(m.id);
+      if (last?.ended_at && last.next_session) {
+        if (!mostRecent || last.ended_at > mostRecent.ended_at) {
+          mostRecent = { mod: m.name, ended_at: last.ended_at, next: last.next_session };
+        }
+      }
+    }
+    if (mostRecent) {
+      lines.push('', `── Last "Retomar aquí" (${mostRecent.mod}, ${relativeTime(mostRecent.ended_at)}) ──`);
+      lines.push(mostRecent.next);
+    }
+    console.log(lines.join('\n'));
+  } finally {
+    ctx.close();
+  }
+}
+
+function runHookPostCompaction(): void {
+  // After compaction, agent's context is summarized. We want it to re-load
+  // the active module's context + the previous next_session imperatively.
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+  try {
+    const project = ctx.project;
+    if (!project) return;
+
+    const lines: string[] = [
+      '═══ MyJarbis · post-compaction recovery ═══',
+      'Context was compacted. To continue coherently:',
+      '  1. Call `current_project` to confirm the project.',
+      '  2. Call `list_modules` and identify the active one.',
+      '  3. Call `start_session(module)` to reload context + previous next_session.',
+      '  4. Then continue with the user\'s next message.',
+    ];
+
+    // If we know which module was likely active (last session not ended),
+    // surface it as a hint.
+    const modules = ctx.db.modules.listByProject(project.id);
+    for (const m of modules) {
+      const open = ctx.db.sessions.findActiveByModule(m.id);
+      if (open) {
+        lines.push('', `Hint: an open session #${open.id} exists in module "${m.name}".`);
+        break;
+      }
+    }
+    console.log(lines.join('\n'));
+  } finally {
+    ctx.close();
+  }
+}
+
+function runHookSessionStop(): void {
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+  try {
+    const project = ctx.project;
+    if (!project) return;
+
+    // If there's an open session, remind the agent to close it.
+    const modules = ctx.db.modules.listByProject(project.id);
+    for (const m of modules) {
+      const open = ctx.db.sessions.findActiveByModule(m.id);
+      if (open) {
+        const obs = ctx.db.observations.listBySession(open.id).length;
+        console.log(
+          `═══ MyJarbis · session ending ═══\n` +
+          `Open session #${open.id} in module "${m.name}" (${obs} observations).\n` +
+          `Run \`/complete\` or call \`end_session(summary, next_session)\` before exiting\n` +
+          `so the next session can resume coherently.`,
+        );
+        return;
+      }
+    }
+
+    // Optional cleanup of module-level skills if configured
+    const settings = readSettingsJson(ctx.projectPath);
+    if (settings.skills?.cleanup_module_skills_on_session_end) {
+      const m = materializeSkills(ctx, {});
+      console.error(`[MyJarbis hook] post-stop cleanup removed ${m.removed.length} module skill(s).`);
+    }
+  } finally {
+    ctx.close();
+  }
+}
+
+function runHookUserPromptSubmit(_rest: string[]): void {
+  // Stdin contains the user prompt, per Claude Code hook protocol.
+  let prompt = '';
+  if (!process.stdin.isTTY) {
+    try {
+      prompt = fs.readFileSync(0, 'utf-8');
+    } catch {
+      prompt = '';
+    }
+  }
+
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+  try {
+    const project = ctx.project;
+    if (!project) return;
+
+    const settings = readSettingsJson(ctx.projectPath);
+    const storyPattern = settings.story_pattern as string | undefined;
+    if (storyPattern) {
+      try {
+        const re = new RegExp(storyPattern);
+        const m = prompt.match(re);
+        if (m && m[0]) {
+          console.log(
+            `═══ MyJarbis · story detected (${m[0]}) ═══\n` +
+            `Suggested next step: \`search\` with scope=module looking for "${m[0]}" in module_context kind=story before acting.`,
+          );
+          return;
+        }
+      } catch {
+        // Bad regex in settings — silently ignore.
+      }
+    }
+  } finally {
+    ctx.close();
+  }
+}
+
+interface ProjectSettings {
+  shared?: boolean;
+  search_default_scope?: string;
+  story_pattern?: string;
+  auto_module_select_when_single?: boolean;
+  skills?: {
+    materialize_on_session_start?: boolean;
+    cleanup_module_skills_on_session_end?: boolean;
+  };
+  [k: string]: unknown;
+}
+
+function readSettingsJson(projectPath: string): ProjectSettings {
+  const p = path.join(projectPath, '.myjarbis', 'config', 'settings.json');
+  if (!fs.existsSync(p)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
@@ -417,6 +690,8 @@ export function main(argv: string[]): void {
         return runSkill(rest);
       case 'stats':
         return runStats(rest);
+      case 'hook':
+        return runHook(rest);
       default:
         fail(`Unknown subcommand: ${cmd}`);
     }
