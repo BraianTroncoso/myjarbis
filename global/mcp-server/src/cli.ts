@@ -653,7 +653,9 @@ function runHookSessionStart(): void {
 
 function runHookPostCompaction(): void {
   // After compaction, agent's context is summarized. We want it to re-load
-  // the active module's context + the previous next_session imperatively.
+  // the active module's context + the previous next_session imperatively,
+  // AND surface any pre-compact snapshot the agent left behind via
+  // /myjarbis compact (kind=discovery, tags contains 'pre-compact').
   const init = safeContext();
   if (!init) return;
   const { ctx } = init;
@@ -661,14 +663,45 @@ function runHookPostCompaction(): void {
     const project = ctx.project;
     if (!project) return;
 
-    const lines: string[] = [
+    const blocks: string[] = [];
+
+    // 1. Pre-compact snapshot (if /myjarbis compact ran before compact).
+    //    Wrapped in try/catch so a malformed query never breaks the hook.
+    try {
+      const snap = ctx.db.db.prepare(
+        `SELECT o.created_at, o.title, o.content, o.tags
+           FROM observations o
+           JOIN sessions s ON s.id = o.session_id
+           JOIN modules  m ON m.id = s.module_id
+          WHERE m.project_id = ?
+            AND o.kind = 'discovery'
+            AND (o.tags LIKE '%pre-compact%')
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT 1`,
+      ).get(project.id) as
+        | { created_at: string; title: string; content: string; tags: string | null }
+        | undefined;
+
+      if (snap) {
+        blocks.push(
+          `═══ Pre-compact snapshot (${snap.created_at}${snap.tags?.includes('verbatim') ? ', --verbatim' : ''}) ═══`,
+          snap.content.trim(),
+          '',
+        );
+      }
+    } catch (err) {
+      console.error('[MyJarbis hook] snapshot lookup failed (non-fatal):', err instanceof Error ? err.message : err);
+    }
+
+    // 2. Recovery imperative (always shown).
+    blocks.push(
       '═══ MyJarbis · post-compaction recovery ═══',
       'Context was compacted. To continue coherently:',
       '  1. Call `current_project` to confirm the project.',
       '  2. Call `list_modules` and identify the active one.',
       '  3. Call `start_session(module)` to reload context + previous next_session.',
       '  4. Then continue with the user\'s next message.',
-    ];
+    );
 
     // If we know which module was likely active (last session not ended),
     // surface it as a hint.
@@ -676,11 +709,11 @@ function runHookPostCompaction(): void {
     for (const m of modules) {
       const open = ctx.db.sessions.findActiveByModule(m.id);
       if (open) {
-        lines.push('', `Hint: an open session #${open.id} exists in module "${m.name}".`);
+        blocks.push('', `Hint: an open session #${open.id} exists in module "${m.name}".`);
         break;
       }
     }
-    console.log(lines.join('\n'));
+    console.log(blocks.join('\n'));
   } finally {
     ctx.close();
   }
