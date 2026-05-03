@@ -108,6 +108,23 @@ When the user pivots to a different vertical mid-session:
 3. \`start_session\` on the target module so its skills are materialized.
 
 Never operate without an active session — every \`save_observation\` requires one.
+
+## Triggers conversacionales para switch de módulo
+
+Cuando el user dice cualquiera de estos, asumí que quiere cambiar de módulo:
+- "vamos a tocar X" / "cambiamos a X" / "pasamos a X" / "ahora X" / "trabajemos en X"
+- "ya terminé acá, vamos a Y"
+- Un nombre de módulo aislado distinto al activo, sin más contexto.
+
+Flujo:
+1. Confirmá: "Cambiamos del módulo <actual> a <X>?"
+2. Si sí y hay sesión abierta: pedile summary + next_session, llamá \`end_session\`.
+3. Llamá \`start_session(X)\`. Los hooks re-materializan skills.
+4. Surface el \`previousSession.nextSession\` del nuevo módulo si existe.
+
+Si el user menciona un módulo que no existe: ofrecé crearlo con
+\`create_module(name, description?)\` — preguntale el rol/scope corto
+para llenar la description.
 `,
   },
   {
@@ -134,6 +151,25 @@ user signals end of work. Format:
 Example next_session:
 
 > Story MM-S1.3 lista para auditoría. Próxima sesión: correr \`sail artisan test --filter=MediaManager\`, abrir PR a \`MediaManager\`, y empezar MM-S1.4 (migración \`asset_translations\`).
+
+## Triggers conversacionales para \`end_session\`
+
+Cuando el user dice cualquiera de estos, ofrecé cerrar la sesión:
+- "listo" / "ya está" / "cerralo" / "terminé" / "done"
+- "dale guardalo" / "guardá esto y cerramos"
+- "hasta acá llegamos" / "a otra cosa"
+
+**SIEMPRE confirmá antes de llamar \`end_session\`** porque "listo" puede
+ser ambiguo (puede significar "terminé esta línea" sin querer cerrar
+toda la sesión). Formato de confirmación:
+
+> Cerramos la sesión con:
+>   summary: <propuesto, 1-3 bullets>
+>   next_session: <propuesto, action-oriented>
+> ¿OK o ajustás algo?
+
+Si el user no te dio el contenido, proponé vos uno basado en lo que
+viste en la sesión y dejalo editar.
 `,
   },
   {
@@ -164,6 +200,22 @@ Format:
 - **content**: WHY first, then WHAT, then HOW.
 - **files**: comma-separated list of paths touched, if any.
 - **tags**: free-form, used for grouping in search.
+
+## Triggers conversacionales
+
+Saltá al \`save_observation\` correcto cuando oigas:
+
+| El user dice…                                    | kind        |
+|--------------------------------------------------|-------------|
+| "decidí X" / "decidimos Y" / "vamos con Z"       | decision    |
+| "encontré que / falla / quedó este bug raro / ojo con" | gotcha      |
+| "ya cerré la story / fase" / "MM-S1.4 listo"     | progress (+ sugerí end_session) |
+| "esto está roto y no lo arreglo ahora"           | error       |
+| "descubrí que el codebase tiene X interesante"   | discovery   |
+
+No esperes a que el user pida "guardalo". Vos lo hacés y le mostrás
+el observation_id + título guardado. Si dudás del kind, preguntale en
+una línea.
 `,
   },
   {
@@ -191,6 +243,21 @@ When the user mentions a localId (e.g. MM-S1.2):
    matching \`end_session(summary, next_session)\`.
 
 If audit returns "all present", mark the story Done without touching code.
+
+## Triggers conversacionales por fase
+
+| El user dice…                                              | Fase activada |
+|------------------------------------------------------------|---------------|
+| "vamos a planificar / pensemos / arranquemos" / un localId aislado | Análisis (detect + audit) |
+| "hacelo / dale / implementemos / arrancá / empezá"          | Implementación (auto-save decisions per commit) |
+| "ya está / listo / cerralo / terminé"                      | Registro (save_observation progress + end_session) |
+
+Si el user menciona un localId sin verbo (ej. solo "MM-S1.4"), asumí que
+quiere arrancar esa story → fase Análisis. Confirmá antes de auditar.
+
+NUNCA pases de Análisis a Implementación sin aprobación explícita
+("dale", "hacelo", "implementemos"). El \`/jarbis\` original lo enforça
+y vos también.
 `,
   },
   {
@@ -331,6 +398,161 @@ todo el detalle, vos guardás solo las conclusiones.
 - **Delegar trabajo de edición.** Los sub-agents son read-only para casi
   todos los tipos (Explore es read-only por diseño). Editar es cosa del
   main agent.
+`,
+  },
+  {
+    name: 'compact-protocol',
+    description: 'Save a structured snapshot to the DB before /compact so the agent resumes with full fidelity',
+    triggerPattern: 'user mentions compact / "antes de compactar" / about to run /compact',
+    content: `---
+name: compact-protocol
+description: Cómo persistir el estado antes de /compact para no perder fidelidad
+---
+
+# Compact protocol
+
+\`/compact\` (Claude Code nativo) resume la conversación. El resumen
+preserva el sentido pero pierde detalle (paths exactos, decisiones
+recientes, output de comandos). Esta skill define cómo evitar esa
+pérdida sin pedirle al user que copie y pegue 2k de texto a mano.
+
+## Triggers conversacionales
+
+Cuando el user diga cualquiera de estos, ejecutá el protocolo ANTES
+de invocar \`/compact\`:
+
+- "antes de compactar" / "voy a compactar" / "compactemos"
+- "/compact" tipeado en el chat (no como slash, como mensaje)
+- Si el contexto ya está pesado y vos sentís que un \`/compact\` viene
+  pronto, sugerile vos: "El contexto está grande — ¿guardo un snapshot
+  y compactamos?".
+
+## Protocolo (4 pasos en orden)
+
+### 1. Construir el snapshot estructurado (~1.5–2K)
+
+Bloque de texto con esta estructura:
+
+\`\`\`
+STORY/PHASE: <localId o phase-name si aplica>
+MODULE: <nombre del módulo activo>
+BRANCH: <git branch actual>
+
+LATEST DECISIONS (most recent first, máx 5):
+  • <decisión> — files: <paths>
+  • <decisión> — files: <paths>
+  ...
+
+TESTS / VERIFICATION STATE:
+  <qué corrieron, qué pasó, qué falta>
+
+IN-FLIGHT FILES (modificados, no committeados):
+  <paths>
+
+BLOCKERS / OPEN QUESTIONS:
+  <texto>
+
+NEXT INTENDED STEP:
+  <una frase concreta>
+\`\`\`
+
+Reglas:
+- Densidad > completitud. Si está en \`module_context\`, NO lo repitas
+  acá (eso se va a re-cargar post-compact con el \`start_session\`).
+- File paths absolutos o relativos al project root, siempre.
+- Sin prosa: tabular o bullets, nada de explicaciones largas.
+
+### 2. Persistir vía save_observation
+
+\`\`\`
+save_observation({
+  kind: "discovery",
+  title: "pre-compact snapshot",
+  content: <el bloque de arriba>,
+  tags: "pre-compact"
+})
+\`\`\`
+
+### 3. Avisar al user
+
+Una sola línea: "Snapshot guardado, listo para /compact."
+
+### 4. Invocar /compact
+
+Vos NO ejecutás \`/compact\` (es slash de Claude Code, no MCP). Pedile
+al user que lo invoque, o invocalo si tu harness lo permite.
+
+## Variant verbatim (rara, costosa)
+
+Si el structured podría perder algo crítico (output de error largo,
+diff complejo) y el user lo pide explícitamente:
+
+- Agregá tag: \`tags: "pre-compact,verbatim"\`
+- Anexá al \`content\` un bloque "═══ VERBATIM (last 5 messages) ═══"
+  con tus últimos 5 mensajes textuales completos.
+- Cost: ~2x tokens. Solo si el user lo pide.
+
+## Después del /compact
+
+El hook \`post-compaction.sh\` automáticamente lee la observation
+\`kind=discovery, tags=pre-compact\` más reciente y la inyecta al
+contexto reanudado, ANTES del recovery imperative. Vos no tenés que
+hacer nada extra — solo seguir desde donde el snapshot indica.
+`,
+  },
+  {
+    name: 'interaction-style',
+    description: 'User-editable preferences for how the agent interacts (tone, language, explanation depth, etc.)',
+    triggerPattern: 'always loaded; defines interaction style for this project',
+    content: `---
+name: interaction-style
+description: Preferencias del user para cómo te comunicás (tono, idioma, profundidad de explicación, etc.)
+---
+
+# Interaction style
+
+Esta skill captura **preferencias de interacción del user** que aplican
+a TODO el trabajo en este proyecto. Es de las primeras cosas que tenés
+que respetar, porque modulan tu output independientemente del tool.
+
+**El user te edita esta skill** con \`myjarbis skill edit interaction-style\`
+(en bash) o pidiendo "actualizá el interaction-style con esto: ...".
+Vos no la modificás por iniciativa propia.
+
+---
+
+## Preferencias activas (rellena el user — los ejemplos abajo son default)
+
+> NOTA: Las líneas con \`# ejemplo\` son sugerencias. Borralas o
+> reemplazalas según lo que el user quiera.
+
+- # ejemplo: antes de cada cambio, explicá en una sola oración qué vas
+  a hacer y por qué (no más de 20 palabras).
+- # ejemplo: usá español rioplatense (vos, no tú; che, dale, listo).
+- # ejemplo: no me hagas preguntas si la respuesta es obvia del contexto;
+  asumí y avisame qué asumiste.
+- # ejemplo: respuestas cortas; expandí solo si pido detalle.
+- # ejemplo: commits sin firma de Claude (sin \`Co-Authored-By\`,
+  sin \`--no-verify\`).
+- # ejemplo: nada de emoji en código ni en commits; en chat solo si yo
+  los uso primero.
+
+---
+
+## Cómo aplicarlas
+
+Estas preferencias se aplican **automáticamente** sin que el user las
+repita. Si una preferencia entra en conflicto con un trigger
+conversacional de otro skill (ej. "antes de cada cambio explícame"
+vs "save_observation proactivo"), priorizá la preferencia del user
+— ellos saben mejor cómo quieren trabajar.
+
+Si algo de la skill no está claro o el user contradice una
+preferencia explícitamente en chat, asumí que cambió de opinión y
+**ofrecé actualizar el interaction-style**:
+
+> Notá que pediste X ahora pero el interaction-style dice Y. ¿Lo
+> actualizo o es solo para esta vez?
 `,
   },
 ];
