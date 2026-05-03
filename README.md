@@ -53,7 +53,7 @@ Verify: `myjarbis doctor` should print 20+ green checks.
 
 ```bash
 cd ~/projects/my-app
-myjarbis init                # creates .myjarbis/memory.db, seeds 6 baseline skills
+myjarbis init                # creates .myjarbis/memory.db, seeds 7 baseline skills
 myjarbis module add MM       # create your first vertical
 ```
 
@@ -230,7 +230,7 @@ opening Claude on the project automatically migrates:
 - `daily.md` → module_context (workflow)
 - `project-summary.md` → project_context (functional_spec)
 - `prompts/system.md` → project_context (convention)
-- 6 baseline skills seeded
+- 7 baseline skills seeded
 
 Backup is dumped to `~/.myjarbis-global/backups/<project>/<ts>/`.
 Legacy aliases (`search_code`, `get_context`, `update_memory`) keep

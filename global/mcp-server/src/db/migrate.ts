@@ -243,6 +243,96 @@ Keep it under 200 lines. The codebase itself is the authoritative reference;
 the summary is a navigational aid.
 `,
   },
+  {
+    name: 'subagent-delegation',
+    description: 'Delegate parallelizable audit / explore tasks to sub-agents instead of saturating the main context',
+    triggerPattern: 'audit with N parallel ACs, multi-file exploration, independent searches, /plan in story-driven mode',
+    content: `---
+name: subagent-delegation
+description: When and how to spawn sub-agents (Explore / Plan / general-purpose) so the main context stays focused
+---
+
+# Sub-agent delegation
+
+Claude Code exposes an \`Agent\` tool that spawns a sub-agent in its own
+context window. MyJarbis tells you **when** to use it so the main agent
+stays focused on coordination.
+
+## Delegate when
+
+- **Auditing N parallel ACs of a story.** Each AC is independent verification
+  → split into 2–3 sub-agents, each auditing 2–3 ACs, in a single message
+  with multiple Agent tool calls (parallel by default).
+- **Multi-file exploration** — "where is X used?", "find all callers of Y",
+  "list every model that has trait Z". The sub-agent reports back; the main
+  agent consolidates.
+- **Comparativa de approaches.** "¿implementación A o B?" — un sub-agent
+  por approach, devuelven trade-offs, vos decidís.
+- **Code review por área.** Una sub-agent revisa testing, otra security,
+  otra performance. Hallazgos se consolidan.
+
+## Do NOT delegate
+
+- Single-file edits. El main agent ya tiene el context.
+- Dependencias secuenciales — si B necesita el output de A, no es
+  paralelizable. Hacelo vos.
+- Lookups baratos (\`load_module\`, \`search\` con scope=module) ya bastan.
+- Tasks de < 30 segundos de trabajo. El overhead del spawn no compensa.
+
+## Cómo (template)
+
+Antes de invocar \`Agent\`, **siempre** cargá el module context activo
+para pasarlo al sub-agente. Sin eso, el sub-agente explora a ciegas.
+
+1. Cargá el module context (si no lo tenés ya): \`load_module()\`.
+2. Construí el prompt del sub-agent embebiendo el context relevante:
+
+   > Project: <name> (<framework>)
+   > Module: <name> — <description>
+   >
+   > Active workflow (from module_context): <excerpt>
+   > Active story / phase: <id>
+   >
+   > Task: <descripción específica del sub-agent>
+   >
+   > Constraint: report findings in <N> bullets max. Cite file:line for
+   > each finding. No prose, no editorial.
+
+3. Spawneá sub-agentes en paralelo: multiple \`Agent\` tool calls in the
+   same message → run concurrently. Máximo 3 a la vez.
+
+## Captura de resultados
+
+Cuando los sub-agents devuelven, **consolidá los findings** en una sola
+observation:
+
+\`\`\`
+save_observation({
+  kind: 'discovery',
+  title: '<task name> — N sub-agents',
+  content: '<resumen de los N reportes con bullets>',
+  tags: 'subagent,parallel-audit',
+  files: '<paths citados acumulados>'
+})
+\`\`\`
+
+No reproduzcas el output verbatim del sub-agent — el sub-agent "vio"
+todo el detalle, vos guardás solo las conclusiones.
+
+## Anti-patrones
+
+- **Spawnar sin module_context preloaded.** El sub-agent perdió la
+  oportunidad de ser scoped → vuelve con findings difusos.
+- **Más de 3 sub-agents en paralelo.** Overhead de spawn + sincronización
+  > beneficio. Si tenés 6 cosas, hacé 2 rondas de 3.
+- **Olvidarse de \`save_observation\` al final.** Los findings se quedan
+  solo en el contexto del main agent, se pierden en el próximo compact /
+  sesión.
+- **Delegar trabajo de edición.** Los sub-agents son read-only para casi
+  todos los tipos (Explore es read-only por diseño). Editar es cosa del
+  main agent.
+`,
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
