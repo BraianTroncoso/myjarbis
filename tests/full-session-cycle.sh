@@ -3,7 +3,7 @@
 # E2E test: full session lifecycle in v0.2.
 #
 # Simulates a real Claude Code session round trip:
-#   1. Init a fresh project (memory.db + 7 baseline skills materialized).
+#   1. Init a fresh project (memory.db + 9 baseline skills materialized).
 #   2. Create a module.
 #   3. Run the SessionStart hook (no module preselected → menu).
 #   4. start_session for the module → assert context loaded.
@@ -39,8 +39,8 @@ echo "→ [1] init"
 [ -f .myjarbis/memory.db ] || { echo "✗ memory.db missing after init"; exit 1; }
 [ -d .claude/skills ] || { echo "✗ .claude/skills missing"; exit 1; }
 SKILL_COUNT=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d -name 'myjarbis-*' | wc -l)
-[ "$SKILL_COUNT" = "7" ] || { echo "✗ expected 7 baseline skills, got $SKILL_COUNT"; exit 1; }
-echo "  ✓ memory.db + 7 baseline skills materialized"
+[ "$SKILL_COUNT" = "9" ] || { echo "✗ expected 9 baseline skills, got $SKILL_COUNT"; exit 1; }
+echo "  ✓ memory.db + 9 baseline skills materialized"
 
 # 2. Add module
 echo "→ [2] module add MM"

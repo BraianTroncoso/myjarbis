@@ -53,7 +53,7 @@ Verify: `myjarbis doctor` should print 20+ green checks.
 
 ```bash
 cd ~/projects/my-app
-myjarbis init                # creates .myjarbis/memory.db, seeds 7 baseline skills
+myjarbis init                # creates .myjarbis/memory.db, seeds 9 baseline skills
 myjarbis module add MM       # create your first vertical
 ```
 
@@ -107,15 +107,19 @@ time. Skills are materialized to `.claude/skills/myjarbis-*/` —
 **only the ones for project + MM**. Other modules' skills are not on
 disk.
 
-You work, discover a gotcha, save it. Take an arch decision, save
-it. When the phase is done:
+A partir de ahí, **todo es conversacional** — el agente sabe qué tools
+MCP llamar gracias al prompt de `/jarbis` + las 9 skills baseline:
 
-```
-/complete
-```
+- "decidí usar Pest" → `save_observation(kind=decision)`.
+- "encontré que MySQL 5.7 falla con JSON columns" → `save_observation(kind=gotcha)`.
+- "vamos a tocar PageBuilder" → confirma + `end_session` + `start_session(PageBuilder)`.
+- "MM-S1.4" → `search` + audit + propone phase breakdown.
+- "dale, hacelo" → ejecuta + auto-save de decisions por commit.
+- "listo, cerralo" → `save_observation(kind=progress)` + `end_session(summary, next_session)`.
+- "donde estaba?" → `resume()`.
+- "antes de compactar" → `save_observation(kind=discovery, tags=pre-compact)` + invocás `/compact`.
 
-→ `save_observation(kind=progress, ...)` + `end_session(summary, next_session)`.
-The next opening of Claude resumes from there.
+El próximo `/jarbis` resume desde donde quedaste.
 
 ## Skills, scoped
 
@@ -146,22 +150,28 @@ myjarbis skill edit mm-pixel-perfect --module=MM
 myjarbis skill disable commit-style
 ```
 
-## Slash commands
+## El único slash command
 
-Each MyJarbis project ships these in `.claude/commands/`:
+```
+/jarbis
+```
 
-| Command         | What it does                                                             |
-|-----------------|--------------------------------------------------------------------------|
-| `/jarbis`       | Detect project, list modules, ask user, `start_session`                  |
-| `/plan`         | Story-driven detect+audit OR free-form phase planning                    |
-| `/implement`    | Execute current phase, auto-save decision per logical commit             |
-| `/complete`     | `save_observation(progress)` + `end_session(summary, next_session)`      |
-| `/module <n>`   | Switch module (closes current session, opens new, re-renders skills)     |
-| `/module new <n>` | Create a new module                                                    |
-| `/resume`       | Show last `next_session` of active module (read-only)                    |
-| `/skill add`    | Add a skill inline                                                       |
-| `/skill edit`   | Edit a skill inline                                                      |
-| `/import`       | Import a .md or .json into the DB                                        |
+Eso es todo. El comando hace el bootstrap completo (detecta proyecto,
+lista módulos, pide elegir, abre `start_session`, materializa skills,
+te muestra el "Retomar aquí") y después la interacción es 100%
+conversacional. **No hay `/plan`, `/implement`, `/complete`, `/module`,
+`/skill`, `/resume`, `/import`, `/compact` etc.** El agente sabe qué
+hacer cuando le hablás en lenguaje natural gracias a las 9 skills
+baseline que se cargan automáticamente.
+
+Si querés ver/editar las skills (preferencias, workflow, triggers
+conversacionales, etc.), usá el bash CLI:
+
+```bash
+myjarbis skill list
+myjarbis skill edit interaction-style    # tus preferencias de tono/idioma/etc.
+myjarbis skill edit story-driven         # workflow de stories del proyecto
+```
 
 ## What the hooks do automatically
 
@@ -171,7 +181,7 @@ Each MyJarbis project ships these in `.claude/commands/`:
 - **SessionStart (compact)** → recovery imperative after compaction
 - **UserPromptSubmit** → first-message ToolSearch + story-id detect
   (regex `[A-Z]+-S?\d+(\.\d+)?` configurable) + 15-min save reminder
-- **Stop** → reminds to `/complete` if a session is open
+- **Stop** → reminds to close the session if one is open
 
 You don't invoke them; Claude Code does. They inject text that the
 agent reads as system context.
@@ -230,7 +240,7 @@ opening Claude on the project automatically migrates:
 - `daily.md` → module_context (workflow)
 - `project-summary.md` → project_context (functional_spec)
 - `prompts/system.md` → project_context (convention)
-- 7 baseline skills seeded
+- 9 baseline skills seeded
 
 Backup is dumped to `~/.myjarbis-global/backups/<project>/<ts>/`.
 Legacy aliases (`search_code`, `get_context`, `update_memory`) keep

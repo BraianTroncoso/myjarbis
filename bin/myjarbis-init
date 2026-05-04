@@ -245,17 +245,26 @@ chmod +x .myjarbis/bin/daily.sh
 
 echo -e "${GREEN}✓${NC} Created initial files"
 
-# Create .claude commands from templates
+# Create .claude commands from templates (v0.2: SOLO /jarbis — el resto
+# es conversacional + skills baseline. Si el proyecto tiene .md viejos
+# de v0.2 pre-Phase 7 (plan/implement/complete/module/skill/resume/
+# import/compact), los borramos para no contaminar el menu de slash
+# commands de Claude Code.)
 echo ""
 echo -e "${GOLD}[4/6]${NC} Creating Claude commands..."
 
-# Copy improved command templates
+# Copy the only command we ship now
 cp "$INSTALL_DIR/templates/.claude/commands/jarbis.md" .claude/commands/jarbis.md
-cp "$INSTALL_DIR/templates/.claude/commands/plan.md" .claude/commands/plan.md
-cp "$INSTALL_DIR/templates/.claude/commands/implement.md" .claude/commands/implement.md
-cp "$INSTALL_DIR/templates/.claude/commands/complete.md" .claude/commands/complete.md
 
-echo -e "${GREEN}✓${NC} Created command files (including /jarbis)"
+# Cleanup stale slash commands from previous MyJarbis versions
+for stale in plan implement complete module skill resume import compact; do
+    if [ -f ".claude/commands/${stale}.md" ]; then
+        rm -f ".claude/commands/${stale}.md"
+        echo -e "${YELLOW}!${NC} Removed stale .claude/commands/${stale}.md (now conversational)"
+    fi
+done
+
+echo -e "${GREEN}✓${NC} Created command file (only /jarbis — rest is conversational)"
 
 # Register project in global registry
 echo ""
@@ -304,7 +313,7 @@ echo -e "${GOLD}[5c/6]${NC} Seeding memory.db (v0.2)..."
 CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
 if [ -f "$CLI_JS" ]; then
     node "$CLI_JS" init-project --name="$PROJECT_NAME" --framework="$FRAMEWORK" >/dev/null && \
-        echo -e "${GREEN}✓${NC} memory.db created + 7 baseline skills seeded + skills materialized" || \
+        echo -e "${GREEN}✓${NC} memory.db created + 9 baseline skills seeded + skills materialized" || \
         echo -e "${YELLOW}!${NC} init-project failed (continuing — DB will be created on first session)"
 else
     echo -e "${YELLOW}!${NC} cli.js not found at $CLI_JS — DB will be created on first MCP server start"

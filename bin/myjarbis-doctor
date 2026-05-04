@@ -224,7 +224,7 @@ if [ -d ".myjarbis" ]; then
         if [ "$SKILL_COUNT" -gt 0 ]; then
             check_pass "Skills materialized: $SKILL_COUNT myjarbis-*/SKILL.md folders"
         else
-            check_warn "No materialized skills (expected ≥7 baselines after init)"
+            check_warn "No materialized skills (expected ≥9 baselines after init)"
         fi
     else
         check_warn ".claude/skills/ missing — run myjarbis skill materialize"
