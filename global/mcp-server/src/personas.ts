@@ -17,9 +17,9 @@ export const LANGUAGES: Language[] = ['EN', 'ES', 'PT'];
 export const PERSONAS: Persona[] = ['concise', 'pair', 'mentor', 'reviewer'];
 
 const LANGUAGE_PREAMBLES: Record<Language, string> = {
-  EN: 'Always reply in **English**.',
-  ES: 'Siempre respondé en **español rioplatense** (vos, no tú; che, dale, listo).',
-  PT: 'Sempre responda em **português** (variante brasileira).',
+  EN: 'Always reply in **English (United States)**.',
+  ES: 'Siempre respondé en **español (Argentina)**.',
+  PT: 'Sempre responda em **português (Brazil)**.',
 };
 
 const PERSONA_BLOCKS: Record<Persona, { name: string; content: string }> = {

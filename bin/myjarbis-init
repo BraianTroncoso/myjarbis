@@ -317,7 +317,7 @@ LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
 PERSONA_CHOICE="${MYJARBIS_PERSONA:-}"
 
 if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
-    echo -e "  ${NC}Languages: ${GOLD}EN${NC} (default), ${GOLD}ES${NC} (español rioplatense), ${GOLD}PT${NC} (português)${NC}"
+    echo -e "  ${NC}Languages: ${GOLD}EN${NC} (United States), ${GOLD}ES${NC} (Argentina), ${GOLD}PT${NC} (Brazil)${NC}"
     read -p "  Language [EN/es/pt]: " LANG_CHOICE
 fi
 LANG_CHOICE="${LANG_CHOICE:-EN}"

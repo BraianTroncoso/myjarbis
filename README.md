@@ -76,7 +76,7 @@ myjarbis init                          # creates memory.db + 10 baselines + plug
 personalize how Claude talks back:
 
 ```
-Languages: EN (default), ES (español rioplatense), PT (português)
+Languages: EN (United States), ES (Argentina), PT (Brazil)
   Language [EN/es/pt]: en
 
 Personas:
