@@ -23,6 +23,12 @@ import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
 import { startSession, endSession, resume } from './tools/session.js';
 import { seedNewProject } from './db/migrate.js';
 import { SCHEMA_VERSION } from './db/schema.js';
+import {
+  composeInteractionStyle,
+  parseLanguage,
+  parsePersona,
+  personaLabel,
+} from './personas.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -414,12 +420,16 @@ function runInitProject(argv: string[]): void {
   const { flags } = parseFlags(argv);
   const name = flags.name as string | undefined;
   const framework = flags.framework as string | undefined;
-  if (!name) fail('Usage: cli.js init-project --name=<project> [--framework=<fw>] [--shared=true|false]');
+  if (!name) fail('Usage: cli.js init-project --name=<project> [--framework=<fw>] [--shared=true|false] [--language=EN|ES|PT] [--persona=concise|pair|mentor|reviewer]');
+
+  // Validate language + persona early (before any DB write)
+  const language = parseLanguage(flags.language as string | undefined);
+  const persona = parsePersona(flags.persona as string | undefined);
 
   const projectPath = process.cwd();
 
   // 1. seedNewProject (creates memory.db + project + _general module +
-  //    6 baseline skills, idempotent)
+  //    10 baseline skills, idempotent)
   const seed = seedNewProject(projectPath, { name, framework });
 
   // 2. Write settings.json v0.2 schema (preserve existing fields if any)
@@ -454,10 +464,21 @@ function runInitProject(argv: string[]): void {
   };
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
 
-  // 3. Materialize project-level skills (no active session yet)
+  // 3. Compose interaction-style with the chosen language + persona
+  //    (overwrites the placeholder default seeded by seedNewProject).
   const ctx = ServerContext.initialize();
   let materialized;
   try {
+    addSkill(ctx, {
+      name: 'interaction-style',
+      content: composeInteractionStyle(language, persona),
+      description: `Language: ${language} · Persona: ${personaLabel(persona)} (composed at init)`,
+      trigger_pattern: 'always loaded; modulates tone, language, brevity',
+    });
+
+    // 4. Materialize project-level skills (no active session yet) so
+    //    .claude/skills/myjarbis-interaction-style/SKILL.md reflects the
+    //    composed content immediately.
     materialized = materializeSkills(ctx, {});
   } finally {
     ctx.close();
@@ -479,6 +500,7 @@ function runInitProject(argv: string[]): void {
     project: { id: seed.projectId, name, framework: framework ?? null, path: projectPath },
     schema_version: SCHEMA_VERSION,
     seeded: { module_id: seed.moduleId, baseline_skills: seed.skills },
+    interaction_style: { language, persona, label: personaLabel(persona) },
     settings_path: settingsPath,
     materialized_skills: {
       written: materialized.written.length,

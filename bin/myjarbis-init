@@ -307,13 +307,43 @@ else
     echo -e "${YELLOW}!${NC} Plugin templates not found at $INSTALL_DIR/templates/.claude-plugin"
 fi
 
-# v0.2: seed memory.db + baseline skills + write v0.2 settings.json
+# v0.2: language + persona prompts (interactive when stdin is a TTY).
+# Allows opt-out via env vars MYJARBIS_LANGUAGE / MYJARBIS_PERSONA so
+# CI scripts and dogfood/bootstrap helpers can run non-interactive.
 echo ""
-echo -e "${GOLD}[5c/6]${NC} Seeding memory.db (v0.2)..."
+echo -e "${GOLD}[5c/6]${NC} Choose language + persona for Claude responses..."
+
+LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
+PERSONA_CHOICE="${MYJARBIS_PERSONA:-}"
+
+if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
+    echo -e "  ${NC}Languages: ${GOLD}EN${NC} (default), ${GOLD}ES${NC} (español rioplatense), ${GOLD}PT${NC} (português)${NC}"
+    read -p "  Language [EN/es/pt]: " LANG_CHOICE
+fi
+LANG_CHOICE="${LANG_CHOICE:-EN}"
+LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
+
+if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
+    echo -e "  ${NC}Personas:${NC}"
+    echo -e "    ${GOLD}1${NC}=Concise (RTK / token-saving) — terse, no preamble"
+    echo -e "    ${GOLD}2${NC}=Pair programmer — 1-line intent before each change ${YELLOW}(default)${NC}"
+    echo -e "    ${GOLD}3${NC}=Mentor / Educational — WHAT/WHY/HOW/BENEFITS"
+    echo -e "    ${GOLD}4${NC}=Critical reviewer — challenges your assumptions first"
+    read -p "  Persona [1/2/3/4, default 2]: " PERSONA_CHOICE
+fi
+PERSONA_CHOICE="${PERSONA_CHOICE:-2}"
+
+echo -e "${GREEN}✓${NC} Language: ${GOLD}$LANG_CHOICE${NC}, Persona: ${GOLD}$PERSONA_CHOICE${NC}"
+
+# v0.2: seed memory.db + baseline skills + compose interaction-style
+echo ""
+echo -e "${GOLD}[5d/6]${NC} Seeding memory.db (v0.2)..."
 CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
 if [ -f "$CLI_JS" ]; then
-    node "$CLI_JS" init-project --name="$PROJECT_NAME" --framework="$FRAMEWORK" >/dev/null && \
-        echo -e "${GREEN}✓${NC} memory.db created + 10 baseline skills seeded + skills materialized" || \
+    node "$CLI_JS" init-project \
+        --name="$PROJECT_NAME" --framework="$FRAMEWORK" \
+        --language="$LANG_CHOICE" --persona="$PERSONA_CHOICE" >/dev/null && \
+        echo -e "${GREEN}✓${NC} memory.db created + 10 baseline skills seeded + interaction-style composed" || \
         echo -e "${YELLOW}!${NC} init-project failed (continuing — DB will be created on first session)"
 else
     echo -e "${YELLOW}!${NC} cli.js not found at $CLI_JS — DB will be created on first MCP server start"
