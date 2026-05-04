@@ -492,6 +492,18 @@ function runInitProject(argv: string[]): void {
   };
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
 
+  if (settings.shared === true) {
+    // memory.db will be committed to the repo. Anything saved via
+    // save_observation goes upstream too — including pasted credentials,
+    // tokens, internal URLs, etc. Surface this loudly.
+    console.error(
+      '\n[MyJarbis] WARNING: shared=true — memory.db is NOT git-ignored.\n' +
+        '  Observations you save (decisions, gotchas, errors) will travel\n' +
+        '  with the repo. Avoid pasting tokens/keys/URLs into the agent\n' +
+        '  while a session is open, or scrub before pushing.\n',
+    );
+  }
+
   // 3. Compose interaction-style with the chosen language + persona
   //    (overwrites the placeholder default seeded by seedNewProject).
   const ctx = ServerContext.initialize();

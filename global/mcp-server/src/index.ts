@@ -232,6 +232,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'files; v0.2 runs FTS5 over context. Prefer the new `search` tool.',
       inputSchema: searchCodeInputSchema,
       handler: (ctx, args) => searchCodeAlias(ctx, args),
+      deferred: true,
     },
     {
       name: 'get_context',
@@ -240,6 +241,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'For full module content prefer `load_module` directly.',
       inputSchema: getContextInputSchema,
       handler: (ctx, args) => getContextAlias(ctx, args),
+      deferred: true,
     },
     {
       name: 'update_memory',
@@ -249,6 +251,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'for granular kinds (decision/gotcha/progress/error/discovery).',
       inputSchema: updateMemoryInputSchema,
       handler: (ctx, args) => updateMemoryAlias(ctx, args),
+      deferred: true,
     },
   ];
 }
