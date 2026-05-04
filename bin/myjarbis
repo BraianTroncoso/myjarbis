@@ -32,6 +32,7 @@ show_help() {
     echo -e "  ${BOLD}module${NC}     Manage modules (add/list)"
     echo -e "  ${BOLD}skill${NC}      Manage skills (add/list/edit/delete/enable/disable)"
     echo -e "  ${BOLD}stats${NC}      Show row counts per table"
+    echo -e "  ${BOLD}cost${NC}       Show token usage and cost from Claude Code logs"
     echo -e "  ${BOLD}help${NC}       Show this help"
     echo
     echo -e "${RED}${BOLD}Examples${NC}"
@@ -162,7 +163,7 @@ case "${1:-help}" in
         exit 1
         ;;
 
-    import|module|skill|stats)
+    import|module|skill|stats|cost)
         # v0.2 subcommands delegated to the node CLI helper
         CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
         if [ ! -f "$CLI_JS" ]; then

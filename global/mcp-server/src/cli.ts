@@ -29,6 +29,7 @@ import {
   parsePersona,
   personaLabel,
 } from './personas.js';
+import { computeCost, formatTable } from './tools/cost.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -405,6 +406,33 @@ function runStats(_argv: string[]): void {
   } finally {
     ctx.close();
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Subcommand: cost
+//
+// Reads ~/.claude/projects/<slug>/*.jsonl (one .jsonl = one Claude
+// session) and aggregates per-session and project-wide token usage,
+// cost approximation and the cache hit ratio.
+// ─────────────────────────────────────────────────────────────────────
+
+function runCost(argv: string[]): void {
+  const { flags } = parseFlags(argv);
+  const projectPath = (flags.path as string | undefined) ?? process.cwd();
+  const lastFlag = flags.last;
+  const last = typeof lastFlag === 'string' ? parseInt(lastFlag, 10) : undefined;
+  const since = flags.since as string | undefined;
+
+  const report = computeCost(projectPath, {
+    last: last && !Number.isNaN(last) ? last : undefined,
+    since,
+  });
+
+  if (flags.json === true || flags.json === 'true') {
+    printJson(report);
+    return;
+  }
+  console.log(formatTable(report));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -895,7 +923,7 @@ function readSettingsJson(projectPath: string): ProjectSettings {
 export function main(argv: string[]): void {
   const [cmd, ...rest] = argv;
   if (!cmd) {
-    fail('Usage: cli.js <import|module|skill|stats> [args...]');
+    fail('Usage: cli.js <import|module|skill|stats|cost|hook|init-project> [args...]');
   }
   try {
     switch (cmd) {
@@ -907,6 +935,8 @@ export function main(argv: string[]): void {
         return runSkill(rest);
       case 'stats':
         return runStats(rest);
+      case 'cost':
+        return runCost(rest);
       case 'hook':
         return runHook(rest);
       case 'init-project':
