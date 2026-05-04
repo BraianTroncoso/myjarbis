@@ -280,14 +280,14 @@ LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
 
 if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
     echo -e "       ${BOLD}Personas${NC}"
-    echo -e "         1   Concise            ${DIM}terse, no preamble${NC}"
-    echo -e "         2   Pair programmer    ${DIM}1-line intent before each change [default]${NC}"
+    echo -e "         1   Concise            ${DIM}terse, no preamble [default]${NC}"
+    echo -e "         2   Pair programmer    ${DIM}1-line intent before each change${NC}"
     echo -e "         3   Mentor             ${DIM}WHAT/WHY/HOW/BENEFITS${NC}"
     echo -e "         4   Critical reviewer  ${DIM}challenges your assumptions first${NC}"
-    read -p "       Choice [2]: " PERSONA_CHOICE
+    read -p "       Choice [1]: " PERSONA_CHOICE
     echo
 fi
-PERSONA_CHOICE="${PERSONA_CHOICE:-2}"
+PERSONA_CHOICE="${PERSONA_CHOICE:-1}"
 
 note "language: $LANG_CHOICE"
 note "persona:  $PERSONA_CHOICE"

@@ -80,11 +80,11 @@ Languages: EN (United States), ES (Argentina), PT (Brazil)
   Language [EN/es/pt]: en
 
 Personas:
-  1=Concise (RTK / token-saving) — terse, no preamble
-  2=Pair programmer — 1-line intent before each change (default)
+  1=Concise (RTK / token-saving) — terse, no preamble (default)
+  2=Pair programmer — 1-line intent before each change
   3=Mentor / Educational — WHAT/WHY/HOW/BENEFITS
   4=Critical reviewer — challenges your assumptions first
-  Persona [1/2/3/4, default 2]: 2
+  Persona [1/2/3/4, default 1]: 1
 ```
 
 Your answer composes the `interaction-style` skill so the agent

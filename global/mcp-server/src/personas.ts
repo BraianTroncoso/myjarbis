@@ -145,7 +145,7 @@ export function parseLanguage(raw: string | undefined): Language {
 /** Used by the CLI to validate input from --persona flag or interactive prompt.
  *  Accepts the canonical name OR the numeric prompt index (1=concise, 2=pair, ...). */
 export function parsePersona(raw: string | undefined): Persona {
-  const v = (raw ?? 'pair').toLowerCase();
+  const v = (raw ?? 'concise').toLowerCase();
   if (v === '1' || v === 'concise') return 'concise';
   if (v === '2' || v === 'pair' || v === 'pair programmer') return 'pair';
   if (v === '3' || v === 'mentor') return 'mentor';
