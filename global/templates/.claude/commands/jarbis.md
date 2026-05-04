@@ -152,6 +152,7 @@ done / dale guardalo"*.
 | "creemos un módulo nuevo X"                      | `create_module(name, description?)`. Preguntá si arrancar sesión ahí ahora. |
 | "antes de compactar" / antes de `/compact` nativo | `save_observation(kind=discovery, tags=pre-compact, content=<snapshot estructurado>)`. Después dale el OK al user para `/compact`. |
 | Un `localId` aislado (ej. `MM-S1.4`)             | Asumí que quiere arrancar esa story → fase 2 (Análisis).                    |
+| "actualizá la docu" / "marcá X como done" / "registrá los smokes" | Por cada story tocada en la sesión: `update_progress(local_id, progress)` con markdown estructurado: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · fecha · notas de smoke. Es el equivalente directo a editar la columna "Smoke" / "Commit" de un PROGRESS.md. NO uses `save_observation` para esto — `progress` es estado relacional al row, observations son lecciones de la sesión. |
 
 ---
 

@@ -23,7 +23,19 @@
  * migrations without code-detection of structure.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+
+/** Per-row migration steps applied in order when bumping from one schema
+ *  version to the next. Each entry is the SQL run AFTER the base SCHEMA_SQL
+ *  has been applied (for already-existing DBs at a lower version). Idempotent
+ *  — runs only the steps from `current+1` up to SCHEMA_VERSION. */
+export const MIGRATIONS: Record<number, string> = {
+  // v2 → v3: add `progress` column to module_context for relational
+  // per-row state tracking (story status, smoke checkpoints, commit refs).
+  // Mirrors the role of a "Smoke" / "Commit" column in a PROGRESS.md table
+  // but lives next to the row it describes.
+  3: `ALTER TABLE module_context ADD COLUMN progress TEXT;`,
+};
 
 export const SCHEMA_SQL = `
 -- ─────────────────────────────────────────────────────────────────
@@ -98,6 +110,11 @@ CREATE TABLE IF NOT EXISTS module_context (
   tags         TEXT,
   source_path  TEXT,
   content_hash TEXT    NOT NULL,
+  -- Free-form markdown the agent maintains per row to track current state
+  -- (story status, smoke status, commit refs, dates). Independent of
+  -- content (immutable post-import) and tags (FTS5-indexed labels).
+  -- NULL until the agent writes via update_progress.
+  progress     TEXT,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
   UNIQUE(module_id, source_path, kind, title)
@@ -316,6 +333,7 @@ export interface ModuleContextRow {
   tags: string | null;
   source_path: string | null;
   content_hash: string;
+  progress: string | null;
   created_at: string;
   updated_at: string;
 }

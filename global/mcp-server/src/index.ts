@@ -51,6 +51,8 @@ import { search, searchInputSchema } from './tools/search.js';
 import {
   saveObservation,
   saveObservationInputSchema,
+  updateProgress,
+  updateProgressInputSchema,
 } from './tools/observations.js';
 import {
   searchCodeAlias,
@@ -172,6 +174,17 @@ function buildToolRegistry(): RegisteredTool[] {
         'the active session. Requires start_session first.',
       inputSchema: saveObservationInputSchema,
       handler: (ctx, args) => saveObservation(ctx, args),
+    },
+    {
+      name: 'update_progress',
+      description:
+        'Updates the relational progress field of a module_context row ' +
+        '(typically a story). Replaces the role of editing a "Smoke" or ' +
+        '"Commit" column in PROGRESS.md — call when the user says "marcá ' +
+        'X como done", "actualizá la docu", or after closing a smoke batch. ' +
+        'Resolves by local_id (e.g. "MM-S3.6") or row_id. Free-form markdown.',
+      inputSchema: updateProgressInputSchema,
+      handler: (ctx, args) => updateProgress(ctx, args),
     },
     {
       name: 'import_md',

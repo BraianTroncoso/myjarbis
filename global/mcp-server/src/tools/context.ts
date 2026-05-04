@@ -39,6 +39,8 @@ export interface ContextEntry {
   content: string;
   tags: string | null;
   source_path: string | null;
+  /** Only set on module_context rows. NULL on project_context rows. */
+  progress?: string | null;
   updated_at: string;
 }
 
@@ -140,6 +142,7 @@ export function loadModule(
       content: r.content,
       tags: r.tags,
       source_path: r.source_path,
+      progress: r.progress,
       updated_at: r.updated_at,
     })),
   };

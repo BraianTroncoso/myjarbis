@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import {
+  MIGRATIONS,
   SCHEMA_SQL,
   SCHEMA_VERSION,
   ProjectRow,
@@ -34,6 +35,40 @@ import {
 // ───────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────
+
+/** Apply SCHEMA_SQL (creates fresh DB or no-op on existing) then walk
+ *  any pending MIGRATIONS in version order. SCHEMA_SQL contains
+ *  CREATE TABLE IF NOT EXISTS, so pre-existing rows survive. ALTER
+ *  TABLE inside MIGRATIONS is wrapped in try/catch in case the column
+ *  was already added (idempotent re-runs). */
+function applySchemaAndMigrations(db: Database.Database): void {
+  db.exec(SCHEMA_SQL);
+
+  // Read current version (may be < SCHEMA_VERSION on existing DBs)
+  const row = db.prepare(
+    `SELECT value FROM meta WHERE key = 'schema_version'`,
+  ).get() as { value: string } | undefined;
+  const currentVersion = row ? parseInt(row.value, 10) : 0;
+
+  for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
+    const sql = MIGRATIONS[v];
+    if (!sql) continue;
+    try {
+      db.exec(sql);
+    } catch (err) {
+      // Tolerate "duplicate column" when migration was partially applied
+      // before — e.g., an older code path already ALTER'd. Other errors
+      // still surface.
+      if (err instanceof Error && /duplicate column/i.test(err.message)) continue;
+      throw err;
+    }
+  }
+
+  db.prepare(
+    `INSERT INTO meta(key, value) VALUES ('schema_version', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(String(SCHEMA_VERSION));
+}
 
 export function sha256(input: string): string {
   return crypto.createHash('sha256').update(input, 'utf-8').digest('hex');
@@ -83,15 +118,7 @@ export class MyJarbisDB {
     const dbPath = path.join(myjarbisDir, 'memory.db');
 
     const db = new Database(dbPath);
-    db.exec(SCHEMA_SQL);
-
-    // Record schema version (idempotent UPSERT)
-    const upsertMeta = db.prepare(
-      `INSERT INTO meta(key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    );
-    upsertMeta.run('schema_version', String(SCHEMA_VERSION));
-
+    applySchemaAndMigrations(db);
     return new MyJarbisDB(db, dbPath);
   }
 
@@ -100,11 +127,7 @@ export class MyJarbisDB {
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const db = new Database(dbPath);
-    db.exec(SCHEMA_SQL);
-    db.prepare(
-      `INSERT INTO meta(key, value) VALUES ('schema_version', ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    ).run(String(SCHEMA_VERSION));
+    applySchemaAndMigrations(db);
     return new MyJarbisDB(db, dbPath);
   }
 
@@ -347,6 +370,34 @@ export class MyJarbisDB {
       this.prep('SELECT * FROM module_context WHERE module_id = ? ORDER BY kind, title').all(
         moduleId,
       ) as ModuleContextRow[],
+
+    /** Resolve a story-style row by its localId. import_json writes
+     *  source_path as "<file>#<localId>"; we also tolerate localId
+     *  appearing inside the title for hand-imported entries. */
+    findByLocalId: (moduleId: number, localId: string): ModuleContextRow | null => {
+      const hashRow = this.prep(
+        `SELECT * FROM module_context
+          WHERE module_id = ?
+            AND source_path LIKE ?
+          ORDER BY id DESC LIMIT 1`,
+      ).get(moduleId, `%#${localId}`) as ModuleContextRow | undefined;
+      if (hashRow) return hashRow;
+      return (this.prep(
+        `SELECT * FROM module_context
+          WHERE module_id = ?
+            AND title LIKE ?
+          ORDER BY id DESC LIMIT 1`,
+      ).get(moduleId, `%${localId}%`) as ModuleContextRow | undefined) ?? null;
+    },
+
+    setProgress: (id: number, progress: string | null): ModuleContextRow => {
+      this.prep(
+        `UPDATE module_context
+            SET progress = ?, updated_at = datetime('now')
+          WHERE id = ?`,
+      ).run(progress, id);
+      return this.moduleContext.findById(id)!;
+    },
   };
 
   // ─────────────────────────────────────────────────────────────────

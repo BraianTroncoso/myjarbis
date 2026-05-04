@@ -43,6 +43,14 @@ interface ContextEntrySummary {
   title: string;
   source_path: string | null;
   excerpt: string;
+  /** Present only on module_context rows that have a non-null `progress`. */
+  progress?: string;
+}
+
+interface StoryIndexEntry {
+  localId: string;
+  /** Present only when the story row has a `progress` value set. */
+  progress?: string;
 }
 
 export interface StartSessionResult {
@@ -52,10 +60,11 @@ export interface StartSessionResult {
   module: { id: number; name: string; description: string | null; status: string };
   projectContext: ContextEntrySummary[];
   moduleContext: ContextEntrySummary[];
-  /** Stories are listed by localId only (no excerpt) to avoid dumping
+  /** Stories are listed by localId only (no body) to avoid dumping
    *  hundreds of rows on bootstrap. Use search() or load_module(kinds=['story'])
-   *  to pull a specific one when working on it. */
-  stories: { count: number; localIds: string[] };
+   *  to pull a specific one when working on it. Each entry includes
+   *  `progress` if the agent has updated it via update_progress. */
+  stories: { count: number; entries: StoryIndexEntry[] };
   previousSession: {
     id: number;
     endedAt: string | null;
@@ -87,12 +96,19 @@ export function startSession(
   const storyRows = allModuleCtx.filter((r) => r.kind === 'story');
   const nonStoryRows = allModuleCtx.filter((r) => r.kind !== 'story');
   const moduleCtx = nonStoryRows.map(summarizeModuleContext);
+  const storyEntries: StoryIndexEntry[] = storyRows
+    .map((r) => {
+      const localId = extractLocalId(r);
+      if (!localId) return null;
+      const entry: StoryIndexEntry = { localId };
+      if (r.progress) entry.progress = r.progress;
+      return entry;
+    })
+    .filter((e): e is StoryIndexEntry => e !== null)
+    .sort((a, b) => a.localId.localeCompare(b.localId));
   const stories = {
     count: storyRows.length,
-    localIds: storyRows
-      .map((r) => extractLocalId(r))
-      .filter((id): id is string => id !== null)
-      .sort(),
+    entries: storyEntries,
   };
 
   const previousClosed = ctx.db.sessions.findLastClosedByModule(module.id);
@@ -259,13 +275,15 @@ function summarizeProjectContext(row: ProjectContextRow): ContextEntrySummary {
 }
 
 function summarizeModuleContext(row: ModuleContextRow): ContextEntrySummary {
-  return {
+  const out: ContextEntrySummary = {
     id: row.id,
     kind: row.kind,
     title: row.title,
     source_path: row.source_path,
     excerpt: makeExcerpt(row.content),
   };
+  if (row.progress) out.progress = row.progress;
+  return out;
 }
 
 function makeExcerpt(content: string): string {
