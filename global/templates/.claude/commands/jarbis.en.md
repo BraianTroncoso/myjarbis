@@ -19,34 +19,20 @@ to you in natural language and you call the right MCP tools.
      a) run `myjarbis init` from the root and reopen Claude;
      b) if they don't want MyJarbis, keep working without it (you can
      still help, you just lose cross-session persistence).
-2. **`list_modules`** → inventory of the project's verticals.
-   **ALWAYS show the menu, never auto-select even with one module.**
-   The user explicitly wants to be able to pick among existing
-   modules, create a new one, or enter settings.
-   - 0 modules: ask the user for a name and `create_module(name, description?)`.
-     Then proceed to step 3 (start_session).
-   - 1 module named `_general` (v0.1→v0.2 migration artifact):
-     show it in the menu but suggest creating a real vertical
-     (e.g. MM, PageBuilder, Auth) with a representative name.
-   - N modules (including N=1): show menu with each one + last
-     session timestamp + options "create new <name>" + "settings".
+2. **The SessionStart hook ALREADY printed the module menu** to the
+   user (numbered list with descriptions + options + last "Resume
+   here"). Do NOT re-render or echo it — the user is looking at it.
+   Just wait for their reply and parse it:
+   - module name/number → `start_session(<name>)` (step 3)
+   - "new module X" / "nuevo módulo X" / "novo módulo X" → `create_module(name)` + `start_session(name)`
+   - "settings" → show options (current language/persona from the
+     loaded `interaction-style` skill) and call
+     `set_interaction_style({language?, persona?})` when they pick.
+   - 0 modules case (the hook said so): ask for a name and
+     `create_module(name, description?)`.
 
-   Menu format (the user reads, you build it):
-   ```
-   MyJarbis · <project_name>
-     Modules:
-       1. <name> — last session <ISO timestamp> UTC
-          └ "<one-line excerpt of nextSession from last close>"
-       2. <name> — no sessions yet
-       ...
-
-     What are we doing?
-       · "<name>" or "<num>"   → start session in that module
-       · "new module <name>"   → create_module + start_session
-       · "settings"            → change language / persona
-   ```
-
-   Wait for the user's reply before going to step 3.
+   While waiting, do NOT call `current_project` or `list_modules` —
+   they're already in your context via the hook.
 3. **`start_session(module)`** once chosen. The result returns,
    in priority order:
    - `previousSession.nextSession` — **THE canonical "Resume here".

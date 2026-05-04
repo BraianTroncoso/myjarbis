@@ -482,6 +482,7 @@ function runInitProject(argv: string[]): void {
     search_default_scope: existing.search_default_scope ?? 'module',
     story_pattern: existing.story_pattern ?? '[A-Z]+-S?\\d+(\\.\\d+)?',
     auto_module_select_when_single: existing.auto_module_select_when_single ?? true,
+    language: existing.language ?? language.toLowerCase(),
     skills: {
       materialize_on_session_start:
         existing.skills?.materialize_on_session_start ?? true,
@@ -621,6 +622,71 @@ function stableDateLabel(iso: string | null): string {
   return parsed.toISOString().slice(0, 16).replace('T', ' ');
 }
 
+/** Localized strings for the SessionStart menu — rendered server-side
+ *  so the agent doesn't have to re-format from a markdown spec each
+ *  session (saves ~28s of reasoning + the output tokens). */
+const HOOK_I18N = {
+  es: {
+    no_project_title: 'MyJarbis',
+    no_project_body: (cwd: string) =>
+      `No hay proyecto MyJarbis en ${cwd}.\nCorré \`myjarbis init\` desde este directorio para habilitar memoria persistente.`,
+    no_modules_body: (header: string) =>
+      `${header}\n\nNo hay módulos registrados todavía.\nCreá uno con: \`myjarbis module add <name>\`\n(Los módulos son verticales: ej. MM, PageBuilder, Translations.)`,
+    modules_label: 'Módulos:',
+    paused_tag: ' (en pausa)',
+    last_session_tag: (ts: string) => `last session ${ts} UTC`,
+    no_sessions_tag: 'sin sesiones todavía',
+    what_to_do: '¿Qué hacemos?',
+    pick_option: (name: string, num: number) =>
+      `· "${name}" o "${num}" → arrancar sesión en ese módulo`,
+    create_option: '· "nuevo módulo <name>" → create_module + start_session',
+    settings_option: '· "settings" → cambiar language / persona',
+    resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
+  },
+  en: {
+    no_project_title: 'MyJarbis',
+    no_project_body: (cwd: string) =>
+      `No MyJarbis project at ${cwd}.\nRun \`myjarbis init\` from this directory to enable persistent memory.`,
+    no_modules_body: (header: string) =>
+      `${header}\n\nNo modules registered yet.\nCreate one with: \`myjarbis module add <name>\`\n(Modules are verticals: e.g., MM, PageBuilder, Translations.)`,
+    modules_label: 'Modules:',
+    paused_tag: ' (paused)',
+    last_session_tag: (ts: string) => `last session ${ts} UTC`,
+    no_sessions_tag: 'no sessions yet',
+    what_to_do: 'What are we doing?',
+    pick_option: (name: string, num: number) =>
+      `· "${name}" or "${num}" → start a session on that module`,
+    create_option: '· "new module <name>" → create_module + start_session',
+    settings_option: '· "settings" → change language / persona',
+    resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
+  },
+  pt: {
+    no_project_title: 'MyJarbis',
+    no_project_body: (cwd: string) =>
+      `Sem projeto MyJarbis em ${cwd}.\nRode \`myjarbis init\` deste diretório para habilitar memória persistente.`,
+    no_modules_body: (header: string) =>
+      `${header}\n\nNenhum módulo registrado ainda.\nCrie um com: \`myjarbis module add <name>\`\n(Módulos são verticais: ex. MM, PageBuilder, Translations.)`,
+    modules_label: 'Módulos:',
+    paused_tag: ' (em pausa)',
+    last_session_tag: (ts: string) => `last session ${ts} UTC`,
+    no_sessions_tag: 'sem sessões ainda',
+    what_to_do: 'O que vamos fazer?',
+    pick_option: (name: string, num: number) =>
+      `· "${name}" ou "${num}" → começar sessão nesse módulo`,
+    create_option: '· "novo módulo <name>" → create_module + start_session',
+    settings_option: '· "settings" → mudar language / persona',
+    resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
+  },
+} as const;
+
+type HookLang = keyof typeof HOOK_I18N;
+
+function resolveHookLanguage(settings: ProjectSettings): HookLang {
+  const raw = (settings.language ?? 'en').toString().toLowerCase();
+  if (raw === 'es' || raw === 'en' || raw === 'pt') return raw;
+  return 'en';
+}
+
 function runHookSessionStart(): void {
   const init = safeContext();
   if (!init) return;
@@ -628,43 +694,45 @@ function runHookSessionStart(): void {
 
   try {
     const project = ctx.project;
+    const settings = project ? readSettingsJson(ctx.projectPath) : {};
+    const t = HOOK_I18N[resolveHookLanguage(settings)];
+
     if (!project) {
-      console.log(
-        `═══ MyJarbis ═══\n` +
-        `No MyJarbis project at ${ctx.projectPath}.\n` +
-        `Run \`myjarbis init\` from this directory to enable persistent memory.`,
-      );
+      console.log(`═══ ${t.no_project_title} ═══\n${t.no_project_body(ctx.projectPath)}`);
       return;
     }
 
     const modules = ctx.db.modules.listByProject(project.id);
     const active = modules.filter((m) => m.status === 'active' || m.status === 'paused');
 
-    let header = `═══ MyJarbis · ${project.name}${project.framework ? ` (${project.framework})` : ''} ═══`;
+    const header = `═══ MyJarbis · ${project.name}${project.framework ? ` (${project.framework})` : ''} ═══`;
 
     if (active.length === 0) {
-      console.log(
-        `${header}\n` +
-        `No modules registered yet.\n` +
-        `Create one with: myjarbis module add <name>\n` +
-        `(Modules are verticals: e.g., MM, PageBuilder, Translations.)`,
-      );
+      console.log(t.no_modules_body(header));
       return;
     }
 
-    // Always show the module menu — even with 1 active module — so the
-    // user can switch, create a new one, or open settings. The agent
-    // (via /jarbis) opens the session after the user picks.
-    const lines: string[] = [header, '', `Modules:`];
-    for (const m of active) {
+    // Render the FULL menu server-side. The agent must not re-format —
+    // jarbis.md instructs it to wait for user input, not echo this.
+    const lines: string[] = [header, '', t.modules_label];
+    active.forEach((m, idx) => {
       const last = ctx.db.sessions.findLastClosedByModule(m.id);
-      const tag = m.status === 'paused' ? ' (paused)' : '';
-      const last_tag = last?.ended_at ? `, last session ${stableDateLabel(last.ended_at)} UTC` : ', no sessions yet';
-      lines.push(`  • ${m.name}${tag}${last_tag}`);
-    }
-    lines.push('', `Pick a module to begin (e.g., "let's work on ${active[0].name}").`);
-    lines.push(`Or create a new one: \`myjarbis module add <name>\`.`);
-    lines.push(`Or change settings (language / persona): say "settings".`);
+      const pausedTag = m.status === 'paused' ? t.paused_tag : '';
+      const sessionTag = last?.ended_at
+        ? t.last_session_tag(stableDateLabel(last.ended_at))
+        : t.no_sessions_tag;
+      lines.push(`  ${idx + 1}. ${m.name}${pausedTag} — ${sessionTag}`);
+      if (m.description) {
+        lines.push(`     └ ${m.description}`);
+      }
+    });
+
+    lines.push('', t.what_to_do);
+    active.forEach((m, idx) => {
+      lines.push(`  ${t.pick_option(m.name, idx + 1)}`);
+    });
+    lines.push(`  ${t.create_option}`);
+    lines.push(`  ${t.settings_option}`);
 
     // Surface the most recent next_session, if any (helps remember what
     // was being worked on last).
@@ -678,7 +746,7 @@ function runHookSessionStart(): void {
       }
     }
     if (mostRecent) {
-      lines.push('', `── Last "Retomar aquí" (${mostRecent.mod}, ${stableDateLabel(mostRecent.ended_at)} UTC) ──`);
+      lines.push('', t.resume_label(mostRecent.mod, stableDateLabel(mostRecent.ended_at)));
       lines.push(mostRecent.next);
     }
     console.log(lines.join('\n'));
@@ -901,6 +969,11 @@ interface ProjectSettings {
   search_default_scope?: string;
   story_pattern?: string;
   auto_module_select_when_single?: boolean;
+  /** "es" | "en" | "pt" — used by the SessionStart hook to render the
+   *  module menu in the user's language without delegating to the
+   *  agent. Set by `myjarbis init`; older projects without this field
+   *  fall back to "en". */
+  language?: string;
   skills?: {
     materialize_on_session_start?: boolean;
     cleanup_module_skills_on_session_end?: boolean;

@@ -19,35 +19,20 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
      a) correr `myjarbis init` desde el root y reabrir Claude;
      b) si no quiere usar MyJarbis, seguir sin él (vos podés trabajar
      igual, solo perdés persistencia entre sesiones).
-2. **`list_modules`** → inventario de verticales del proyecto.
-   **SIEMPRE mostrá el menú al user, no autoselecciones aunque haya
-   uno solo.** El user explícitamente quiere poder elegir entre
-   los existentes, crear uno nuevo, o entrar a settings.
-   - 0 módulos: pedile al user un nombre y `create_module(name, description?)`.
-     Después arrancá fase 3 (start_session).
-   - 1 módulo llamado `_general` (artefacto de migración v0.1→v0.2):
-     tratalo como "no hay módulos reales". Mostralo en el menú pero
-     sugerí crear uno con un nombre representativo del vertical
-     (ej. MM, PageBuilder, Auth).
-   - N módulos (incluyendo el caso N=1): mostrá menú con cada uno +
-     last session timestamp + opciones "create new <name>" + "settings".
+2. **El SessionStart hook YA imprimió el menú de módulos** al user
+   (lista numerada con descriptions + opciones + último "Retomar
+   aquí"). NO lo re-rendericés ni lo eches — el user ya lo está
+   viendo. Solo esperá su respuesta y parseá:
+   - nombre/número de módulo → `start_session(<name>)` (fase 3)
+   - "nuevo módulo X" / "new module X" / "novo módulo X" → `create_module(name)` + `start_session(name)`
+   - "settings" / "configuración" → mostrá opciones (current
+     language/persona del skill `interaction-style`) y llamá
+     `set_interaction_style({language?, persona?})` cuando elija.
+   - Caso 0 módulos (el hook lo dijo): pedile un nombre y
+     `create_module(name, description?)`.
 
-   Formato del menú (el user lo lee, vos lo armás):
-   ```
-   MyJarbis · <project_name>
-     Módulos:
-       1. <name> — last session <ISO timestamp> UTC
-          └ "<excerpt 1-line del nextSession del último cierre>"
-       2. <name> — no sessions yet
-       ...
-
-     ¿Qué hacemos?
-       · "<name>" o "<num>"     → arrancar sesión en ese módulo
-       · "nuevo módulo <name>"  → create_module + start_session
-       · "settings"             → cambiar language / persona
-   ```
-
-   Esperá la respuesta del user antes de seguir al step 3.
+   Mientras esperás, NO llamés `current_project` ni `list_modules` —
+   ya están en el contexto vía el hook.
 3. **`start_session(module)`** una vez elegido. El resultado trae,
    en orden de prioridad:
    - `previousSession.nextSession` — **EL "Retomar aquí" canónico.
