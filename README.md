@@ -196,6 +196,45 @@ The next `/jarbis` resumes where you left off.
 
 ---
 
+## CLI-driven workflow (git-like)
+
+`/jarbis` is fast when the agent doesn't have to discover or render a
+menu — it just continues with what's already set. The CLI handles
+setup and switching, like `git checkout`:
+
+```bash
+cd ~/dev/my-app
+myjarbis module use backend       # set active module — instant
+claude                            # SessionStart hook auto-resumes backend
+                                  # printing the curated "Resume here"
+> /jarbis                         # agent acknowledges and continues
+                                  # no tool calls, no 1000-token menu
+```
+
+Other CLI verbs (all instant, no LLM):
+
+```bash
+myjarbis module list              # show modules with active marker
+myjarbis module use backend       # set active (writes .myjarbis/active)
+myjarbis module current           # print active module
+myjarbis module unset             # clear → next /jarbis shows menu
+myjarbis module create payments   # create new module
+
+myjarbis config list              # show language, persona, scope, nudges
+myjarbis config language EN       # change language inline (recomposes interaction-style skill + materializes)
+myjarbis config persona mentor    # change persona
+
+myjarbis status                   # git-like overview: project, active, last session, counts, branch
+```
+
+`.myjarbis/active` is a single-line file (the module name) — always
+git-ignored, even with `shared: true`, since it's per-user state.
+
+If you don't want a pre-set module, omit `myjarbis module use` and the
+hook falls back to printing the module menu. Both flows coexist.
+
+---
+
 ## Per-row state (the `progress` field)
 
 When you work with hand-edited PROGRESS.md tables, each story row has
@@ -375,11 +414,18 @@ disappear from the filesystem and the new module's appear.
 `.claude-plugin/hooks/hooks.json` registers 4 events. You don't
 invoke them — Claude Code does:
 
-- **SessionStart (startup|clear)** → module menu (always shown, even
-  with one module) + most-recent "Retomar aquí" surfaced. Does NOT
-  auto-start a session; the agent does that via `/jarbis` after the
-  user picks. Output is **byte-stable across runs** (uses ISO
-  timestamps, not "2h ago") so Anthropic's prompt cache survives.
+- **SessionStart (startup|clear)** → has TWO modes:
+  - If `.myjarbis/active` is set (via `myjarbis module use <name>`),
+    auto-starts that module's session, materializes its skills, and
+    prints the curated `previousSession.nextSession` directly. /jarbis
+    then only acknowledges and continues — no tool calls, no menu
+    rendering, no agent reasoning.
+  - If no active module, prints the localized module menu (numbered
+    list with descriptions, options for `new module X` / `settings`)
+    and the most-recent "Retomar aquí" across modules. The agent
+    parses the user's reply.
+  Output is **byte-stable across runs** (uses ISO timestamps, not
+  "2h ago") so Anthropic's prompt cache survives.
 - **SessionStart (compact)** → bring the pre-compact snapshot back
   to the resumed context + recovery imperative
 - **UserPromptSubmit** → first message forces ToolSearch for MyJarbis
@@ -514,13 +560,22 @@ re-import.
 ```bash
 myjarbis init                       # init project (interactive)
 myjarbis doctor                     # health check (25+ probes)
+myjarbis status                     # git-like overview: project, active module, last session, counts
 myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio + USD approx
 myjarbis list                       # registered projects
 myjarbis update                     # pull + rebuild MCP server
 
-myjarbis module add <name> [--description=...]
-myjarbis module list
+myjarbis module list                              # list with active marker
+myjarbis module use <name>                        # set active (.myjarbis/active)
+myjarbis module current                           # print active
+myjarbis module unset                             # clear active
+myjarbis module create <name> [--description=...] # alias of `module add`
+myjarbis module add <name> [--description=...]    # original verb
+
+myjarbis config list                              # all settings + inferred language/persona
+myjarbis config language <EN|ES|PT>               # recompose interaction-style + materialize
+myjarbis config persona <concise|pair|mentor|reviewer>
 
 myjarbis skill add <name> --content-from=<file> [--module=...] [--description=...] [--trigger=...]
 myjarbis skill list [--scope=all|project|module|session]

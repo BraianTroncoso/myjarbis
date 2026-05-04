@@ -64,8 +64,8 @@ const SKILL_NAME = 'interaction-style';
 /** Best-effort recover of the current language/persona from the
  *  existing skill content (composeInteractionStyle markers). Falls
  *  back to EN+concise if the skill is missing or hand-edited beyond
- *  recognition. */
-function inferCurrent(content: string | null): {
+ *  recognition. Exported so the CLI (myjarbis config list) can reuse it. */
+export function inferCurrent(content: string | null): {
   language: Language;
   persona: Persona;
 } {
@@ -91,14 +91,15 @@ function inferCurrent(content: string | null): {
   return { language, persona };
 }
 
-export function setInteractionStyle(
+/** Shared core: compose new interaction-style content + upsert into DB
+ *  + re-materialize to disk. Used by the MCP tool AND the CLI
+ *  `myjarbis config language|persona` command. */
+export function applyInteractionStyle(
   ctx: ServerContext,
-  rawArgs: unknown,
+  args: { language?: string; persona?: string },
 ): SetInteractionStyleResult {
-  const args = argsZ.parse(rawArgs);
   const project = ctx.requireProject();
 
-  // Look up current skill to preserve the unspecified field.
   const existing = ctx.db.skills.findByName(project.id, null, SKILL_NAME);
   const current = inferCurrent(existing?.content ?? null);
 
@@ -157,4 +158,12 @@ export function setInteractionStyle(
       'so close and reopen Claude to fully refresh — or just continue ' +
       'this session, the agent will follow the new style on the next reply.',
   };
+}
+
+export function setInteractionStyle(
+  ctx: ServerContext,
+  rawArgs: unknown,
+): SetInteractionStyleResult {
+  const args = argsZ.parse(rawArgs);
+  return applyInteractionStyle(ctx, args);
 }

@@ -11,72 +11,70 @@ usuário fala em linguagem natural e você chama os MCP tools certos.
 
 ---
 
-## Bootstrap (ao ativar, executar EM ORDEM)
+## Bootstrap (dois caminhos conforme o SessionStart hook)
 
-1. **`current_project`** → confirma projeto registrado em cwd.
-   - Se `registered: false`: NÃO pare em erro. Diga ao usuário
-     "este diretório não está registrado no MyJarbis" e ofereça:
-     a) rodar `myjarbis init` desde a raiz e reabrir o Claude;
-     b) se não quiser usar MyJarbis, seguir sem ele (você ainda pode
-     trabalhar, só perde persistência entre sessões).
-2. **O SessionStart hook JÁ imprimiu o menu de módulos** ao usuário
-   (lista numerada com descriptions + opções + última "Retomar
-   aqui"). NÃO re-renderize nem ecoe — o usuário já está olhando.
-   Só espere a resposta dele e parseie:
-   - nome/número de módulo → `start_session(<name>)` (step 3)
-   - "novo módulo X" / "nuevo módulo X" / "new module X" → `create_module(name)` + `start_session(name)`
-   - "settings" / "configurações" → mostre opções (current
-     language/persona do skill `interaction-style`) e chame
-     `set_interaction_style({language?, persona?})` quando escolher.
-   - Caso 0 módulos (o hook disse): peça um nome e
-     `create_module(name, description?)`.
+CRÍTICO: o SessionStart hook já fez o discovery (imprimiu projeto +
+módulo ativo + última "Retomar aqui" ao usuário). Seu trabalho na
+ativação de `/jarbis` é REAGIR ao que o hook fez, não repetir.
+**Não chame `current_project` nem `list_modules` no bootstrap** — a
+info já está no seu contexto via o output do hook.
 
-   Enquanto espera, NÃO chame `current_project` nem `list_modules` —
-   já estão no seu contexto via o hook.
-3. **`start_session(module)`** uma vez escolhido. O resultado retorna,
-   em ordem de prioridade:
-   - `previousSession.nextSession` — **O "Retomar aqui" canônico.
-     LEIA PRIMEIRO** e monte o greeting com base nele. É o equivalente
-     direto a um CURRENT.md curado: branch ativa, trabalho pendente,
-     regras vigentes. Se está populado, esse é o estado do módulo —
-     não escaneie o catálogo procurando mais coisa.
-   - `projectContext[]` — índice de docs project-level (kind, title,
-     excerpt 240 chars). NÃO releia todos no greeting; use
-     `load_project_core(kinds=[...])` ou `search` quando uma task
-     concreta precisar.
-   - `moduleContext[]` — índice de docs do módulo (workflow, plan,
-     functional_doc, use_cases, etc.) com excerpt. Stories NÃO ficam aqui.
-   - `stories.{count, localIds[]}` — só o inventário de stories do
-     módulo (sem conteúdo). Para uma story específica:
-     `search("MM-S1.4", scope="module_only")` ou `load_module(kinds=['story'])`.
-   - `materialized_skills[]` — skills escritas em `.claude/skills/`.
+### Caso A — Hook auto-iniciou uma sessão (active module setado)
 
-3.5. **Detecção de módulo sem estado** (quando `previousSession.nextSession`
-   está null e o catálogo está vazio):
-   - Se `projectContext.length === 0` AND `moduleContext.length === 0`
-     AND `stories.count === 0` → ofereça importar:
-     - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
-     - `myjarbis import <path> --target=module:<name> --kind=<...>`
-     - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
-     Paths típicos a sugerir: `agents/`, `docs/`, `notes/`, `.specs/`.
-   - Se há catálogo (≥1 entry) mas não há `previousSession.nextSession`,
-     procure no `moduleContext` o mais recente com `kind=workflow` e
-     `tags` contendo "progress" ou "current" — use o excerpt para montar
-     um greeting tentativo e peça ao usuário para confirmar/corrigir.
+Se no seu contexto vê um bloco tipo:
+```
+═══ MyJarbis · <project> ═══
 
-4. **Greeting canônico** ao usuário (formato exato, preencha placeholders):
+Module: <name> — <description>
+Session #N started/resumed.
+Skills materialized: ...
 
-   ```
-   MyJarbis ativado · <project_name>
-     Módulo ativo: <module_name>
-     Skills carregadas: <N> (project + módulo)
-     Última sessão: <relativeTime de previousSession.endedAt ou "nenhuma">
+── Última "Retomar aqui" (<name>, ...) ──
+<conteúdo>
+```
+significa que o usuário rodou `myjarbis module use <name>` antes de
+abrir Claude. A sessão JÁ está aberta. **Não chame `start_session`.**
 
-   Retomar aqui:
-     <previousSession.nextSession ou "Sessão nova, sem pendências.">
+Seu primeiro output: 1-2 linhas conversacional continuando do
+`nextSession`. Exemplos:
 
-   O que vamos fazer?
-   ```
+> Pronto. Próximo passo: `<ação concreta do nextSession>`. Confirma?
+
+> Retomamos `<módulo>`. Pendente: `<excerpt do nextSession>`. Vamos?
+
+NÃO repita o bloco completo de "Retomar aqui" — o usuário já viu no
+terminal.
+
+### Caso B — Hook mostrou um menu de módulos (sem active module)
+
+Se no seu contexto há um menu com módulos numerados e opções
+("novo módulo X", "settings"), o usuário ainda não escolheu.
+
+Seu primeiro output: 1 linha curta esperando escolha.
+
+> Pronto, qual módulo?
+
+Quando responder, parseie:
+- nome/número de módulo → `start_session(<name>)` e mostre greeting
+  compacto com `previousSession.nextSession` (sem re-montar blocos
+  que o hook já imprimiu).
+- "novo módulo X" / "nuevo módulo X" / "new module X" → `create_module(name)` + `start_session(name)`.
+- "settings" / "configurações" → mostre opções de language/persona
+  inferidas do skill `interaction-style` e chame
+  `set_interaction_style({language?, persona?})` quando escolher.
+  (Também disponível via CLI: `myjarbis config language EN`.)
+
+### Caso C — Sem projeto / Sem módulos
+
+Se o hook reportou "Sem projeto MyJarbis" ou "Nenhum módulo
+registrado", explique brevemente as opções (`myjarbis init` ou
+`myjarbis module create <name>`).
+
+### Se após `start_session` o módulo vier vazio
+
+(`projectContext.length === 0` AND `moduleContext.length === 0` AND
+`stories.count === 0`): ofereça importar com `myjarbis import`
+apontando para paths típicos (`agents/`, `docs/`, `notes/`, `.specs/`).
 
 ---
 

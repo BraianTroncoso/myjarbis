@@ -20,6 +20,8 @@ import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
+import { startSession } from './tools/session.js';
+import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
 import { SCHEMA_VERSION } from './db/schema.js';
 import {
@@ -127,17 +129,46 @@ function runImport(argv: string[]): void {
 // Subcommand: module
 // ─────────────────────────────────────────────────────────────────────
 
+/** Path to the per-project active-module marker file. Like git's HEAD,
+ *  but a single line with the module name. Always git-ignored — even
+ *  in shared:true projects, this is per-user state. */
+function activeModulePath(projectPath: string): string {
+  return path.join(projectPath, '.myjarbis', 'active');
+}
+
+function readActiveModule(projectPath: string): string | null {
+  try {
+    const p = activeModulePath(projectPath);
+    if (!fs.existsSync(p)) return null;
+    const v = fs.readFileSync(p, 'utf-8').trim();
+    return v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveModule(projectPath: string, name: string): void {
+  const p = activeModulePath(projectPath);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, name + '\n', 'utf-8');
+}
+
+function clearActiveModule(projectPath: string): void {
+  const p = activeModulePath(projectPath);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+}
+
 function runModule(argv: string[]): void {
   const [sub, ...rest] = argv;
   if (!sub) {
-    fail('Usage: myjarbis module <add|list> [args...]');
+    fail('Usage: myjarbis module <list|use|current|unset|add|create> [args...]');
   }
   const ctx = ServerContext.initialize();
   try {
-    if (sub === 'add') {
+    if (sub === 'add' || sub === 'create') {
       const { positional, flags } = parseFlags(rest);
       const name = positional[0];
-      if (!name) fail('Usage: myjarbis module add <name> [--description=<desc>]');
+      if (!name) fail(`Usage: myjarbis module ${sub} <name> [--description=<desc>]`);
       const result = createModule(ctx, {
         name,
         description: flags.description as string | undefined,
@@ -152,10 +183,178 @@ function runModule(argv: string[]): void {
           ? (flags['include-status'] as string).split(',').map((s) => s.trim()).filter(Boolean)
           : undefined;
       const result = listModules(ctx, includeStatus ? { include_status: includeStatus } : {});
+      const active = readActiveModule(ctx.projectPath);
+      printJson({ ...result, active });
+      return;
+    }
+    if (sub === 'use') {
+      const { positional } = parseFlags(rest);
+      const name = positional[0];
+      if (!name) fail('Usage: myjarbis module use <name>');
+      const project = ctx.requireProject();
+      const m = ctx.db.modules.findByName(project.id, name);
+      if (!m) {
+        fail(`Module "${name}" does not exist. Use \`myjarbis module list\` to see available modules, or \`myjarbis module create ${name}\` to create it.`);
+      }
+      writeActiveModule(ctx.projectPath, m.name);
+      printJson({
+        active: m.name,
+        description: m.description,
+        status: m.status,
+        hint: 'Open Claude in this directory — /jarbis will resume this module automatically.',
+      });
+      return;
+    }
+    if (sub === 'current') {
+      const active = readActiveModule(ctx.projectPath);
+      printJson({ active });
+      return;
+    }
+    if (sub === 'unset') {
+      clearActiveModule(ctx.projectPath);
+      printJson({ active: null, hint: 'Active module cleared. /jarbis will show the module menu next time.' });
+      return;
+    }
+    fail(`Unknown module subcommand: ${sub}. Use list | use | current | unset | add | create.`);
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Subcommand: config (language / persona / list)
+// ─────────────────────────────────────────────────────────────────────
+
+function runConfig(argv: string[]): void {
+  const [sub, ...rest] = argv;
+  if (!sub) {
+    fail('Usage: myjarbis config <list|language|persona> [value]');
+  }
+  const ctx = ServerContext.initialize();
+  try {
+    if (sub === 'list') {
+      const project = ctx.requireProject();
+      const settings = readSettingsJson(ctx.projectPath);
+      const skill = ctx.db.skills.findByName(project.id, null, 'interaction-style');
+      const inferred = inferCurrent(skill?.content ?? null);
+      printJson({
+        project: { name: project.name, framework: project.framework },
+        language: settings.language ?? inferred.language,
+        persona: inferred.persona,
+        shared: settings.shared ?? false,
+        search_default_scope: settings.search_default_scope ?? 'module',
+        story_pattern: settings.story_pattern ?? null,
+        nudges: settings.nudges ?? null,
+      });
+      return;
+    }
+    if (sub === 'language' || sub === 'persona') {
+      const { positional } = parseFlags(rest);
+      const value = positional[0];
+      if (!value) fail(`Usage: myjarbis config ${sub} <value>`);
+      const args: { language?: string; persona?: string } = {};
+      if (sub === 'language') args.language = value;
+      else args.persona = value;
+      const result = applyInteractionStyle(ctx, args);
+      // Also persist language to settings.json for the hook to read
+      if (sub === 'language') {
+        const settingsPath = path.join(ctx.projectPath, '.myjarbis', 'config', 'settings.json');
+        if (fs.existsSync(settingsPath)) {
+          const settings = readSettingsJson(ctx.projectPath);
+          settings.language = result.language.toLowerCase();
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+        }
+      }
       printJson(result);
       return;
     }
-    fail(`Unknown module subcommand: ${sub}. Use add | list.`);
+    fail(`Unknown config subcommand: ${sub}. Use list | language | persona.`);
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Subcommand: status (git-like overview)
+// ─────────────────────────────────────────────────────────────────────
+
+function runStatus(_argv: string[]): void {
+  const ctx = ServerContext.initialize();
+  try {
+    const project = ctx.project;
+    if (!project) {
+      printJson({
+        project: null,
+        path: ctx.projectPath,
+        hint: 'Not a MyJarbis project. Run `myjarbis init`.',
+      });
+      return;
+    }
+
+    const active = readActiveModule(ctx.projectPath);
+    const modules = ctx.db.modules.listByProject(project.id);
+    const activeMod = active ? modules.find((m) => m.name === active) : null;
+
+    let lastSession: { ended_at: string | null; next_session: string | null } | null = null;
+    if (activeMod) {
+      const last = ctx.db.sessions.findLastClosedByModule(activeMod.id);
+      if (last) lastSession = { ended_at: last.ended_at, next_session: last.next_session };
+    }
+
+    const projCtxCount = (ctx.db.db.prepare('SELECT COUNT(*) AS n FROM project_context WHERE project_id=?').get(project.id) as { n: number }).n;
+    const modCtxCounts = ctx.db.db.prepare(
+      `SELECT m.name, COUNT(mc.id) AS total,
+              SUM(CASE WHEN mc.kind='story' THEN 1 ELSE 0 END) AS stories,
+              SUM(CASE WHEN mc.kind='story' AND mc.progress IS NOT NULL THEN 1 ELSE 0 END) AS stories_with_progress
+       FROM modules m LEFT JOIN module_context mc ON mc.module_id=m.id
+       WHERE m.project_id=? GROUP BY m.id ORDER BY m.name`,
+    ).all(project.id) as Array<{ name: string; total: number; stories: number; stories_with_progress: number }>;
+    const obsCount = (ctx.db.db.prepare(
+      `SELECT COUNT(o.id) AS n FROM observations o JOIN sessions s ON s.id=o.session_id JOIN modules m ON m.id=s.module_id WHERE m.project_id=?`,
+    ).get(project.id) as { n: number }).n;
+    const skillsCount = (ctx.db.db.prepare('SELECT COUNT(*) AS n FROM skills WHERE project_id=?').get(project.id) as { n: number }).n;
+    const sessAgg = ctx.db.db.prepare(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN ended_at IS NOT NULL THEN 1 ELSE 0 END) AS closed
+       FROM sessions s JOIN modules m ON m.id=s.module_id WHERE m.project_id=?`,
+    ).get(project.id) as { total: number; closed: number };
+
+    let git: { branch: string | null; ahead: number | null } = { branch: null, ahead: null };
+    try {
+      const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: ctx.projectPath, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      git.branch = branch;
+      try {
+        const ahead = execSync(`git rev-list --count origin/${branch}..HEAD`, { cwd: ctx.projectPath, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+        git.ahead = parseInt(ahead, 10);
+      } catch {
+        // No upstream / not pushed — leave ahead null
+      }
+    } catch {
+      // Not a git repo
+    }
+
+    printJson({
+      project: { name: project.name, path: project.path, framework: project.framework },
+      active_module: active,
+      active_module_status: activeMod?.status ?? null,
+      active_module_description: activeMod?.description ?? null,
+      last_session: lastSession
+        ? {
+            ended_at: lastSession.ended_at,
+            next_session_excerpt: lastSession.next_session
+              ? lastSession.next_session.slice(0, 200) + (lastSession.next_session.length > 200 ? '…' : '')
+              : null,
+          }
+        : null,
+      counts: {
+        project_context: projCtxCount,
+        modules_total: modules.length,
+        module_context: modCtxCounts,
+        observations: obsCount,
+        skills: skillsCount,
+        sessions: sessAgg,
+      },
+      git,
+    });
   } finally {
     ctx.close();
   }
@@ -526,6 +725,9 @@ function runInitProject(argv: string[]): void {
 
   // 4. Append .myjarbis/memory.db + .claude/skills/myjarbis-* to .gitignore
   //    when shared === false. (When true, the user wants them committed.)
+  //    .myjarbis/active is ALWAYS ignored — even with shared=true, it's
+  //    per-user state (each developer picks their own active module).
+  appendToGitignore(projectPath, ['.myjarbis/active']);
   if (settings.shared === false) {
     appendToGitignore(projectPath, [
       '.myjarbis/memory.db',
@@ -710,6 +912,47 @@ function runHookSessionStart(): void {
     if (active.length === 0) {
       console.log(t.no_modules_body(header));
       return;
+    }
+
+    // Active-module fast path: if `.myjarbis/active` is set (via
+    // `myjarbis module use <name>`), auto-start the session for that
+    // module and emit the greeting bundle. Skip the menu entirely.
+    // The agent's /jarbis prompt then only needs to acknowledge and
+    // continue — no tool calls, no menu rendering, no 42s/1000-token
+    // overhead.
+    const activeName = readActiveModule(ctx.projectPath);
+    if (activeName) {
+      const target = active.find((m) => m.name === activeName);
+      if (target) {
+        // Reuse an open session for this module if one exists, to avoid
+        // accumulating zombie sessions when the user opens Claude
+        // multiple times in a row.
+        let openSession = ctx.db.sessions.findActiveByModule(target.id);
+        if (!openSession) {
+          openSession = ctx.db.sessions.start(target.id);
+        }
+        ctx.setActiveSession(openSession.id, target.id);
+        const mat = materializeSkills(ctx, { module: target.name });
+        const last = ctx.db.sessions.findLastClosedByModule(target.id);
+        const blocks: string[] = [
+          header,
+          '',
+          `Module: ${target.name}${target.description ? ` — ${target.description}` : ''}`,
+          `Session #${openSession.id} ${openSession.started_at === openSession.ended_at ? 'started' : 'resumed'}.`,
+          `Skills materialized: ${mat.written.length + mat.unchanged.length} (${mat.written.length} written, ${mat.removed.length} stale removed).`,
+        ];
+        if (last?.next_session) {
+          blocks.push('', t.resume_label(target.name, stableDateLabel(last.ended_at)));
+          blocks.push(last.next_session);
+        } else {
+          blocks.push('', 'No previous session — starting fresh.');
+        }
+        console.log(blocks.join('\n'));
+        return;
+      }
+      // Active module file points to a module that no longer exists —
+      // log a warning and fall through to the menu.
+      console.error(`[MyJarbis] WARN: .myjarbis/active points to "${activeName}" which is not in the modules table. Falling back to menu.`);
     }
 
     // Render the FULL menu server-side. The agent must not re-format —
@@ -1019,6 +1262,10 @@ export function main(argv: string[]): void {
         return runStats(rest);
       case 'cost':
         return runCost(rest);
+      case 'config':
+        return runConfig(rest);
+      case 'status':
+        return runStatus(rest);
       case 'hook':
         return runHook(rest);
       case 'init-project':

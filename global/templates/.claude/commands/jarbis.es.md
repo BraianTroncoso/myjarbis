@@ -11,72 +11,70 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
 
 ---
 
-## Bootstrap (al activarte, ejecutar EN ORDEN)
+## Bootstrap (dos caminos según el SessionStart hook)
 
-1. **`current_project`** → confirma proyecto registrado en cwd.
-   - Si `registered: false`: NO te quedes en error. Decile al user
-     "este directorio no está registrado en MyJarbis" y ofrecé:
-     a) correr `myjarbis init` desde el root y reabrir Claude;
-     b) si no quiere usar MyJarbis, seguir sin él (vos podés trabajar
-     igual, solo perdés persistencia entre sesiones).
-2. **El SessionStart hook YA imprimió el menú de módulos** al user
-   (lista numerada con descriptions + opciones + último "Retomar
-   aquí"). NO lo re-rendericés ni lo eches — el user ya lo está
-   viendo. Solo esperá su respuesta y parseá:
-   - nombre/número de módulo → `start_session(<name>)` (fase 3)
-   - "nuevo módulo X" / "new module X" / "novo módulo X" → `create_module(name)` + `start_session(name)`
-   - "settings" / "configuración" → mostrá opciones (current
-     language/persona del skill `interaction-style`) y llamá
-     `set_interaction_style({language?, persona?})` cuando elija.
-   - Caso 0 módulos (el hook lo dijo): pedile un nombre y
-     `create_module(name, description?)`.
+CRÍTICO: el SessionStart hook ya hizo el discovery (printeó al user
+proyecto + módulo activo + último "Retomar aquí"). Tu trabajo en
+`/jarbis` activación es REACCIONAR a lo que hizo el hook, NO repetirlo.
+**No llames `current_project` ni `list_modules` en bootstrap** — la
+info ya está en tu contexto vía el output del hook.
 
-   Mientras esperás, NO llamés `current_project` ni `list_modules` —
-   ya están en el contexto vía el hook.
-3. **`start_session(module)`** una vez elegido. El resultado trae,
-   en orden de prioridad:
-   - `previousSession.nextSession` — **EL "Retomar aquí" canónico.
-     LEELO PRIMERO** y armá el greeting con base en él. Es el
-     equivalente directo a un CURRENT.md curado: tiene branch activa,
-     trabajo pendiente, reglas vigentes. Si está poblado, ese es el
-     estado del módulo — no escanees el catálogo a buscar más cosa.
-   - `projectContext[]` — índice de docs project-level (kind, title,
-     excerpt 240 chars). NO los releas todos en el greeting; usá
-     `load_project_core(kinds=[...])` o `search` cuando una task
-     concreta los necesite.
-   - `moduleContext[]` — índice de docs del módulo (workflow, plan,
-     functional_doc, use_cases, etc.) con excerpt. Stories NO van acá.
-   - `stories.{count, localIds[]}` — solo el inventario de stories
-     del módulo (sin contenido). Para una story específica:
-     `search("MM-S1.4", scope="module_only")` o `load_module(kinds=['story'])`.
-   - `materialized_skills[]` — skills escritas en `.claude/skills/`.
+### Caso A — El hook auto-arrancó una sesión (active module seteado)
 
-3.5. **Detección de módulo sin estado** (cuando `previousSession.nextSession`
-   está null y el catálogo está vacío):
-   - Si `projectContext.length === 0` AND `moduleContext.length === 0`
-     AND `stories.count === 0` → ofrecé importar:
-     - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
-     - `myjarbis import <path> --target=module:<name> --kind=<...>`
-     - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
-     Paths típicos a sugerir: `agents/`, `docs/`, `notes/`, `.specs/`.
-   - Si hay catálogo (≥1 entry) pero no hay `previousSession.nextSession`,
-     buscá entre `moduleContext` el más reciente con `kind=workflow` y
-     `tags` que contengan "progress" o "current" — usá su excerpt para
-     armar un greeting tentativo y pedile al user que confirme/corrija.
+Si en tu contexto ves un bloque tipo:
+```
+═══ MyJarbis · <project> ═══
 
-4. **Greeting canónico** al user (formato exacto, completá los placeholders):
+Module: <name> — <description>
+Session #N started/resumed.
+Skills materialized: ...
 
-   ```
-   MyJarbis activado · <project_name>
-     Módulo activo: <module_name>
-     Skills cargadas: <N> (project + módulo)
-     Última sesión: <relativeTime de previousSession.endedAt o "ninguna">
+── Última "Retomar aquí" (<name>, ...) ──
+<contenido>
+```
+significa que el user corrió `myjarbis module use <name>` antes de
+abrir Claude. La sesión YA está abierta. **No llames `start_session`.**
 
-   Retomar aquí:
-     <previousSession.nextSession o "Sesión nueva, sin pendientes.">
+Tu primer output: 1-2 líneas conversacional que continúen desde el
+`nextSession`. Ejemplos:
 
-   ¿Qué hacemos?
-   ```
+> Listo. Próximo paso: `<acción concreta del nextSession>`. ¿Confirmás?
+
+> Retomamos `<módulo>`. Lo pendiente: `<extracto del nextSession>`. ¿Arrancamos?
+
+NO repitas el bloque de "Retomar aquí" completo — el user ya lo vio
+en el terminal.
+
+### Caso B — El hook mostró un menú de módulos (sin active module)
+
+Si en tu contexto hay un menú con módulos numerados y opciones
+("nuevo módulo X", "settings"), el user todavía no eligió.
+
+Tu primer output: 1 línea breve esperando elección.
+
+> Listo, ¿cuál módulo?
+
+Cuando responda, parseá:
+- nombre/número de módulo → `start_session(<name>)` y mostrá greeting
+  compacto con `previousSession.nextSession` (sin re-armar bloques que
+  el hook ya printeó).
+- "nuevo módulo X" / "new module X" / "novo módulo X" → `create_module(name)` + `start_session(name)`.
+- "settings" / "configuración" → mostrá opciones de language/persona
+  inferidas del skill `interaction-style` y llamá
+  `set_interaction_style({language?, persona?})` cuando elija. (También
+  está disponible CLI: `myjarbis config language EN`.)
+
+### Caso C — No hay proyecto / No hay módulos
+
+Si el hook reportó "No hay proyecto MyJarbis" o "No hay módulos
+registrados", explicale brevemente las opciones (`myjarbis init` o
+`myjarbis module create <name>`).
+
+### Si después de `start_session` el módulo viene vacío
+
+(`projectContext.length === 0` AND `moduleContext.length === 0` AND
+`stories.count === 0`): ofrecé importar con `myjarbis import` apuntando
+a paths típicos (`agents/`, `docs/`, `notes/`, `.specs/`).
 
 ---
 

@@ -11,72 +11,70 @@ to you in natural language and you call the right MCP tools.
 
 ---
 
-## Bootstrap (on activation, run IN ORDER)
+## Bootstrap (two paths depending on the SessionStart hook)
 
-1. **`current_project`** → confirm a project is registered at cwd.
-   - If `registered: false`: do NOT stop at error. Tell the user
-     "this directory is not registered in MyJarbis" and offer:
-     a) run `myjarbis init` from the root and reopen Claude;
-     b) if they don't want MyJarbis, keep working without it (you can
-     still help, you just lose cross-session persistence).
-2. **The SessionStart hook ALREADY printed the module menu** to the
-   user (numbered list with descriptions + options + last "Resume
-   here"). Do NOT re-render or echo it — the user is looking at it.
-   Just wait for their reply and parse it:
-   - module name/number → `start_session(<name>)` (step 3)
-   - "new module X" / "nuevo módulo X" / "novo módulo X" → `create_module(name)` + `start_session(name)`
-   - "settings" → show options (current language/persona from the
-     loaded `interaction-style` skill) and call
-     `set_interaction_style({language?, persona?})` when they pick.
-   - 0 modules case (the hook said so): ask for a name and
-     `create_module(name, description?)`.
+CRITICAL: the SessionStart hook already did discovery (printed
+project + active module + last "Resume here" to the user). Your job
+on `/jarbis` activation is to REACT to what the hook did, not repeat
+it. **Do not call `current_project` or `list_modules` in bootstrap** —
+that info is already in your context via the hook output.
 
-   While waiting, do NOT call `current_project` or `list_modules` —
-   they're already in your context via the hook.
-3. **`start_session(module)`** once chosen. The result returns,
-   in priority order:
-   - `previousSession.nextSession` — **THE canonical "Resume here".
-     READ IT FIRST** and build the greeting from it. It's the direct
-     equivalent of a curated CURRENT.md: active branch, pending work,
-     active rules. If it's populated, that IS the module's state — do
-     not scan the catalog looking for more.
-   - `projectContext[]` — index of project-level docs (kind, title,
-     240-char excerpt). Do NOT re-read all of them in the greeting; use
-     `load_project_core(kinds=[...])` or `search` when a concrete task
-     needs them.
-   - `moduleContext[]` — index of module docs (workflow, plan,
-     functional_doc, use_cases, etc.) with excerpts. Stories are NOT here.
-   - `stories.{count, localIds[]}` — only the inventory of module
-     stories (no body). For a specific story:
-     `search("MM-S1.4", scope="module_only")` or `load_module(kinds=['story'])`.
-   - `materialized_skills[]` — skills written under `.claude/skills/`.
+### Case A — Hook auto-started a session (active module set)
 
-3.5. **Empty-module detection** (when `previousSession.nextSession`
-   is null and the catalog is empty):
-   - If `projectContext.length === 0` AND `moduleContext.length === 0`
-     AND `stories.count === 0` → offer to import:
-     - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
-     - `myjarbis import <path> --target=module:<name> --kind=<...>`
-     - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
-     Common paths to suggest: `agents/`, `docs/`, `notes/`, `.specs/`.
-   - If there's a catalog (≥1 entry) but no `previousSession.nextSession`,
-     look in `moduleContext` for the most recent row with `kind=workflow`
-     and `tags` containing "progress" or "current" — use its excerpt to
-     build a tentative greeting and ask the user to confirm/correct.
+If your context shows a block like:
+```
+═══ MyJarbis · <project> ═══
 
-4. **Canonical greeting** to the user (exact format, fill placeholders):
+Module: <name> — <description>
+Session #N started/resumed.
+Skills materialized: ...
 
-   ```
-   MyJarbis active · <project_name>
-     Active module: <module_name>
-     Loaded skills: <N> (project + module)
-     Last session: <relativeTime of previousSession.endedAt or "none">
+── Last "Resume here" (<name>, ...) ──
+<content>
+```
+that means the user ran `myjarbis module use <name>` before opening
+Claude. The session is ALREADY open. **Do not call `start_session`.**
 
-   Resume here:
-     <previousSession.nextSession or "Fresh session, nothing pending.">
+Your first output: 1-2 conversational lines continuing from
+`nextSession`. Examples:
 
-   What are we doing?
-   ```
+> Ready. Next step: `<concrete action from nextSession>`. Confirm?
+
+> Resuming `<module>`. Pending: `<excerpt from nextSession>`. Shall we go?
+
+Do NOT re-print the full "Resume here" block — the user already saw
+it on their terminal.
+
+### Case B — Hook showed a module menu (no active module)
+
+If your context contains a numbered module menu with options ("new
+module X", "settings"), the user hasn't picked yet.
+
+Your first output: 1 short line awaiting choice.
+
+> Ready, which module?
+
+When they reply, parse:
+- module name/number → `start_session(<name>)` and show a compact
+  greeting with `previousSession.nextSession` (don't re-build blocks
+  the hook already printed).
+- "new module X" / "nuevo módulo X" / "novo módulo X" → `create_module(name)` + `start_session(name)`.
+- "settings" → show language/persona options inferred from the
+  loaded `interaction-style` skill and call
+  `set_interaction_style({language?, persona?})` when they pick. (Also
+  available via CLI: `myjarbis config language EN`.)
+
+### Case C — No project / No modules
+
+If the hook reported "No MyJarbis project" or "No modules
+registered", briefly explain the options (`myjarbis init` or
+`myjarbis module create <name>`).
+
+### If after `start_session` the module is empty
+
+(`projectContext.length === 0` AND `moduleContext.length === 0` AND
+`stories.count === 0`): offer to import with `myjarbis import`
+pointing to common paths (`agents/`, `docs/`, `notes/`, `.specs/`).
 
 ---
 
