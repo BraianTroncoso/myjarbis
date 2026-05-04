@@ -20,14 +20,33 @@ to you in natural language and you call the right MCP tools.
      b) if they don't want MyJarbis, keep working without it (you can
      still help, you just lose cross-session persistence).
 2. **`list_modules`** → inventory of the project's verticals.
+   **ALWAYS show the menu, never auto-select even with one module.**
+   The user explicitly wants to be able to pick among existing
+   modules, create a new one, or enter settings.
    - 0 modules: ask the user for a name and `create_module(name, description?)`.
+     Then proceed to step 3 (start_session).
    - 1 module named `_general` (v0.1→v0.2 migration artifact):
-     treat it as "no real modules". Suggest creating one with a
-     representative vertical name (e.g. MM, PageBuilder, Auth) and
-     `create_module(...)`. Do NOT silently auto-select `_general`.
-   - 1 real module: assume it (no question asked) and inform briefly.
-   - N modules: show the list with status and `last session`, ask the
-     user to pick one or create another.
+     show it in the menu but suggest creating a real vertical
+     (e.g. MM, PageBuilder, Auth) with a representative name.
+   - N modules (including N=1): show menu with each one + last
+     session timestamp + options "create new <name>" + "settings".
+
+   Menu format (the user reads, you build it):
+   ```
+   MyJarbis · <project_name>
+     Modules:
+       1. <name> — last session <ISO timestamp> UTC
+          └ "<one-line excerpt of nextSession from last close>"
+       2. <name> — no sessions yet
+       ...
+
+     What are we doing?
+       · "<name>" or "<num>"   → start session in that module
+       · "new module <name>"   → create_module + start_session
+       · "settings"            → change language / persona
+   ```
+
+   Wait for the user's reply before going to step 3.
 3. **`start_session(module)`** once chosen. The result returns,
    in priority order:
    - `previousSession.nextSession` — **THE canonical "Resume here".
@@ -180,6 +199,7 @@ wrap it up"*.
 | "before compacting" / before native `/compact`   | `save_observation(kind=discovery, tags=pre-compact, content=<structured snapshot>)`. Then OK the user to run `/compact`. |
 | A bare `localId` (e.g. `MM-S1.4`)                | Assume they want to start that story → phase 2 (Analysis).                  |
 | "update the docs" / "mark X as done" / "log the smokes" | For each story touched in the session: `update_progress(local_id, progress)` with structured markdown: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · date · smoke notes. Direct equivalent of editing the Smoke/Commit column of a PROGRESS.md. Do NOT use `save_observation` for this — `progress` is row-relational state, observations are session lessons. |
+| "settings" / "change style" / "change language" / "change persona" | Show the available options: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. If you can infer the current values from the loaded `interaction-style` skill, surface them first. When the user picks, call `set_interaction_style({language?, persona?})` with only the changed field (the other is preserved). Tell the user the change applies from your next response; for materialized-skill refresh on disk, they should reopen Claude. |
 
 ---
 

@@ -55,6 +55,10 @@ import {
   updateProgressInputSchema,
 } from './tools/observations.js';
 import {
+  setInteractionStyle,
+  setInteractionStyleInputSchema,
+} from './tools/interactionStyle.js';
+import {
   searchCodeAlias,
   searchCodeInputSchema,
   getContextAlias,
@@ -185,6 +189,18 @@ function buildToolRegistry(): RegisteredTool[] {
         'Resolves by local_id (e.g. "MM-S3.6") or row_id. Free-form markdown.',
       inputSchema: updateProgressInputSchema,
       handler: (ctx, args) => updateProgress(ctx, args),
+    },
+    {
+      name: 'set_interaction_style',
+      description:
+        'Change language and/or persona of the project\'s interaction-style ' +
+        'skill from inside Claude (no CLI needed). Pass `language` (EN|ES|PT) ' +
+        'and/or `persona` (concise|pair|mentor|reviewer or 1-4). The skill is ' +
+        'recomposed and re-materialized to .claude/skills/. Use when the user ' +
+        'asks for "settings", "change language", "change persona", or similar.',
+      inputSchema: setInteractionStyleInputSchema,
+      handler: (ctx, args) => setInteractionStyle(ctx, args),
+      deferred: true,
     },
     {
       name: 'import_md',

@@ -20,7 +20,6 @@ import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
-import { startSession, endSession, resume } from './tools/session.js';
 import { seedNewProject } from './db/migrate.js';
 import { SCHEMA_VERSION } from './db/schema.js';
 import {
@@ -653,32 +652,9 @@ function runHookSessionStart(): void {
       return;
     }
 
-    // Read settings.json for auto-select-when-single
-    const settings = readSettingsJson(ctx.projectPath);
-    const autoSelect = settings.auto_module_select_when_single !== false;
-
-    if (active.length === 1 && autoSelect) {
-      const only = active[0];
-      const session = startSession(ctx, { module: only.name });
-      const mat = materializeSkills(ctx, { module: only.name });
-      const resumed = session.previousSession?.nextSession;
-      const blocks: string[] = [
-        header,
-        `Module: ${only.name} (auto-selected — only one module)`,
-        `Session #${session.sessionId} started.`,
-        `Skills materialized: ${mat.written.length + mat.unchanged.length} (${mat.written.length} written, ${mat.removed.length} stale removed).`,
-      ];
-      if (resumed) {
-        blocks.push('', '── Retomar aquí ──', resumed);
-      } else {
-        blocks.push('', 'No previous session — starting fresh.');
-      }
-      console.log(blocks.join('\n'));
-      return;
-    }
-
-    // Multiple modules: print menu + last next_session of most recently
-    // ended one across all modules.
+    // Always show the module menu — even with 1 active module — so the
+    // user can switch, create a new one, or open settings. The agent
+    // (via /jarbis) opens the session after the user picks.
     const lines: string[] = [header, '', `Modules:`];
     for (const m of active) {
       const last = ctx.db.sessions.findLastClosedByModule(m.id);
@@ -688,6 +664,7 @@ function runHookSessionStart(): void {
     }
     lines.push('', `Pick a module to begin (e.g., "let's work on ${active[0].name}").`);
     lines.push(`Or create a new one: \`myjarbis module add <name>\`.`);
+    lines.push(`Or change settings (language / persona): say "settings".`);
 
     // Surface the most recent next_session, if any (helps remember what
     // was being worked on last).

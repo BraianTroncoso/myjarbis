@@ -20,14 +20,33 @@ usuário fala em linguagem natural e você chama os MCP tools certos.
      b) se não quiser usar MyJarbis, seguir sem ele (você ainda pode
      trabalhar, só perde persistência entre sessões).
 2. **`list_modules`** → inventário das verticais do projeto.
+   **SEMPRE mostre o menu, não autoselecione mesmo com um só módulo.**
+   O usuário explicitamente quer poder escolher entre os existentes,
+   criar um novo, ou entrar em settings.
    - 0 módulos: peça um nome ao usuário e `create_module(name, description?)`.
+     Depois siga para step 3 (start_session).
    - 1 módulo chamado `_general` (artefato de migração v0.1→v0.2):
-     trate como "não há módulos reais". Sugira criar um com nome
-     representativo da vertical (ex. MM, PageBuilder, Auth) e
-     `create_module(...)`. NÃO autoselecione `_general` silenciosamente.
-   - 1 módulo real: assuma (sem perguntar) e informe brevemente.
-   - N módulos: mostre a lista com status e `last session` e peça que
-     escolha um ou crie outro.
+     mostre no menu mas sugira criar uma vertical real
+     (ex. MM, PageBuilder, Auth) com nome representativo.
+   - N módulos (incluindo N=1): mostre menu com cada um + last session
+     timestamp + opções "create new <name>" + "settings".
+
+   Formato do menu (o usuário lê, você monta):
+   ```
+   MyJarbis · <project_name>
+     Módulos:
+       1. <name> — last session <ISO timestamp> UTC
+          └ "<excerpt 1-linha do nextSession do último fechamento>"
+       2. <name> — no sessions yet
+       ...
+
+     O que vamos fazer?
+       · "<name>" ou "<num>"   → começar sessão nesse módulo
+       · "novo módulo <name>"  → create_module + start_session
+       · "settings"            → mudar language / persona
+   ```
+
+   Espere a resposta do usuário antes de seguir para step 3.
 3. **`start_session(module)`** uma vez escolhido. O resultado retorna,
    em ordem de prioridade:
    - `previousSession.nextSession` — **O "Retomar aqui" canônico.
@@ -180,6 +199,7 @@ done / vamos salvar"*.
 | "antes de compactar" / antes de `/compact` nativo | `save_observation(kind=discovery, tags=pre-compact, content=<snapshot estruturado>)`. Depois OK ao usuário para `/compact`. |
 | Um `localId` isolado (ex. `MM-S1.4`)             | Assuma que quer começar essa story → fase 2 (Análise).                      |
 | "atualize a doc" / "marca X como pronto" / "registre os smokes" | Para cada story tocada na sessão: `update_progress(local_id, progress)` com markdown estruturado: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · data · notas de smoke. Equivalente direto a editar a coluna Smoke/Commit de um PROGRESS.md. NÃO use `save_observation` para isso — `progress` é estado relacional ao row, observations são lições da sessão. |
+| "configurações" / "mudar estilo" / "mudar idioma" / "mudar persona" | Mostre as opções disponíveis: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. Se você pode inferir os valores atuais do skill `interaction-style` carregado, mostre-os primeiro. Quando o usuário escolher, chame `set_interaction_style({language?, persona?})` com apenas o campo que muda (o outro é preservado). Diga ao usuário que a mudança aplica a partir da sua próxima resposta; para refresh de skills materializadas no disco, ele deve reabrir Claude. |
 
 ---
 
