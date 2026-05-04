@@ -599,18 +599,15 @@ function safeContext(): { ctx: ServerContext } | null {
   }
 }
 
-function relativeTime(iso: string | null): string {
+/** Stable date label for hook output. We deliberately avoid "Xh ago"
+ *  because that would invalidate Anthropic's prompt cache every minute. */
+function stableDateLabel(iso: string | null): string {
   if (!iso) return 'never';
-  const t = new Date(iso.replace(' ', 'T') + 'Z').getTime();
-  if (Number.isNaN(t)) return iso;
-  const diffMs = Date.now() - t;
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
+  // Accept "YYYY-MM-DD HH:MM:SS" or ISO; collapse to "YYYY-MM-DD HH:MM".
+  const normalized = iso.replace(' ', 'T');
+  const parsed = new Date(normalized.endsWith('Z') ? normalized : normalized + 'Z');
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toISOString().slice(0, 16).replace('T', ' ');
 }
 
 function runHookSessionStart(): void {
@@ -674,7 +671,7 @@ function runHookSessionStart(): void {
     for (const m of active) {
       const last = ctx.db.sessions.findLastClosedByModule(m.id);
       const tag = m.status === 'paused' ? ' (paused)' : '';
-      const last_tag = last?.ended_at ? `, last session ${relativeTime(last.ended_at)}` : ', no sessions yet';
+      const last_tag = last?.ended_at ? `, last session ${stableDateLabel(last.ended_at)} UTC` : ', no sessions yet';
       lines.push(`  • ${m.name}${tag}${last_tag}`);
     }
     lines.push('', `Pick a module to begin (e.g., "let's work on ${active[0].name}").`);
@@ -692,7 +689,7 @@ function runHookSessionStart(): void {
       }
     }
     if (mostRecent) {
-      lines.push('', `── Last "Retomar aquí" (${mostRecent.mod}, ${relativeTime(mostRecent.ended_at)}) ──`);
+      lines.push('', `── Last "Retomar aquí" (${mostRecent.mod}, ${stableDateLabel(mostRecent.ended_at)} UTC) ──`);
       lines.push(mostRecent.next);
     }
     console.log(lines.join('\n'));
@@ -864,25 +861,41 @@ function runHookUserPromptSubmit(_rest: string[]): void {
       }
     }
 
-    // 3. 15-minute nudge if no save_observation in this project recently.
-    const NUDGE_MIN = 15;
-    const lastObsRow = ctx.db.db.prepare(
-      `SELECT MAX(o.created_at) AS last
-         FROM observations o
-         JOIN sessions s ON s.id = o.session_id
-         JOIN modules m  ON m.id = s.module_id
-        WHERE m.project_id = ?`,
-    ).get(project.id) as { last: string | null } | undefined;
+    // 3. Save-observation nudge — opt-in via settings.nudges.save_reminder_minutes.
+    //    Default off: keeps the hook output cache-stable for users who don't
+    //    explicitly want this reminder. When enabled, we bucket on the hour
+    //    so the nudge state changes at most once per hour (prompt cache lives).
+    const nudges = (settings as Record<string, unknown>).nudges as
+      | { save_reminder_minutes?: number }
+      | undefined;
+    const reminderMin = typeof nudges?.save_reminder_minutes === 'number'
+      ? nudges.save_reminder_minutes
+      : null;
+    if (reminderMin !== null && reminderMin > 0) {
+      const lastObsRow = ctx.db.db.prepare(
+        `SELECT MAX(o.created_at) AS last
+           FROM observations o
+           JOIN sessions s ON s.id = o.session_id
+           JOIN modules m  ON m.id = s.module_id
+          WHERE m.project_id = ?`,
+      ).get(project.id) as { last: string | null } | undefined;
 
-    const lastIso = lastObsRow?.last ?? null;
-    if (lastIso) {
-      const lastMs = new Date(lastIso.replace(' ', 'T') + 'Z').getTime();
-      if (!Number.isNaN(lastMs) && Date.now() - lastMs > NUDGE_MIN * 60 * 1000) {
-        messages.push(
-          `═══ MyJarbis · save reminder ═══\n` +
-          `It has been over ${NUDGE_MIN} minutes since the last save_observation in this project. ` +
-          `Did you make any decisions, fix bugs, or discover something worth persisting?`,
-        );
+      const lastIso = lastObsRow?.last ?? null;
+      if (lastIso) {
+        const lastMs = new Date(lastIso.replace(' ', 'T') + 'Z').getTime();
+        // Hour-bucketed threshold: floor(now) to the start of the current
+        // hour, then check if last_obs is older than (bucketStart - reminderMin).
+        // Stable for the entire hour bucket → cache survives.
+        const hourMs = 60 * 60 * 1000;
+        const bucketStart = Math.floor(Date.now() / hourMs) * hourMs;
+        const cutoff = bucketStart - reminderMin * 60 * 1000;
+        if (!Number.isNaN(lastMs) && lastMs < cutoff) {
+          messages.push(
+            `═══ MyJarbis · save reminder ═══\n` +
+            `No save_observation has landed in this project in the last ${reminderMin}+ minutes. ` +
+            `Did you make any decisions, fix bugs, or discover something worth persisting?`,
+          );
+        }
       }
     }
 
@@ -902,6 +915,13 @@ interface ProjectSettings {
   skills?: {
     materialize_on_session_start?: boolean;
     cleanup_module_skills_on_session_end?: boolean;
+  };
+  /** Optional nudges. All fields default OFF so the hook stays
+   *  cache-stable for users who don't explicitly opt in. */
+  nudges?: {
+    /** When set to N>0, UserPromptSubmit hints to save an observation
+     *  if none has landed in the last N+ minutes (bucketed per hour). */
+    save_reminder_minutes?: number;
   };
   [k: string]: unknown;
 }
