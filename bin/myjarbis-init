@@ -213,7 +213,31 @@ ok
 
 # ─── [4/8] /jarbis command ────────────────────────────────────────
 step 4 "Install /jarbis command"
-cp "$INSTALL_DIR/templates/.claude/commands/jarbis.md" .claude/commands/jarbis.md
+
+# Language has to be known BEFORE this step so we can pick the right
+# trilingual variant of jarbis.md. Step 7 also needs it (for the
+# interaction-style skill); we just resolve it once here.
+LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
+if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
+    echo
+    echo -e "       ${BOLD}Language for the /jarbis prompt${NC}"
+    echo -e "         EN  English (United States) ${DIM}[default]${NC}"
+    echo -e "         ES  Español (Argentina)"
+    echo -e "         PT  Português (Brazil)"
+    read -p "       Choice [EN]: " LANG_CHOICE
+    echo
+fi
+LANG_CHOICE="${LANG_CHOICE:-EN}"
+LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
+JARBIS_LANG=$(echo "$LANG_CHOICE" | tr '[:upper:]' '[:lower:]')
+
+JARBIS_TEMPLATE="$INSTALL_DIR/templates/.claude/commands/jarbis.${JARBIS_LANG}.md"
+if [ ! -f "$JARBIS_TEMPLATE" ]; then
+    note "jarbis.${JARBIS_LANG}.md not found, falling back to ES"
+    JARBIS_TEMPLATE="$INSTALL_DIR/templates/.claude/commands/jarbis.es.md"
+fi
+cp "$JARBIS_TEMPLATE" .claude/commands/jarbis.md
+note "installed jarbis.md ($LANG_CHOICE variant)"
 
 # Cleanup stale slash commands from previous MyJarbis versions
 STALE_REMOVED=0
@@ -260,23 +284,12 @@ else
     warn "plugin templates not found at $INSTALL_DIR/templates/.claude-plugin"
 fi
 
-# ─── [7/8] language + persona + seed memory.db ────────────────────
-step 7 "Configure language and persona"
+# ─── [7/8] persona + seed memory.db ───────────────────────────────
+step 7 "Configure persona and seed memory.db"
 
-LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
+# LANG_CHOICE was resolved at step 4 (needed there to pick the right
+# trilingual jarbis.md). We only need persona here.
 PERSONA_CHOICE="${MYJARBIS_PERSONA:-}"
-
-if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
-    echo
-    echo -e "       ${BOLD}Languages${NC}"
-    echo -e "         EN  English (United States) ${DIM}[default]${NC}"
-    echo -e "         ES  Español (Argentina)"
-    echo -e "         PT  Português (Brazil)"
-    read -p "       Choice [EN]: " LANG_CHOICE
-    echo
-fi
-LANG_CHOICE="${LANG_CHOICE:-EN}"
-LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
 
 if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
     echo -e "       ${BOLD}Personas${NC}"

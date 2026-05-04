@@ -83,7 +83,9 @@ cp -r bin "$INSTALL_DIR/"
 
 CRITICAL_FILES=(
     "$INSTALL_DIR/mcp-server/package.json"
-    "$INSTALL_DIR/templates/.claude/commands/jarbis.md"
+    "$INSTALL_DIR/templates/.claude/commands/jarbis.es.md"
+    "$INSTALL_DIR/templates/.claude/commands/jarbis.en.md"
+    "$INSTALL_DIR/templates/.claude/commands/jarbis.pt.md"
     "$INSTALL_DIR/bin/myjarbis"
     "$INSTALL_DIR/bin/myjarbis-init"
     "$INSTALL_DIR/bin/myjarbis-doctor"
