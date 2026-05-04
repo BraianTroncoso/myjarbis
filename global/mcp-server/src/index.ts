@@ -79,6 +79,12 @@ interface RegisteredTool {
   description: string;
   inputSchema: unknown;
   handler: (ctx: ServerContext, args: unknown) => unknown | Promise<unknown>;
+  /** Admin/setup tools that almost never get called from inside Claude
+   *  set this true so they ride the deferred-tool path: Claude Code
+   *  ships only the name+description in the system prompt and loads the
+   *  full schema on demand via ToolSearch. Saves ~600-1200 tokens per
+   *  session in the typical case where they're never invoked. */
+  deferred?: boolean;
 }
 
 function buildToolRegistry(): RegisteredTool[] {
@@ -107,6 +113,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'filesystem.',
       inputSchema: createModuleInputSchema,
       handler: (ctx, args) => createModule(ctx, args),
+      deferred: true,
     },
     {
       name: 'start_session',
@@ -174,6 +181,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'source_path, kind). target = "project" | "module:<name>".',
       inputSchema: importMdInputSchema,
       handler: (ctx, args) => importMd(ctx, args),
+      deferred: true,
     },
     {
       name: 'import_json',
@@ -183,6 +191,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'with optional overrides. Useful for Jira/Linear bulk exports.',
       inputSchema: importJsonInputSchema,
       handler: (ctx, args) => importJson(ctx, args),
+      deferred: true,
     },
     {
       name: 'list_skills',
@@ -191,6 +200,7 @@ function buildToolRegistry(): RegisteredTool[] {
         '(session = project-level + active module). Optional `only_enabled`.',
       inputSchema: listSkillsInputSchema,
       handler: (ctx, args) => listSkills(ctx, args),
+      deferred: true,
     },
     {
       name: 'add_skill',
@@ -200,6 +210,7 @@ function buildToolRegistry(): RegisteredTool[] {
         '(only loaded when that module is in session). Idempotent by hash.',
       inputSchema: addSkillInputSchema,
       handler: (ctx, args) => addSkill(ctx, args),
+      deferred: true,
     },
     {
       name: 'materialize_skills',
@@ -209,6 +220,7 @@ function buildToolRegistry(): RegisteredTool[] {
         'the SessionStart hook and on /module switch.',
       inputSchema: materializeSkillsInputSchema,
       handler: (ctx, args) => materializeSkills(ctx, args),
+      deferred: true,
     },
 
     // Legacy v0.1 aliases (kept for backwards compatibility with old
@@ -263,11 +275,18 @@ async function main(): Promise<void> {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema as Record<string, unknown>,
-      })),
+      tools: tools.map((t) => {
+        const out: Record<string, unknown> = {
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema as Record<string, unknown>,
+        };
+        // Pass-through for clients (Claude Code) that recognize the
+        // `deferred` hint to load the tool's full schema lazily via
+        // ToolSearch instead of including it in the system prompt.
+        if (t.deferred) out.deferred = true;
+        return out;
+      }),
     };
   });
 
