@@ -52,6 +52,10 @@ export interface StartSessionResult {
   module: { id: number; name: string; description: string | null; status: string };
   projectContext: ContextEntrySummary[];
   moduleContext: ContextEntrySummary[];
+  /** Stories are listed by localId only (no excerpt) to avoid dumping
+   *  hundreds of rows on bootstrap. Use search() or load_module(kinds=['story'])
+   *  to pull a specific one when working on it. */
+  stories: { count: number; localIds: string[] };
   previousSession: {
     id: number;
     endedAt: string | null;
@@ -75,9 +79,21 @@ export function startSession(
   const projectCtx = ctx.db.projectContext.listByProject(project.id).map(
     summarizeProjectContext,
   );
-  const moduleCtx = ctx.db.moduleContext.listByModule(module.id).map(
-    summarizeModuleContext,
-  );
+  // Split module_context: stories get an index-only summary (count +
+  // localIds), the rest (workflow / plan / use_cases / functional_doc /
+  // acceptance_criteria / other) keep their 240-char excerpt. Otherwise
+  // a module with N stories blows the bootstrap response to ~Nx400b.
+  const allModuleCtx = ctx.db.moduleContext.listByModule(module.id);
+  const storyRows = allModuleCtx.filter((r) => r.kind === 'story');
+  const nonStoryRows = allModuleCtx.filter((r) => r.kind !== 'story');
+  const moduleCtx = nonStoryRows.map(summarizeModuleContext);
+  const stories = {
+    count: storyRows.length,
+    localIds: storyRows
+      .map((r) => extractLocalId(r))
+      .filter((id): id is string => id !== null)
+      .sort(),
+  };
 
   const previousClosed = ctx.db.sessions.findLastClosedByModule(module.id);
 
@@ -93,6 +109,7 @@ export function startSession(
     },
     projectContext: projectCtx,
     moduleContext: moduleCtx,
+    stories,
     previousSession: previousClosed
       ? {
           id: previousClosed.id,
@@ -102,8 +119,8 @@ export function startSession(
         }
       : null,
     hint: previousClosed?.next_session
-      ? `Resuming from previous session. Read previousSession.nextSession before continuing.`
-      : `New module — no previous session to resume.`,
+      ? `READ previousSession.nextSession FIRST — that is the canonical "Retomar aquí". Use it to greet the user. The catalog (projectContext, moduleContext, stories) is for on-demand lookup via search/load_module.`
+      : `New module — no previous session. Surface counts (project_context: ${projectCtx.length}, module_context: ${moduleCtx.length}, stories: ${stories.count}) and ask the user where to start.`,
   };
 }
 
@@ -255,4 +272,18 @@ function makeExcerpt(content: string): string {
   const normalized = content.trim().replace(/\s+/g, ' ');
   if (normalized.length <= EXCERPT_LEN) return normalized;
   return normalized.slice(0, EXCERPT_LEN - 1) + '…';
+}
+
+/** Pulls the story localId from the row. import_json writes
+ *  source_path as "<file>#<localId>". Falls back to scanning the title
+ *  for an Id-like token if the source_path is missing. */
+function extractLocalId(row: ModuleContextRow): string | null {
+  if (row.source_path) {
+    const hashIdx = row.source_path.lastIndexOf('#');
+    if (hashIdx >= 0 && hashIdx < row.source_path.length - 1) {
+      return row.source_path.slice(hashIdx + 1);
+    }
+  }
+  const m = row.title.match(/[A-Z]+-S?\d+(?:\.\d+)?/);
+  return m ? m[0] : null;
 }

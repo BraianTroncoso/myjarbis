@@ -28,27 +28,36 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
    - 1 módulo real: asumilo (sin preguntar) e informá brevemente.
    - N módulos: mostrá la lista con su estado y `last session` y pedile
      que elija uno o cree otro.
-3. **`start_session(module)`** una vez elegido. El resultado trae:
-   - `projectContext[]` — practicas, deps, convenciones del proyecto.
-   - `moduleContext[]` — workflow, plan, stories del módulo elegido.
-   - `previousSession` — si != null, el campo `nextSession` es el
-     "Retomar aquí" canónico. **Surfacealo al user en una frase**.
-   - `materialized_skills[]` — skills que quedaron escritas en
-     `<project>/.claude/skills/` para esta sesión.
+3. **`start_session(module)`** una vez elegido. El resultado trae,
+   en orden de prioridad:
+   - `previousSession.nextSession` — **EL "Retomar aquí" canónico.
+     LEELO PRIMERO** y armá el greeting con base en él. Es el
+     equivalente directo a un CURRENT.md curado: tiene branch activa,
+     trabajo pendiente, reglas vigentes. Si está poblado, ese es el
+     estado del módulo — no escanees el catálogo a buscar más cosa.
+   - `projectContext[]` — índice de docs project-level (kind, title,
+     excerpt 240 chars). NO los releas todos en el greeting; usá
+     `load_project_core(kinds=[...])` o `search` cuando una task
+     concreta los necesite.
+   - `moduleContext[]` — índice de docs del módulo (workflow, plan,
+     functional_doc, use_cases, etc.) con excerpt. Stories NO van acá.
+   - `stories.{count, localIds[]}` — solo el inventario de stories
+     del módulo (sin contenido). Para una story específica:
+     `search("MM-S1.4", scope="module_only")` o `load_module(kinds=['story'])`.
+   - `materialized_skills[]` — skills escritas en `.claude/skills/`.
 
-3.5. **Detección de proyecto vacío** (importante — no quedarte en "vacío"):
-   Si `projectContext.length === 0` AND `moduleContext.length === 0`,
-   el módulo no tiene nada cargado todavía. Ofrecé concretamente:
-   - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
-     para docs project-level
-   - `myjarbis import <path> --target=module:<name> --kind=<...>`
-     para docs del módulo
-   - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
-     para bulk de stories (Jira/Linear export)
-   Sugerí mirar paths típicos: `agents/`, `docs/`, `notes/`, `.specs/`.
-   Si el user no quiere importar, decile que igual podés trabajar en
-   modo "raw" (te pega ACs/links a mano) — pero perdés `search` por
-   localId y persistencia estructurada.
+3.5. **Detección de módulo sin estado** (cuando `previousSession.nextSession`
+   está null y el catálogo está vacío):
+   - Si `projectContext.length === 0` AND `moduleContext.length === 0`
+     AND `stories.count === 0` → ofrecé importar:
+     - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
+     - `myjarbis import <path> --target=module:<name> --kind=<...>`
+     - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
+     Paths típicos a sugerir: `agents/`, `docs/`, `notes/`, `.specs/`.
+   - Si hay catálogo (≥1 entry) pero no hay `previousSession.nextSession`,
+     buscá entre `moduleContext` el más reciente con `kind=workflow` y
+     `tags` que contengan "progress" o "current" — usá su excerpt para
+     armar un greeting tentativo y pedile al user que confirme/corrija.
 
 4. **Greeting canónico** al user (formato exacto, completá los placeholders):
 
