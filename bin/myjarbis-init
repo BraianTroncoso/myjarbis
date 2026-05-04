@@ -313,7 +313,7 @@ echo -e "${GOLD}[5c/6]${NC} Seeding memory.db (v0.2)..."
 CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
 if [ -f "$CLI_JS" ]; then
     node "$CLI_JS" init-project --name="$PROJECT_NAME" --framework="$FRAMEWORK" >/dev/null && \
-        echo -e "${GREEN}✓${NC} memory.db created + 9 baseline skills seeded + skills materialized" || \
+        echo -e "${GREEN}✓${NC} memory.db created + 10 baseline skills seeded + skills materialized" || \
         echo -e "${YELLOW}!${NC} init-project failed (continuing — DB will be created on first session)"
 else
     echo -e "${YELLOW}!${NC} cli.js not found at $CLI_JS — DB will be created on first MCP server start"

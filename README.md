@@ -53,7 +53,7 @@ Verify: `myjarbis doctor` should print 20+ green checks.
 
 ```bash
 cd ~/projects/my-app
-myjarbis init                # creates .myjarbis/memory.db, seeds 9 baseline skills
+myjarbis init                # creates .myjarbis/memory.db, seeds 10 baseline skills
 myjarbis module add MM       # create your first vertical
 ```
 
@@ -108,7 +108,7 @@ time. Skills are materialized to `.claude/skills/myjarbis-*/` —
 disk.
 
 A partir de ahí, **todo es conversacional** — el agente sabe qué tools
-MCP llamar gracias al prompt de `/jarbis` + las 9 skills baseline:
+MCP llamar gracias al prompt de `/jarbis` + las 10 skills baseline:
 
 - "decidí usar Pest" → `save_observation(kind=decision)`.
 - "encontré que MySQL 5.7 falla con JSON columns" → `save_observation(kind=gotcha)`.
@@ -240,7 +240,7 @@ opening Claude on the project automatically migrates:
 - `daily.md` → module_context (workflow)
 - `project-summary.md` → project_context (functional_spec)
 - `prompts/system.md` → project_context (convention)
-- 9 baseline skills seeded
+- 10 baseline skills seeded
 
 Backup is dumped to `~/.myjarbis-global/backups/<project>/<ts>/`.
 Legacy aliases (`search_code`, `get_context`, `update_memory`) keep

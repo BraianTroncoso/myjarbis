@@ -502,18 +502,18 @@ hacer nada extra — solo seguir desde donde el snapshot indica.
   },
   {
     name: 'interaction-style',
-    description: 'User-editable preferences for how the agent interacts (tone, language, explanation depth, etc.)',
-    triggerPattern: 'always loaded; defines interaction style for this project',
+    description: 'User-editable preferences for tone, language, explanation depth, output style',
+    triggerPattern: 'always loaded; modulates how you communicate independent of tools',
     content: `---
 name: interaction-style
-description: Preferencias del user para cómo te comunicás (tono, idioma, profundidad de explicación, etc.)
+description: Preferencias del user para tono, idioma, profundidad de explicación, formato de output
 ---
 
 # Interaction style
 
-Esta skill captura **preferencias de interacción del user** que aplican
-a TODO el trabajo en este proyecto. Es de las primeras cosas que tenés
-que respetar, porque modulan tu output independientemente del tool.
+Esta skill captura **cómo te comunicás** con el user — tono, idioma,
+profundidad, verbosity, uso de emoji, etc. NO cubre commits (eso vive
+en \`commit-hygiene\`).
 
 **El user te edita esta skill** con \`myjarbis skill edit interaction-style\`
 (en bash) o pidiendo "actualizá el interaction-style con esto: ...".
@@ -521,38 +521,134 @@ Vos no la modificás por iniciativa propia.
 
 ---
 
-## Preferencias activas (rellena el user — los ejemplos abajo son default)
+## Preferencias activas
 
 > NOTA: Las líneas con \`# ejemplo\` son sugerencias. Borralas o
 > reemplazalas según lo que el user quiera.
 
+- # ejemplo: usá español rioplatense (vos, no tú; che, dale, listo).
+- # ejemplo: respuestas cortas — expandí solo si pido detalle.
 - # ejemplo: antes de cada cambio, explicá en una sola oración qué vas
   a hacer y por qué (no más de 20 palabras).
-- # ejemplo: usá español rioplatense (vos, no tú; che, dale, listo).
 - # ejemplo: no me hagas preguntas si la respuesta es obvia del contexto;
   asumí y avisame qué asumiste.
-- # ejemplo: respuestas cortas; expandí solo si pido detalle.
-- # ejemplo: commits sin firma de Claude (sin \`Co-Authored-By\`,
-  sin \`--no-verify\`).
-- # ejemplo: nada de emoji en código ni en commits; en chat solo si yo
-  los uso primero.
+- # ejemplo: nada de emoji en código; en chat solo si yo los uso primero.
+- # ejemplo: si propones un approach, dame el trade-off principal en una
+  línea, no una lista de pros/contras.
 
 ---
 
 ## Cómo aplicarlas
 
 Estas preferencias se aplican **automáticamente** sin que el user las
-repita. Si una preferencia entra en conflicto con un trigger
-conversacional de otro skill (ej. "antes de cada cambio explícame"
-vs "save_observation proactivo"), priorizá la preferencia del user
-— ellos saben mejor cómo quieren trabajar.
+repita. Si entran en conflicto con un trigger de otro skill, priorizá
+la preferencia del user — ellos saben mejor cómo quieren trabajar.
 
-Si algo de la skill no está claro o el user contradice una
-preferencia explícitamente en chat, asumí que cambió de opinión y
-**ofrecé actualizar el interaction-style**:
+Si el user contradice una preferencia explícitamente en chat, asumí
+que cambió de opinión y **ofrecé actualizar el interaction-style**:
 
 > Notá que pediste X ahora pero el interaction-style dice Y. ¿Lo
 > actualizo o es solo para esta vez?
+`,
+  },
+  {
+    name: 'commit-hygiene',
+    description: 'Format and rules for git commits in any MyJarbis project — descriptive, signed only by the user, with WHY and FOR-WHAT in the body',
+    triggerPattern: 'about to git commit, /complete, end of phase, before pushing',
+    content: `---
+name: commit-hygiene
+description: Commits descriptivos sin firma de Claude, con "Por qué" y "Para qué" en el body
+---
+
+# Commit hygiene
+
+Los commits son **memoria persistente consultable** — vos los escribís,
+pero los van a leer el user, otros devs, y vos mismo (Claude) en
+sesiones futuras vía \`git log\`. Por eso tienen que ser densos,
+descriptivos y autoexplicativos.
+
+## Format obligatorio
+
+\`\`\`
+<tipo>(<scope>): <descripción imperativa, ≤72 chars>
+
+Por qué:
+<2-4 líneas explicando el problema o motivación que dispara
+este cambio. Si hay un ticket/story, citalo>
+
+Para qué:
+<2-4 líneas explicando qué cambia / habilita después de este
+commit. Efecto observable o invariante nuevo>
+\`\`\`
+
+- **tipo**: \`feat\` | \`fix\` | \`refactor\` | \`chore\` | \`docs\` | \`test\` | \`perf\` | \`style\`
+- **scope**: subsistema o módulo (\`auth\`, \`mm\`, \`checkout\`, \`db\`, \`hooks\`, etc.)
+- **descripción**: imperativa, sin punto final, ≤72 chars (regla
+  estándar git)
+
+## Reglas duras
+
+- **NUNCA \`Co-Authored-By: Claude\`** ni cualquier firma de Claude
+  en el commit message. El autor es el user, vos sos un tool.
+- **NUNCA \`--no-verify\`** ni \`--no-gpg-sign\`. Si pre-commit hooks
+  fallan, fixá el problema; no salteás el hook.
+- **NUNCA \`git add -A\` ni \`git add .\`**. Stage por nombre,
+  archivo por archivo. Reduce el riesgo de commitear .env, secrets,
+  o cosas no relacionadas.
+- **NUNCA \`git commit --amend\` después de push**. Después de un
+  push, los amends reescriben historia y rompen otros clones.
+- **Un commit = un cambio lógico**. Si tu task tiene 3 cosas
+  independientes, son 3 commits. La regla del plan v0.2 fue
+  "1 task = 1 commit" y vale en general.
+
+## El git log es contexto consultable
+
+Antes de preguntarle al user "¿por qué se hizo X?" o "¿quién decidió
+Y?", **mirá el git log primero**:
+
+\`\`\`bash
+git log --grep="<keyword>" --all --oneline
+git log -- <file-path>           # historia de un archivo
+git log --since="2 weeks ago"    # cambios recientes
+git log -p <commit>              # diff completo de un commit
+\`\`\`
+
+Si el commit hygiene es bueno (descripción + Por qué + Para qué),
+el git log responde la mayoría de las preguntas históricas sin
+gastar tokens del user.
+
+## Triggers conversacionales
+
+Cuando el user dice algo de esto, asumí que vas a commitear:
+
+- "commiteá esto" / "guardalo en git" / "armá el commit"
+- "/complete" (ya cubierto por session-protocol — el cierre de
+  fase típicamente incluye un commit)
+- Después de cada chunk lógico durante la fase de Implementación
+  (story-driven skill instruye a auto-commitear por chunk)
+
+Antes de \`git commit\`:
+
+1. \`git status\` para confirmar qué hay staged
+2. \`git diff --cached\` para releer el cambio (verificar que es
+   lo que querés commitear)
+3. Stage por nombre los archivos faltantes (si los hay)
+4. Construí el message en el formato canónico (tipo + scope +
+   descripción + Por qué + Para qué)
+5. Mostrale el message al user en una línea: "Voy a commitear:
+   <type>(<scope>): <desc>" antes de ejecutar
+6. \`git commit -m "$(cat <<'EOF' ... EOF)"\` con el message
+
+## Anti-patterns
+
+- Commits con título "fix bug" / "wip" / "updates" → rechazás vos
+  mismo y reescribís
+- Body vacío → si el cambio es trivial el body puede ser corto
+  pero "Por qué" SIEMPRE existe
+- Múltiples scopes en un solo commit → es señal de que tenés que
+  partirlo en N commits
+- Imperativo conjugado mal: "Added X" / "Adds X" → es "Add X"
+  (acción presente imperativa)
 `,
   },
 ];
