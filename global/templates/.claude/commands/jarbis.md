@@ -77,13 +77,40 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
 
 ## Workflow (5 fases canónicas — siempre en este orden para cualquier task)
 
-### FASE 1 — Contexto (automática)
-Después del bootstrap ya tenés `project_context` + `module_context`
-cargados. Antes de tocar código:
-- Releelos mentalmente. NO repitas búsquedas si la respuesta está ahí.
-- Si necesitás algo que no está, **`search`** con `scope: "module"`
-  (default — solo módulo activo + project core). Solo `scope: "project"`
-  cuando explícitamente cruzás verticales.
+### FASE 1 — Contexto (RAG — search → fetch selectivo)
+
+Tenés un **índice** de project_context + module_context (excerpts) +
+stories (localIds) cargado del bootstrap. Eso es suficiente para
+orientarte. **NO cargues bodies completos hasta saber qué necesitás.**
+
+**Patrón RAG canónico** (siempre en este orden):
+
+1. **`search(query, scope="module")`** — FTS5 te devuelve snippets con
+   row IDs. Es barato y preciso. `scope="module"` (default) busca en
+   módulo activo + project core. `scope="project"` solo cuando cruzás
+   verticales.
+2. **`load_module(row_ids=[<id>])`** — recién acá pedís el body
+   completo de las 1–2 rows que el snippet te marcó como relevantes.
+   El response trae el campo `progress` también si está poblado.
+3. **`load_module(kinds=[...])` SIN `full=true`** — modo índice
+   (excerpts ~240 chars). Útil para listar "qué hay" sin saturar.
+4. **`load_module(kinds=[...], full=true)`** — solo cuando explícitamente
+   querés el dump completo de un kind chico. EVITAR sobre módulos con
+   PROGRESS.md / WORKFLOW.md grandes — devuelve 100KB+ y te ahoga.
+
+**Anti-patrones (NO HACER)**:
+- ❌ `load_module(kinds=["plan","workflow"], full=true)` en módulos con
+  docs grandes → satura context.
+- ❌ Releer un row después de tenerlo en una llamada anterior → cache
+  mental, no llames el tool dos veces por el mismo body.
+- ❌ **Leer archivos `.md` del filesystem** (`agents/<x>/PROGRESS.md`,
+  `CURRENT.md`, etc.) → MyJarbis es la fuente única. La DB tiene todos
+  los MDs importados; no hay nada que un `Read` te dé que `search` +
+  `load_module(row_ids=...)` no te dé mejor (con FTS5 y excerpt
+  truncado). Si te tienta leer un MD, eso es señal de que falta hacer
+  `import_md` o de que la query de `search` no fue precisa.
+- ❌ Delegar a sub-agente para "extraer" un MD → si la query es
+  precisa, search+load resuelven sin sub-agente.
 
 ### FASE 2 — Análisis
 Triggers (lenguaje natural del user): *"vamos a planificar / pensemos /

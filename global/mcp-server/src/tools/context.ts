@@ -91,7 +91,23 @@ export const loadModuleInputSchema = {
       type: 'array' as const,
       items: { type: 'string' as const },
       description:
-        'Optional filter: only return entries whose kind is in this list.',
+        'Filter by kind (e.g. ["workflow","plan"]). Combine with full=false to scan an index.',
+    },
+    row_ids: {
+      type: 'array' as const,
+      items: { type: 'number' as const },
+      description:
+        'Explicit list of module_context row IDs to fetch. When provided, returns FULL content of those rows regardless of `full` flag. Use after a search() or an index call to pull the 1-2 rows you actually need.',
+    },
+    full: {
+      type: 'boolean' as const,
+      description:
+        'Default false. When false, returns excerpts (~240 chars) per entry — safe for browsing the catalog. When true, returns full content of all matching rows. Avoid full=true with broad `kinds` filters on modules with large docs (PROGRESS/WORKFLOW MDs can be 100KB+).',
+    },
+    limit: {
+      type: 'number' as const,
+      description:
+        'Max rows to return. Default 30 (catalog mode), no limit when row_ids is given.',
     },
   },
   required: [],
@@ -101,14 +117,37 @@ const loadModuleArgsZ = z
   .object({
     module: z.string().min(1).optional(),
     kinds: z.array(z.string()).optional(),
+    row_ids: z.array(z.number().int().positive()).optional(),
+    full: z.boolean().optional(),
+    limit: z.number().int().positive().optional(),
   })
   .strict();
+
+const MODULE_EXCERPT_LEN = 240;
+
+interface ContextEntryFull extends ContextEntry {
+  content: string;
+}
+interface ContextEntryExcerpt {
+  id: number;
+  kind: string;
+  title: string;
+  source_path: string | null;
+  tags: string | null;
+  progress?: string | null;
+  excerpt: string;
+  bytes: number;
+  updated_at: string;
+}
 
 export interface LoadModuleResult {
   project: { id: number; name: string };
   module: { id: number; name: string };
+  mode: 'index' | 'full';
   count: number;
-  entries: ContextEntry[];
+  total_in_module: number;
+  entries: Array<ContextEntryFull | ContextEntryExcerpt>;
+  hint?: string;
 }
 
 export function loadModule(
@@ -127,23 +166,91 @@ export function loadModule(
   }
 
   const all = ctx.db.moduleContext.listByModule(mod.id);
+
+  // row_ids: explicit fetch — always full content, ignore filters
+  if (args.row_ids && args.row_ids.length > 0) {
+    const want = new Set(args.row_ids);
+    const picked = all.filter((r) => want.has(r.id));
+    return {
+      project: { id: project.id, name: project.name },
+      module: { id: mod.id, name: mod.name },
+      mode: 'full',
+      count: picked.length,
+      total_in_module: all.length,
+      entries: picked.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        title: r.title,
+        content: r.content,
+        tags: r.tags,
+        source_path: r.source_path,
+        progress: r.progress,
+        updated_at: r.updated_at,
+      })),
+      hint: picked.length < args.row_ids.length
+        ? `${args.row_ids.length - picked.length} of the requested row_ids did not exist in this module.`
+        : undefined,
+    };
+  }
+
+  // Otherwise: kinds filter + limit, default to index mode (excerpts)
   const filtered = args.kinds
     ? all.filter((r) => args.kinds!.includes(r.kind))
     : all;
+  const limit = args.limit ?? 30;
+  const sliced = filtered.slice(0, limit);
+  const truncated = filtered.length > limit;
 
+  if (args.full === true) {
+    // Bulk full mode is dangerous on big modules — surface a warning.
+    const totalBytes = sliced.reduce((a, r) => a + r.content.length, 0);
+    return {
+      project: { id: project.id, name: project.name },
+      module: { id: mod.id, name: mod.name },
+      mode: 'full',
+      count: sliced.length,
+      total_in_module: all.length,
+      entries: sliced.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        title: r.title,
+        content: r.content,
+        tags: r.tags,
+        source_path: r.source_path,
+        progress: r.progress,
+        updated_at: r.updated_at,
+      })),
+      hint:
+        totalBytes > 50_000
+          ? `Returned ${(totalBytes / 1024).toFixed(1)}KB across ${sliced.length} entries — that is a lot of context. Consider load_module(row_ids=[...]) for the 1-2 rows you actually need.`
+          : truncated
+            ? `${filtered.length - limit} more rows match (use row_ids to fetch specific ones).`
+            : undefined,
+    };
+  }
+
+  // Default: index mode — excerpts only.
   return {
     project: { id: project.id, name: project.name },
     module: { id: mod.id, name: mod.name },
-    count: filtered.length,
-    entries: filtered.map((r) => ({
+    mode: 'index',
+    count: sliced.length,
+    total_in_module: all.length,
+    entries: sliced.map((r) => ({
       id: r.id,
       kind: r.kind,
       title: r.title,
-      content: r.content,
-      tags: r.tags,
       source_path: r.source_path,
+      tags: r.tags,
       progress: r.progress,
+      excerpt: r.content.length > MODULE_EXCERPT_LEN
+        ? r.content.slice(0, MODULE_EXCERPT_LEN - 1).replace(/\s+/g, ' ').trim() + '…'
+        : r.content.replace(/\s+/g, ' ').trim(),
+      bytes: r.content.length,
       updated_at: r.updated_at,
     })),
+    hint: truncated
+      ? `Showing first ${limit} of ${filtered.length} matching rows. Use search() to narrow, or load_module(row_ids=[...]) once you know which rows you need.`
+      : `Index mode (excerpts only). Pull a row's full body via load_module(row_ids=[<id>]).`,
   };
 }
