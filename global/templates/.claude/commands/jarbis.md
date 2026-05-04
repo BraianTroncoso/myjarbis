@@ -14,11 +14,18 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
 ## Bootstrap (al activarte, ejecutar EN ORDEN)
 
 1. **`current_project`** → confirma proyecto registrado en cwd.
-   - Si `registered: false`: stop y pedile al user que corra
-     `myjarbis init` desde el root del proyecto, después reabra Claude.
+   - Si `registered: false`: NO te quedes en error. Decile al user
+     "este directorio no está registrado en MyJarbis" y ofrecé:
+     a) correr `myjarbis init` desde el root y reabrir Claude;
+     b) si no quiere usar MyJarbis, seguir sin él (vos podés trabajar
+     igual, solo perdés persistencia entre sesiones).
 2. **`list_modules`** → inventario de verticales del proyecto.
    - 0 módulos: pedile al user un nombre y `create_module(name, description?)`.
-   - 1 módulo: asumilo (sin preguntar) e informá brevemente.
+   - 1 módulo llamado `_general` (artefacto de migración v0.1→v0.2):
+     tratalo como "no hay módulos reales". Sugerile crear uno con un
+     nombre representativo del vertical (ej. MM, PageBuilder, Auth) y
+     `create_module(...)`. NO autoselecciones `_general` silenciosamente.
+   - 1 módulo real: asumilo (sin preguntar) e informá brevemente.
    - N módulos: mostrá la lista con su estado y `last session` y pedile
      que elija uno o cree otro.
 3. **`start_session(module)`** una vez elegido. El resultado trae:
@@ -28,6 +35,20 @@ user te habla en lenguaje natural y vos llamás los MCP tools correctos.
      "Retomar aquí" canónico. **Surfacealo al user en una frase**.
    - `materialized_skills[]` — skills que quedaron escritas en
      `<project>/.claude/skills/` para esta sesión.
+
+3.5. **Detección de proyecto vacío** (importante — no quedarte en "vacío"):
+   Si `projectContext.length === 0` AND `moduleContext.length === 0`,
+   el módulo no tiene nada cargado todavía. Ofrecé concretamente:
+   - `myjarbis import <path> --target=project --kind=<workflow|plan|...>`
+     para docs project-level
+   - `myjarbis import <path> --target=module:<name> --kind=<...>`
+     para docs del módulo
+   - `myjarbis import <path.json> --target=module:<name> --kind=story --mapping=stories[]`
+     para bulk de stories (Jira/Linear export)
+   Sugerí mirar paths típicos: `agents/`, `docs/`, `notes/`, `.specs/`.
+   Si el user no quiere importar, decile que igual podés trabajar en
+   modo "raw" (te pega ACs/links a mano) — pero perdés `search` por
+   localId y persistencia estructurada.
 
 4. **Greeting canónico** al user (formato exacto, completá los placeholders):
 
