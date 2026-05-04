@@ -152,14 +152,19 @@ Modules:
   • frontend (paused)
 
 Pick a module to begin (e.g., "let's work on backend").
+Or create a new one: `myjarbis module add <name>`.
+Or change settings (language / persona): say "settings".
 
 ── Last "Retomar aquí" (backend, 2026-05-04 14:30 UTC) ──
 PR #1234 merged to develop. Next session: start AUTH-12 with the
 JWT refresh flow. Branch: feature/auth-12-refresh-jwt.
 ```
 
-(Timestamps are absolute ISO, not relative — so the hook output is
-byte-stable between calls and Anthropic's prompt cache survives.)
+The menu **always shows up** — even with a single module — so you can
+switch verticals, create a new one, or change settings without
+leaving Claude. Timestamps are absolute ISO, not relative, so the
+hook output is byte-stable and Anthropic's prompt cache survives
+between calls.
 
 You say *"let's work on backend"* → the agent calls
 `start_session("backend")`. It now has project_core + backend
@@ -183,6 +188,7 @@ baseline skills:
 | "update the docs / log the smokes"                 | update_progress per affected story               |
 | "let's switch to frontend"                         | confirm + end_session + start_session(frontend)  |
 | "where was I?"                                     | resume() — reads back the "Retomar aquí"         |
+| "settings" / "change persona"                      | set_interaction_style({language?, persona?})     |
 | "before compacting"                                | save_observation(pre-compact) → you /compact     |
 | "done, close it"                                   | confirm summary + next_session + end_session     |
 
@@ -266,6 +272,24 @@ The slash prompt itself ships in **three language variants** —
 copies the one matching your `MYJARBIS_LANGUAGE` choice to
 `.claude/commands/jarbis.md`. Each project loads only its variant —
 no token cost for the languages you don't use.
+
+## Changing settings inline (without leaving Claude)
+
+Say "settings" / "cambiar estilo" / "change language" at any point
+and the agent calls `set_interaction_style({language?, persona?})`:
+
+```
+You: settings
+Agent: Current — language: ES, persona: Concise.
+       Options: language=EN/ES/PT, persona=concise/pair/mentor/reviewer.
+You: persona mentor
+Agent: [calls set_interaction_style({persona: "mentor"})]
+       Updated. Applies from my next response.
+```
+
+The skill is recomposed via `composeInteractionStyle` (same function
+`myjarbis init` uses) and re-materialized to disk. To refresh the
+loaded skill in the running Claude Code session, close and reopen.
 
 ---
 
@@ -351,10 +375,11 @@ disappear from the filesystem and the new module's appear.
 `.claude-plugin/hooks/hooks.json` registers 4 events. You don't
 invoke them — Claude Code does:
 
-- **SessionStart (startup|clear)** → module menu + auto-start if
-  there's only one + materialize skills + surface "Retomar aquí".
-  Output is **byte-stable across runs** (uses ISO timestamps, not
-  "2h ago") so Anthropic's prompt cache survives.
+- **SessionStart (startup|clear)** → module menu (always shown, even
+  with one module) + most-recent "Retomar aquí" surfaced. Does NOT
+  auto-start a session; the agent does that via `/jarbis` after the
+  user picks. Output is **byte-stable across runs** (uses ISO
+  timestamps, not "2h ago") so Anthropic's prompt cache survives.
 - **SessionStart (compact)** → bring the pre-compact snapshot back
   to the resumed context + recovery imperative
 - **UserPromptSubmit** → first message forces ToolSearch for MyJarbis
@@ -382,7 +407,8 @@ invoke them — Claude Code does:
 │              save_observation, update_progress                  │
 │  ── Deferred (loaded on-demand via ToolSearch) ──               │
 │  Admin:      create_module, list_skills, add_skill,             │
-│              materialize_skills, import_md, import_json         │
+│              materialize_skills, import_md, import_json,        │
+│              set_interaction_style                              │
 │  Legacy:     search_code, get_context, update_memory            │
 └────────────────────────────────┬────────────────────────────────┘
                                  ▼
