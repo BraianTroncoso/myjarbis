@@ -1,39 +1,53 @@
-# MyJarbis — per-project orchestrator for Claude Code
+# MyJarbis — orquestador per-proyecto para Claude Code
 
-> **Persistent memory + workflow + skills, scoped per project and per module.**
+> **Memoria persistente, workflow propio del proyecto, y skills
+> scoped — un solo slash command, lo demás conversacional.**
 
-MyJarbis turns Claude Code into a project-aware orchestrator: it
-remembers what you decided, where you left off, and which workflow
-applies — without dumping everything into context every session.
-
-## Why this exists
-
-Claude Code by itself has no project memory. You repeat conventions,
-re-explain architecture, lose "what was I doing yesterday." Existing
-memory tools fix the persistence problem but treat memory as a flat
-bag.
-
-In real projects, work is **vertical**. You don't work on "the codebase";
-you work on the Media Manager, then on Page Builder, then on Translations.
-Each vertical has its own workflow, plan, stories, and skills.
-
-MyJarbis models that explicitly:
+MyJarbis convierte Claude Code en un orquestador project-aware: se
+acuerda de lo que decidiste, dónde quedaste, y qué workflow aplica
+en cada vertical del proyecto — sin tirarte todo el contexto en la
+cara cada sesión.
 
 ```
-project
-  ├── project_context (practices, deps, conventions, specs — load once)
-  ├── modules (verticals — created explicitly)
-  │     ├── module_context (workflow, plan, stories, AC of the vertical)
+cd ~/dev/<proyecto>
+claude
+> /jarbis
+```
+
+Eso es todo. Después hablás natural.
+
+---
+
+## Por qué existe
+
+Claude Code solo no tiene memoria de proyecto. Repetís convenciones,
+re-explicás arquitectura, perdés "qué estaba haciendo ayer".
+Herramientas de memoria existentes resuelven la persistencia pero
+tratan la memoria como un bag plano.
+
+En proyectos reales, el trabajo es **vertical**. No trabajás en "el
+codebase"; trabajás en el Media Manager, después en Page Builder,
+después en Translations. Cada vertical tiene su workflow, plan,
+stories y skills.
+
+MyJarbis modela eso explícitamente:
+
+```
+proyecto
+  ├── project_context (practices, deps, conventions, specs — siempre cargado)
+  ├── modules (verticales — vos los creás)
+  │     ├── module_context (workflow, plan, stories, AC del vertical)
   │     ├── sessions (lifecycle: start → save observations → end)
   │     │     └── observations (decisions, gotchas, progress)
-  │     └── skills (module-level — only loaded when this module is active)
-  └── skills (project-level — always loaded)
+  │     └── skills (module-level — solo cuando ese módulo está activo)
+  └── skills (project-level — siempre cargadas, las 10 baselines)
 ```
 
-When you open Claude in a MyJarbis project, the SessionStart hook
-asks which module you're working on. Only that module's context +
-project-level core gets loaded into the session — token-efficient
-by design.
+Cuando abrís Claude en un proyecto MyJarbis, el SessionStart hook te
+pregunta qué vertical querés tocar. **Solo se carga ese módulo +
+project core.** Otros módulos no entran al contexto.
+
+---
 
 ## Install
 
@@ -43,112 +57,99 @@ cd myjarbis
 ./install.sh
 ```
 
-This installs to `~/.myjarbis-global/`, builds the MCP server (Node
-+ better-sqlite3 + FTS5), registers `myjarbis` in your PATH, and
-configures Claude Code's MCP layer.
+Esto instala en `~/.myjarbis-global/`, buildea el MCP server (Node +
+better-sqlite3 + FTS5), agrega `myjarbis` al PATH y configura el MCP
+de Claude Code.
 
-Verify: `myjarbis doctor` should print 20+ green checks.
+Verificá: `myjarbis doctor` debería imprimir 25+ checks verdes.
 
-## First project
+---
 
-```bash
-cd ~/projects/my-app
-myjarbis init                # creates .myjarbis/memory.db, seeds 10 baseline skills
-myjarbis module add MM       # create your first vertical
-```
-
-Now bootstrap context from existing notes (the .md files you already
-keep in `agents/` or wherever):
+## Bootstrap de un proyecto
 
 ```bash
-# Project-level docs
-myjarbis import agents/WORKFLOW.md   --target=project --kind=workflow
-myjarbis import agents/PLAN.md       --target=project --kind=plan
-myjarbis import agents/ERRORS.md     --target=project --kind=error_log
-
-# Module-level docs (MM)
-myjarbis import agents/MM/WORKFLOW.md --target=module:MM --kind=workflow
-myjarbis import agents/MM/PLAN.md     --target=module:MM --kind=plan
-
-# Bulk JSON (e.g. Jira export)
-myjarbis import agents/MM/Jira_Bulk.json \
-  --target=module:MM --kind=story --mapping='stories[]'
+cd ~/proyectos/mi-app
+myjarbis init                          # crea memory.db + 10 baselines + plugin hooks
+myjarbis module add backend
+myjarbis module add frontend
 ```
 
-Re-imports are **idempotent** (SHA-256 hash on content): unchanged
-files are no-ops, edited files update the row in place.
+Ahora importá los .md que ya tenés (los que llenás a mano hoy):
+
+```bash
+# Project-level
+myjarbis import agents/WORKFLOW.md   --target=project       --kind=workflow
+myjarbis import agents/PRACTICES.md  --target=project       --kind=practice
+
+# Module-level
+myjarbis import agents/backend/WORKFLOW.md --target=module:backend --kind=workflow
+myjarbis import agents/backend/PLAN.md     --target=module:backend --kind=plan
+
+# Bulk JSON (Jira, Linear, etc.)
+myjarbis import agents/backend/Jira.json \
+  --target=module:backend --kind=story --mapping='stories[]'
+```
+
+Re-imports son **idempotentes** (hash SHA-256 sobre el content): si no
+cambió, no-op; si cambió, UPDATE en su lugar.
+
+Ajustá tus preferencias:
+
+```bash
+myjarbis skill edit interaction-style    # tono, idioma, profundidad
+myjarbis skill edit commit-hygiene       # opcional — default ya viene útil
+```
+
+---
 
 ## Daily flow
 
 ```bash
-cd ~/projects/my-app
+cd ~/proyectos/mi-app
 claude
+> /jarbis
 ```
 
-The SessionStart hook fires:
+El SessionStart hook se dispara y verás algo así:
 
 ```
-═══ MyJarbis · my-app (laravel) ═══
+═══ MyJarbis · mi-app (laravel) ═══
 Modules:
-  • MM, last session 2h ago
-  • PageBuilder (paused)
+  • backend, last session 2h ago
+  • frontend (paused)
 
-Pick a module to begin (e.g., "let's work on MM").
+Pick a module to begin (e.g., "let's work on backend").
 
-── Last "Retomar aquí" (MM, 2h ago) ──
-PR #1234 mergeado a MediaManager. Próxima sesión: arrancar MM-S1.4
-con la migración asset_translations. Branch suggerida:
-feature/mm-e1-s1.4-asset-translations.
+── Last "Retomar aquí" (backend, 2h ago) ──
+PR #1234 mergeado a develop. Próxima sesión: arrancar AUTH-12
+con el JWT refresh flow. Branch: feature/auth-12-refresh-jwt.
 ```
 
-You say "let's work on MM" → the agent calls `start_session("MM")`.
-It now has project core + MM context + the `next_session` from last
-time. Skills are materialized to `.claude/skills/myjarbis-*/` —
-**only the ones for project + MM**. Other modules' skills are not on
-disk.
+Decís *"vamos backend"* → el agente llama `start_session("backend")`.
+Tiene project_core + backend context + el `next_session` de la sesión
+anterior. Las skills se materializan a `.claude/skills/myjarbis-*/` —
+**solo las 10 baselines + las module-level de backend**. Las de
+frontend no están en disco.
 
-A partir de ahí, **todo es conversacional** — el agente sabe qué tools
-MCP llamar gracias al prompt de `/jarbis` + las 10 skills baseline:
+A partir de acá, **todo es lenguaje natural**. El agente sabe qué
+tools MCP llamar gracias al prompt de `/jarbis` + las 10 skills:
 
-- "decidí usar Pest" → `save_observation(kind=decision)`.
-- "encontré que MySQL 5.7 falla con JSON columns" → `save_observation(kind=gotcha)`.
-- "vamos a tocar PageBuilder" → confirma + `end_session` + `start_session(PageBuilder)`.
-- "MM-S1.4" → `search` + audit + propone phase breakdown.
-- "dale, hacelo" → ejecuta + auto-save de decisions por commit.
-- "listo, cerralo" → `save_observation(kind=progress)` + `end_session(summary, next_session)`.
-- "donde estaba?" → `resume()`.
-- "antes de compactar" → `save_observation(kind=discovery, tags=pre-compact)` + invocás `/compact`.
+| Vos decís…                                     | El agente hace                                   |
+|-------------------------------------------------|--------------------------------------------------|
+| "trabajemos AUTH-12"                            | search story + audit AC + propone phase          |
+| "vamos a planificar el refresh flow"            | fase Análisis (no toca código todavía)           |
+| "dale, hacelo"                                  | fase Implementación + auto-save de decisions     |
+| "decidí usar Laravel Sanctum"                   | save_observation(kind=decision)                  |
+| "ojo, refresh tokens necesitan revocar el access" | save_observation(kind=gotcha)                  |
+| "commiteá esto"                                 | git commit con format Por qué/Para qué + sin firma |
+| "vamos a tocar frontend"                        | confirma + end_session + start_session(frontend) |
+| "donde estaba?"                                 | resume() → te lee el "Retomar aquí"              |
+| "antes de compactar"                            | save_observation(pre-compact) → vos /compact     |
+| "listo, cerralo"                                | confirma summary + next_session + end_session    |
 
 El próximo `/jarbis` resume desde donde quedaste.
 
-## Skills, scoped
-
-Skills are markdown files Claude Code loads at session start. In
-MyJarbis they live in the DB and are materialized to
-`<project>/.claude/skills/myjarbis-<name>/SKILL.md` based on which
-module is active.
-
-Two scopes:
-
-- **Project-level** (`module_id IS NULL`): always loaded for this project.
-- **Module-level** (`module_id` set): only loaded when that module
-  is the active session.
-
-Switching modules re-renders `.claude/skills/`: previous module's
-skills are removed, new module's appear.
-
-```bash
-# Add a project-wide skill
-myjarbis skill add commit-style --content-from=docs/commits.md
-
-# Add a skill that only matters when working in MM
-myjarbis skill add mm-pixel-perfect --module=MM --content-from=docs/mm-pixel.md
-
-# List, edit, enable/disable
-myjarbis skill list
-myjarbis skill edit mm-pixel-perfect --module=MM
-myjarbis skill disable commit-style
-```
+---
 
 ## El único slash command
 
@@ -156,46 +157,109 @@ myjarbis skill disable commit-style
 /jarbis
 ```
 
-Eso es todo. El comando hace el bootstrap completo (detecta proyecto,
-lista módulos, pide elegir, abre `start_session`, materializa skills,
-te muestra el "Retomar aquí") y después la interacción es 100%
-conversacional. **No hay `/plan`, `/implement`, `/complete`, `/module`,
-`/skill`, `/resume`, `/import`, `/compact` etc.** El agente sabe qué
-hacer cuando le hablás en lenguaje natural gracias a las 9 skills
-baseline que se cargan automáticamente.
+Y nada más. **No existen** `/plan`, `/implement`, `/complete`,
+`/module`, `/skill`, `/resume`, `/import`, `/compact`. Todo eso lo
+infiere el agente del lenguaje natural gracias a las 10 skills
+baseline que se cargan automáticamente al iniciar.
 
-Si querés ver/editar las skills (preferencias, workflow, triggers
-conversacionales, etc.), usá el bash CLI:
+---
+
+## Las 10 skills baseline
+
+Cualquier `myjarbis init` arranca con estas. Se materializan a
+`.claude/skills/myjarbis-<name>/SKILL.md` y Claude las carga al
+iniciar.
+
+| Skill                  | Qué le enseña al agente                                       |
+|------------------------|---------------------------------------------------------------|
+| `module-orchestration` | Cómo elegir/cambiar módulo + triggers de switch               |
+| `session-protocol`     | Cuándo cerrar sesión + format de summary + next_session       |
+| `observation-protocol` | Cuándo guardar decision/gotcha/progress + triggers naturales  |
+| `story-driven`         | Pipeline detect → audit → execute → close por fases           |
+| `bitacora-progress`    | Cómo escribir el "Retomar aquí" para que sirva mañana         |
+| `framework-detect`     | Auto-explorar el codebase la primera vez                      |
+| `subagent-delegation`  | Cuándo lanzar Explore/Plan/general-purpose en paralelo        |
+| `compact-protocol`     | Snapshot estructurado antes de `/compact` nativo              |
+| `interaction-style`    | Tu tono / idioma / profundidad / verbosity (lo editás vos)    |
+| `commit-hygiene`       | Format de commits + git log es contexto consultable           |
+
+Las 2 más interesantes:
+
+**`commit-hygiene`** — cualquier commit en cualquier proyecto:
+```
+<tipo>(<scope>): <descripción imperativa>
+
+Por qué:
+<2-4 líneas: motivación / problema>
+
+Para qué:
+<2-4 líneas: qué cambia / habilita>
+```
+Sin `Co-Authored-By: Claude`, sin `--no-verify`, sin `git add -A`.
+**Insight:** el git log queda como memoria consultable — antes de
+preguntar "¿por qué se hizo X?", el agente mira `git log --grep` o
+`git log -- <path>`.
+
+**`interaction-style`** — placeholder editable con tus preferencias.
+Ejemplos típicos:
+- "usá español rioplatense"
+- "antes de cada cambio explicame en una oración"
+- "respuestas cortas, expandí solo si pido"
+- "no me hagas preguntas si la respuesta es obvia"
+
+Lo editás una vez con `myjarbis skill edit interaction-style` y se
+respeta automáticamente en cada sesión sin repetirlo.
+
+---
+
+## Skills custom (cuando un proyecto necesita algo propio)
+
+Un proyecto puede agregar sus propias skills (project-level o
+module-level):
 
 ```bash
-myjarbis skill list
-myjarbis skill edit interaction-style    # tus preferencias de tono/idioma/etc.
-myjarbis skill edit story-driven         # workflow de stories del proyecto
+# project-level (siempre activa en este proyecto)
+myjarbis skill add jira-rules --content-from=docs/jira-rules.md \
+  --description="Reglas de tracking JIRA para este proyecto"
+
+# module-level (solo activa cuando estás en MM)
+myjarbis skill add mm-pixel-perfect --module=MM \
+  --content-from=docs/mm-pixel-perfect.md \
+  --description="MM: copiar HTML del design package, NUNCA reinterpretes"
 ```
 
-## What the hooks do automatically
+Cuando hacés `start_session(MM)`, las module-level del MM se
+materializan a `.claude/skills/`. Cuando cambiás de módulo, esas
+desaparecen del filesystem y aparecen las del nuevo.
 
-`.claude-plugin/hooks/hooks.json` registers 4 events:
+---
 
-- **SessionStart (startup|clear)** → menu + auto-start if 1 module
-- **SessionStart (compact)** → recovery imperative after compaction
-- **UserPromptSubmit** → first-message ToolSearch + story-id detect
-  (regex `[A-Z]+-S?\d+(\.\d+)?` configurable) + 15-min save reminder
-- **Stop** → reminds to close the session if one is open
+## Lo que pasa por atrás (hooks)
 
-You don't invoke them; Claude Code does. They inject text that the
-agent reads as system context.
+`.claude-plugin/hooks/hooks.json` registra 4 eventos. No los invocás
+vos — Claude Code los dispara solo:
 
-## Architecture
+- **SessionStart (startup|clear)** → menú de módulos + auto-start si
+  hay 1 solo + materializa skills + surface "Retomar aquí"
+- **SessionStart (compact)** → trae el pre-compact snapshot al
+  contexto reanudado + recovery imperative
+- **UserPromptSubmit** → primer mensaje fuerza ToolSearch para los
+  tools de MyJarbis + detecta regex de localId (story_pattern) +
+  reminder cada 15 min sin save_observation
+- **Stop** → si hay sesión abierta, te recuerda cerrarla
+
+---
+
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  CLAUDE CODE (harness)                                          │
-│  • hooks  • slash commands  • skills loaded from disk           │
+│  • hooks  • /jarbis (único)  • skills cargadas desde .claude/   │
 └────────────────────────────────┬────────────────────────────────┘
                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  MCP SERVER (Node/TS)                                           │
+│  MCP SERVER (Node/TS, ~/.myjarbis-global/mcp-server/)           │
 │  Discovery:  current_project, list_modules, create_module       │
 │  Session:    start_session, end_session, resume                 │
 │  Read/Write: load_project_core, load_module, search,            │
@@ -212,72 +276,83 @@ agent reads as system context.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Each project has its own `memory.db`. The user decides per-project
-whether it's `shared: true` (commit it, the whole team loads the
-same context + skills) or `shared: false` (gitignored, personal).
+Cada proyecto tiene su propio `memory.db`. Decisís per-proyecto si
+es:
+- `shared: true` → committeado al repo, todo el equipo carga el
+  mismo contexto + skills
+- `shared: false` (default) → en `.gitignore`, contexto y skills
+  personales
 
-## Search, scoped
+---
 
-`search` is FTS5 over project_context, module_context, skills, and
+## Search scoped
+
+`search` es FTS5 sobre project_context, module_context, skills y
 observations. Scopes:
 
-- `module` (default): active module + project_core only — token-saving
-- `project`: all modules of this project + project_core
-- `module_only`: only the active/named module
-- `observations`: only the session log
-- `skills`: only skill content
+- `module` (default): módulo activo + project_core. **Token-saving.**
+- `project`: todos los módulos del proyecto + project_core
+- `module_only`: solo el módulo activo/nombrado
+- `observations`: solo el log de la sesión
+- `skills`: solo content de skills
 
-Token saving is the point: with 5 modules and FTS5 over each, the
-default `module` scope returns hits only from the one you're in,
-not from the other 4.
+El scope default `module` es la diferencia clave: con 5 módulos
+indexados, el agente solo ve hits del módulo activo, no de los
+otros 4.
 
-## Migrating from v0.1
+---
 
-If you were on v0.1 (markdown-only `.myjarbis/context/*.md`),
-opening Claude on the project automatically migrates:
+## Migrar desde v0.1
 
-- `knowledge-base.md` → observations under a `_general` module
+Si venías de v0.1 (sin memory.db, todo en `.myjarbis/context/*.md`),
+abrir Claude en el proyecto migra automáticamente:
+
+- `knowledge-base.md` → observations bajo módulo `_general`
 - `daily.md` → module_context (workflow)
 - `project-summary.md` → project_context (functional_spec)
 - `prompts/system.md` → project_context (convention)
-- 10 baseline skills seeded
+- 10 baselines sembradas
 
-Backup is dumped to `~/.myjarbis-global/backups/<project>/<ts>/`.
-Legacy aliases (`search_code`, `get_context`, `update_memory`) keep
-working.
+Backup automático a `~/.myjarbis-global/backups/<project>/<ts>/`.
+Aliases legacy (`search_code`, `get_context`, `update_memory`)
+siguen funcionando.
 
-## CLI reference
+---
+
+## CLI bash (setup / admin, fuera de Claude)
 
 ```bash
-myjarbis init               # initialize current project
-myjarbis doctor             # health check (25+ probes)
-myjarbis stats              # counts per table
-myjarbis list               # registered projects
-myjarbis update             # pull + rebuild MCP server
+myjarbis init                       # init project
+myjarbis doctor                     # health check (25+ probes)
+myjarbis stats                      # contadores por tabla
+myjarbis list                       # proyectos registrados
+myjarbis update                     # pull + rebuild MCP
 
 myjarbis module add <name> [--description=...]
 myjarbis module list
 
 myjarbis skill add <name> --content-from=<file> [--module=...] [--description=...] [--trigger=...]
-myjarbis skill list [--scope=all|project|module|session] [--module=<m>] [--only-enabled]
+myjarbis skill list [--scope=all|project|module|session]
 myjarbis skill edit <name> [--module=...]
 myjarbis skill delete <name> [--module=...]
 myjarbis skill enable|disable <name> [--module=...]
-myjarbis skill materialize [--module=...] [--no-cleanup]
+myjarbis skill materialize [--module=...]
 
-myjarbis import <file.md>   --target=<project|module:NAME> --kind=<kind> [--tags=...]
-myjarbis import <file.json> --target=...                   --kind=<kind> --mapping='items[]'
-                                                            [--id-field=...] [--title-field=...]
+myjarbis import <file.md>   --target=<project|module:NAME> --kind=<kind>
+myjarbis import <file.json> --target=... --kind=<kind> --mapping='items[]'
+                                                       [--id-field=...] [--title-field=...]
 ```
 
-## Settings
+---
+
+## Settings per-proyecto
 
 `.myjarbis/config/settings.json`:
 
 ```json
 {
   "version": "0.2.0",
-  "project": { "name": "my-app", "framework": "laravel" },
+  "project": { "name": "mi-app", "framework": "laravel" },
   "shared": false,
   "search_default_scope": "module",
   "story_pattern": "[A-Z]+-S?\\d+(\\.\\d+)?",
@@ -289,12 +364,18 @@ myjarbis import <file.json> --target=...                   --kind=<kind> --mappi
 }
 ```
 
+---
+
 ## Tests
 
 ```bash
-tests/bootstrap-prolicht.sh   # 12 .md + 1 JSON bulk import idempotency
-tests/skills-lifecycle.sh     # baseline + module-level + cleanup on switch
+tests/bootstrap-prolicht.sh    # 12 .md + 1 JSON bulk import idempotency
+tests/skills-lifecycle.sh      # baselines + module-level + cleanup on switch
+tests/full-session-cycle.sh    # abrir → trabajar → cerrar → reabrir
+tests/compact-cycle.sh         # snapshot pre/post /compact roundtrip
 ```
+
+---
 
 ## License
 
