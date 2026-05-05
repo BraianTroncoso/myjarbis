@@ -77,6 +77,55 @@ function printJson(obj: unknown): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Pretty printer (matches the blood-red minimal UI of install.sh +
+// myjarbis-init). Falls back to plain text when stdout is not a TTY,
+// so piping into another tool stays clean.
+// ─────────────────────────────────────────────────────────────────────
+
+const ANSI = {
+  red: '\x1b[38;5;88m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  reset: '\x1b[0m',
+};
+
+function tty(): boolean {
+  return Boolean(process.stdout.isTTY);
+}
+
+function c(code: string, s: string): string {
+  return tty() ? `${code}${s}${ANSI.reset}` : s;
+}
+const red = (s: string) => c(ANSI.red, s);
+const bold = (s: string) => c(ANSI.bold, s);
+const dim = (s: string) => c(ANSI.dim, s);
+
+/** Section header in red bold, like install.sh `section()`. */
+function ptySection(title: string): void {
+  console.log('');
+  console.log(red(bold(title)));
+}
+
+/** Key/value row with aligned label, like myjarbis-init `note()`. */
+function ptyKV(label: string, value: string, labelWidth = 12): void {
+  const pad = label.padEnd(labelWidth);
+  console.log(`  ${bold(pad)}  ${value}`);
+}
+
+function ptyLine(s: string): void {
+  console.log(s);
+}
+
+function ptyDim(s: string): void {
+  console.log(`  ${dim(s)}`);
+}
+
+/** Returns true when --json flag is present in the parsed args. */
+function wantsJson(flags: Record<string, string | boolean>): boolean {
+  return flags.json === true || flags.json === 'true';
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Subcommand: import
 // ─────────────────────────────────────────────────────────────────────
 
@@ -173,7 +222,13 @@ function runModule(argv: string[]): void {
         name,
         description: flags.description as string | undefined,
       });
-      printJson(result);
+      if (wantsJson(flags)) { printJson(result); return; }
+      ptySection('MyJarbis · module ' + (result.created ? 'created' : 'already existed'));
+      ptyKV('Name', bold(result.module.name));
+      if (result.module.description) ptyKV('Description', result.module.description);
+      ptyKV('Status', result.module.status);
+      if (result.hint) ptyDim(result.hint);
+      console.log('');
       return;
     }
     if (sub === 'list') {
@@ -184,11 +239,30 @@ function runModule(argv: string[]): void {
           : undefined;
       const result = listModules(ctx, includeStatus ? { include_status: includeStatus } : {});
       const active = readActiveModule(ctx.projectPath);
-      printJson({ ...result, active });
+      if (wantsJson(flags)) { printJson({ ...result, active }); return; }
+      ptySection('MyJarbis · modules of ' + bold(result.projectName));
+      if (result.modules.length === 0) {
+        ptyDim('No modules registered. Use `myjarbis module create <name>` to add one.');
+        console.log('');
+        return;
+      }
+      for (const m of result.modules) {
+        const marker = m.name === active ? red('★') : ' ';
+        const tag = m.status !== 'active' ? dim(` (${m.status})`) : '';
+        const desc = m.description ? '  ' + dim(m.description) : '';
+        console.log(`  ${marker} ${bold(m.name)}${tag}${desc}`);
+      }
+      console.log('');
+      if (active) {
+        ptyDim(`Active: ${active}  ·  /jarbis will resume this module.`);
+      } else {
+        ptyDim('No active module set. Use `myjarbis module use <name>` to pick one.');
+      }
+      console.log('');
       return;
     }
     if (sub === 'use') {
-      const { positional } = parseFlags(rest);
+      const { positional, flags } = parseFlags(rest);
       const name = positional[0];
       if (!name) fail('Usage: myjarbis module use <name>');
       const project = ctx.requireProject();
@@ -197,22 +271,42 @@ function runModule(argv: string[]): void {
         fail(`Module "${name}" does not exist. Use \`myjarbis module list\` to see available modules, or \`myjarbis module create ${name}\` to create it.`);
       }
       writeActiveModule(ctx.projectPath, m.name);
-      printJson({
-        active: m.name,
-        description: m.description,
-        status: m.status,
-        hint: 'Open Claude in this directory — /jarbis will resume this module automatically.',
-      });
+      if (wantsJson(flags)) {
+        printJson({ active: m.name, description: m.description, status: m.status });
+        return;
+      }
+      ptySection('MyJarbis · active module set');
+      ptyKV('Active', red(bold(m.name)));
+      if (m.description) ptyKV('Description', m.description);
+      ptyKV('Status', m.status);
+      console.log('');
+      ptyDim('Open Claude in this directory — /jarbis will resume this module automatically.');
+      console.log('');
       return;
     }
     if (sub === 'current') {
+      const { flags } = parseFlags(rest);
       const active = readActiveModule(ctx.projectPath);
-      printJson({ active });
+      if (wantsJson(flags)) { printJson({ active }); return; }
+      if (active) {
+        console.log(`${red('★')} ${bold(active)}`);
+      } else {
+        ptyDim('(no active module — run `myjarbis module use <name>`)');
+      }
       return;
     }
     if (sub === 'unset') {
+      const { flags } = parseFlags(rest);
+      const had = readActiveModule(ctx.projectPath);
       clearActiveModule(ctx.projectPath);
-      printJson({ active: null, hint: 'Active module cleared. /jarbis will show the module menu next time.' });
+      if (wantsJson(flags)) {
+        printJson({ active: null, previously: had });
+        return;
+      }
+      ptySection('MyJarbis · active module cleared');
+      if (had) ptyKV('Was', dim(had));
+      ptyDim('/jarbis will show the module menu next time.');
+      console.log('');
       return;
     }
     fail(`Unknown module subcommand: ${sub}. Use list | use | current | unset | add | create.`);
@@ -233,11 +327,12 @@ function runConfig(argv: string[]): void {
   const ctx = ServerContext.initialize();
   try {
     if (sub === 'list') {
+      const { flags } = parseFlags(rest);
       const project = ctx.requireProject();
       const settings = readSettingsJson(ctx.projectPath);
       const skill = ctx.db.skills.findByName(project.id, null, 'interaction-style');
       const inferred = inferCurrent(skill?.content ?? null);
-      printJson({
+      const data = {
         project: { name: project.name, framework: project.framework },
         language: settings.language ?? inferred.language,
         persona: inferred.persona,
@@ -245,11 +340,24 @@ function runConfig(argv: string[]): void {
         search_default_scope: settings.search_default_scope ?? 'module',
         story_pattern: settings.story_pattern ?? null,
         nudges: settings.nudges ?? null,
-      });
+      };
+      if (wantsJson(flags)) { printJson(data); return; }
+      ptySection('MyJarbis · config of ' + bold(project.name));
+      ptyKV('Language', red(bold(String(data.language).toUpperCase())));
+      ptyKV('Persona', red(bold(data.persona)));
+      ptyKV('Shared', data.shared ? red('true') : 'false');
+      ptyKV('Scope', data.search_default_scope);
+      if (data.story_pattern) ptyKV('Stories', dim(data.story_pattern));
+      if (data.nudges && Object.keys(data.nudges).length > 0) {
+        ptyKV('Nudges', JSON.stringify(data.nudges));
+      }
+      console.log('');
+      ptyDim('Change with: myjarbis config language <EN|ES|PT> · myjarbis config persona <concise|pair|mentor|reviewer>');
+      console.log('');
       return;
     }
     if (sub === 'language' || sub === 'persona') {
-      const { positional } = parseFlags(rest);
+      const { positional, flags } = parseFlags(rest);
       const value = positional[0];
       if (!value) fail(`Usage: myjarbis config ${sub} <value>`);
       const args: { language?: string; persona?: string } = {};
@@ -265,7 +373,17 @@ function runConfig(argv: string[]): void {
           fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
         }
       }
-      printJson(result);
+      if (wantsJson(flags)) { printJson(result); return; }
+      const verb = result.status === 'unchanged' ? 'unchanged' : 'updated';
+      ptySection(`MyJarbis · config ${sub} ${verb}`);
+      ptyKV('Language', red(bold(result.language)));
+      ptyKV('Persona', red(bold(result.persona_label)));
+      if (result.status !== 'unchanged') {
+        ptyKV('Materialized', result.materialized ? 'yes' : 'no');
+      }
+      console.log('');
+      ptyDim('Change applies from the next agent reply. Reopen Claude to refresh the materialized skill on disk.');
+      console.log('');
       return;
     }
     fail(`Unknown config subcommand: ${sub}. Use list | language | persona.`);
@@ -278,16 +396,21 @@ function runConfig(argv: string[]): void {
 // Subcommand: status (git-like overview)
 // ─────────────────────────────────────────────────────────────────────
 
-function runStatus(_argv: string[]): void {
+function runStatus(argv: string[]): void {
+  const { flags } = parseFlags(argv);
   const ctx = ServerContext.initialize();
   try {
     const project = ctx.project;
     if (!project) {
-      printJson({
-        project: null,
-        path: ctx.projectPath,
-        hint: 'Not a MyJarbis project. Run `myjarbis init`.',
-      });
+      if (wantsJson(flags)) {
+        printJson({ project: null, path: ctx.projectPath });
+        return;
+      }
+      ptySection('MyJarbis · not initialized');
+      ptyKV('Path', dim(ctx.projectPath));
+      console.log('');
+      ptyDim('Not a MyJarbis project. Run `myjarbis init` from this directory.');
+      console.log('');
       return;
     }
 
@@ -332,7 +455,7 @@ function runStatus(_argv: string[]): void {
       // Not a git repo
     }
 
-    printJson({
+    const data = {
       project: { name: project.name, path: project.path, framework: project.framework },
       active_module: active,
       active_module_status: activeMod?.status ?? null,
@@ -354,7 +477,53 @@ function runStatus(_argv: string[]): void {
         sessions: sessAgg,
       },
       git,
-    });
+    };
+
+    if (wantsJson(flags)) {
+      printJson(data);
+      return;
+    }
+
+    // ── Pretty render (matches install.sh blood-red minimal UI) ──
+    ptySection('MyJarbis · ' + bold(project.name) + (project.framework ? dim(' (' + project.framework + ')') : ''));
+    ptyKV('Path', dim(project.path));
+    if (git.branch) {
+      const aheadStr = git.ahead === null ? '' : git.ahead > 0 ? ` ${red('· ' + git.ahead + ' ahead of origin')}` : ' · in sync';
+      ptyKV('Branch', bold(git.branch) + aheadStr);
+    }
+
+    ptySection('Active module');
+    if (active && activeMod) {
+      ptyKV('Name', red(bold(active)) + (activeMod.status !== 'active' ? dim(` (${activeMod.status})`) : ''));
+      if (activeMod.description) ptyKV('About', dim(activeMod.description));
+      if (lastSession?.ended_at) {
+        ptyKV('Last close', stableDateLabel(lastSession.ended_at) + ' UTC');
+        if (data.last_session?.next_session_excerpt) {
+          console.log('');
+          ptyLine('  ' + dim('"Resume here" excerpt:'));
+          // Indent each line of the excerpt for visual grouping
+          for (const ln of data.last_session.next_session_excerpt.split('\n').slice(0, 6)) {
+            ptyLine('    ' + ln);
+          }
+        }
+      } else {
+        ptyKV('Last close', dim('no closed sessions yet'));
+      }
+    } else {
+      ptyDim('(no active module — `myjarbis module use <name>` to set one)');
+    }
+
+    ptySection('Counts');
+    const totalStories = modCtxCounts.reduce((a, m) => a + m.stories, 0);
+    const storiesWithProgress = modCtxCounts.reduce((a, m) => a + m.stories_with_progress, 0);
+    ptyKV('Modules', String(modules.length));
+    ptyKV('Project ctx', String(projCtxCount) + dim(' entries'));
+    ptyKV('Module ctx', `${modCtxCounts.reduce((a, m) => a + m.total, 0)} entries · ${totalStories} stories ${dim(`(${storiesWithProgress} with progress)`)}`);
+    ptyKV('Observations', String(obsCount));
+    ptyKV('Skills', String(skillsCount) + dim(' baselines materialized'));
+    ptyKV('Sessions', `${sessAgg.closed} closed · ${sessAgg.total} total`);
+
+    console.log('');
   } finally {
     ctx.close();
   }
