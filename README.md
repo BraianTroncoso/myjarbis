@@ -211,20 +211,81 @@ claude                            # SessionStart hook auto-resumes backend
                                   # no tool calls, no 1000-token menu
 ```
 
-Other CLI verbs (all instant, no LLM):
+All CLI commands render with a **blood-red minimal UI** matching the
+installer (consistent palette across `install.sh`, `myjarbis init`,
+`myjarbis doctor`, `myjarbis status`, etc.). Output is human-friendly
+by default; pass `--json` for machine-readable JSON.
+
+```text
+$ myjarbis status
+
+MyJarbis · prolicht (laravel)
+  Path          /home/dev/prolicht
+  Branch        mm-bt-repository · 2 ahead of origin
+
+Active module
+  Name          MM                                              ← red bold
+  About         Media Manager — directorios, assets, traducciones
+  Last close    2026-05-04 21:19 UTC
+
+  "Resume here" excerpt:
+    ## MM al 2026-05-04 — MM-E5 F0 (S5.1+S5.2) scaffold listo
+    **Branch**: `mm-bt-repository` (ahead 2 commits de origin)
+    ...
+
+Counts
+  Modules       2
+  Project ctx   16 entries
+  Module ctx    157 entries · 152 stories (18 with progress)
+  Observations  12
+  Skills        10 baselines materialized
+  Sessions      4 closed · 14 total
+```
+
+```text
+$ myjarbis module list
+
+MyJarbis · modules of prolicht
+  ★ MM        Media Manager — directorios, assets, traducciones    ← ★ red
+    _general  Default cross-cutting module
+
+  Active: MM  ·  /jarbis will resume this module.
+```
+
+```text
+$ myjarbis module current
+★ MM
+```
+
+```text
+$ myjarbis config list
+
+MyJarbis · config of prolicht
+  Language      ES
+  Persona       concise
+  Shared        false
+  Scope         module
+  Stories       [A-Z]+-S?\d+(\.\d+)?
+
+  Change with: myjarbis config language <EN|ES|PT>
+              · myjarbis config persona <concise|pair|mentor|reviewer>
+```
+
+All CLI verbs (all instant, zero LLM tokens):
 
 ```bash
-myjarbis module list              # show modules with active marker
+myjarbis module list              # show modules with ★ on active
 myjarbis module use backend       # set active (writes .myjarbis/active)
 myjarbis module current           # print active module
 myjarbis module unset             # clear → next /jarbis shows menu
-myjarbis module create payments   # create new module
+myjarbis module create payments   # create new module (alias of `module add`)
 
-myjarbis config list              # show language, persona, scope, nudges
-myjarbis config language EN       # change language inline (recomposes interaction-style skill + materializes)
+myjarbis config list              # language, persona, scope, nudges
+myjarbis config language EN       # recompose interaction-style + materialize
 myjarbis config persona mentor    # change persona
 
-myjarbis status                   # git-like overview: project, active, last session, counts, branch
+myjarbis status                   # full overview (project, active, counts, git)
+myjarbis status --json            # same, JSON for scripts
 ```
 
 `.myjarbis/active` is a single-line file (the module name) — always
