@@ -20,7 +20,7 @@ PROJECT_NAME="$(basename "$CURRENT_DIR")"
 
 # ─── helpers ──────────────────────────────────────────────────────
 section() { echo; echo -e "${RED}${BOLD}$1${NC}"; }
-step()    { echo -e "${RED}[$1/8]${NC}  ${BOLD}$2${NC}"; }
+step()    { echo -e "${RED}[$1/9]${NC}  ${BOLD}$2${NC}"; }
 ok()      { echo -e "       OK"; }
 note()    { echo -e "       ${DIM}$1${NC}"; }
 warn()    { echo -e "       ${RED}WARN${NC}  $1"; }
@@ -284,8 +284,30 @@ else
     warn "plugin templates not found at $INSTALL_DIR/templates/.claude-plugin"
 fi
 
-# ─── [7/8] persona + seed memory.db ───────────────────────────────
-step 7 "Configure persona and seed memory.db"
+# ─── [7/9] Claude auto-memory pointer ─────────────────────────────
+step 7 "Provision Claude auto-memory pointer"
+
+CLAUDE_PROJECT_SLUG=$(echo "$CURRENT_DIR" | sed 's|/|-|g')
+CLAUDE_MEMORY_DIR="$HOME/.claude/projects/$CLAUDE_PROJECT_SLUG/memory"
+TEMPLATE_SRC="$INSTALL_DIR/templates/auto-memory/MEMORY.md"
+
+mkdir -p "$CLAUDE_MEMORY_DIR"
+
+if [ ! -f "$TEMPLATE_SRC" ]; then
+    warn "auto-memory template not found at $TEMPLATE_SRC — skipping"
+elif [ -f "$CLAUDE_MEMORY_DIR/MEMORY.md" ]; then
+    BACKUP="$CLAUDE_MEMORY_DIR/MEMORY.md.bak.$(date +%s)"
+    cp "$CLAUDE_MEMORY_DIR/MEMORY.md" "$BACKUP"
+    cp "$TEMPLATE_SRC" "$CLAUDE_MEMORY_DIR/MEMORY.md"
+    note "auto-memory replaced (backup: $(basename "$BACKUP"))"
+else
+    cp "$TEMPLATE_SRC" "$CLAUDE_MEMORY_DIR/MEMORY.md"
+    note "auto-memory pointer written under ~/.claude/projects/<slug>/memory/"
+fi
+ok
+
+# ─── [8/9] persona + seed memory.db ───────────────────────────────
+step 8 "Configure persona and seed memory.db"
 
 # LANG_CHOICE was resolved at step 4 (needed there to pick the right
 # trilingual jarbis.md). We only need persona here.
@@ -319,8 +341,8 @@ else
     warn "cli.js not found at $CLI_JS"
 fi
 
-# ─── [8/8] update .gitignore + Claude MCP config ──────────────────
-step 8 "Update .gitignore and Claude MCP config"
+# ─── [9/9] update .gitignore + Claude MCP config ──────────────────
+step 9 "Update .gitignore and Claude MCP config"
 
 if [ -f ".gitignore" ]; then
     if ! grep -q ".myjarbis/context/codebase.txt" .gitignore; then

@@ -1013,6 +1013,7 @@ const HOOK_I18N = {
     create_option: '· "nuevo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → cambiar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
+    memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   en: {
     no_project_title: 'MyJarbis',
@@ -1030,6 +1031,7 @@ const HOOK_I18N = {
     create_option: '· "new module <name>" → create_module + start_session',
     settings_option: '· "settings" → change language / persona',
     resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
+    memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   pt: {
     no_project_title: 'MyJarbis',
@@ -1047,6 +1049,7 @@ const HOOK_I18N = {
     create_option: '· "novo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → mudar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
+    memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
 } as const;
 
@@ -1116,6 +1119,7 @@ function runHookSessionStart(): void {
         } else {
           blocks.push('', 'No previous session — starting fresh.');
         }
+        blocks.push('', t.memory_contract);
         console.log(blocks.join('\n'));
         return;
       }
@@ -1161,6 +1165,7 @@ function runHookSessionStart(): void {
       lines.push('', t.resume_label(mostRecent.mod, stableDateLabel(mostRecent.ended_at)));
       lines.push(mostRecent.next);
     }
+    lines.push('', t.memory_contract);
     console.log(lines.join('\n'));
   } finally {
     ctx.close();

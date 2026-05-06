@@ -86,6 +86,7 @@ CRITICAL_FILES=(
     "$INSTALL_DIR/templates/.claude/commands/jarbis.es.md"
     "$INSTALL_DIR/templates/.claude/commands/jarbis.en.md"
     "$INSTALL_DIR/templates/.claude/commands/jarbis.pt.md"
+    "$INSTALL_DIR/templates/auto-memory/MEMORY.md"
     "$INSTALL_DIR/bin/myjarbis"
     "$INSTALL_DIR/bin/myjarbis-init"
     "$INSTALL_DIR/bin/myjarbis-doctor"
