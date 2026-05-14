@@ -1,173 +1,150 @@
 #!/bin/bash
-
 #
-# MyJarbis CLI - Main Entry Point
-#
-# Commands:
-#   myjarbis init       - Initialize current project
-#   myjarbis list       - List all registered projects
-#   myjarbis context    - Generate fresh codebase context
-#   myjarbis update     - Update MyJarbis global installation
-#   myjarbis help       - Show help
+# MyJarbis CLI — Main Entry Point
 #
 
 set -e
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+# Minimal palette: blood red as the only accent.
+RED='\033[38;5;88m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 # Paths
-INSTALL_DIR="$HOME/.myjarbis-global"
+INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 
-# Show help
 show_help() {
-    echo ""
-    echo "MyJarbis - AI Development Assistant System"
-    echo ""
-    echo "Usage: myjarbis <command> [options]"
-    echo ""
-    echo "Commands:"
-    echo "  init        Initialize MyJarbis in the current project"
-    echo "  doctor      Run diagnostics to verify installation and setup"
-    echo "  list        List all projects registered with MyJarbis"
-    echo "  context     Refresh project context (re-analyze project structure)"
-    echo "  update      Update MyJarbis global installation"
-    echo "  help        Show this help message"
-    echo ""
-    echo "Examples:"
+    echo
+    echo -e "${RED}${BOLD}MyJarbis${NC}"
+    echo
+    echo "  Usage: myjarbis <command> [options]"
+    echo
+    echo -e "${RED}${BOLD}Commands${NC}"
+    echo
+    echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project"
+    echo -e "  ${BOLD}doctor${NC}     Verify installation and project setup"
+    echo -e "  ${BOLD}list${NC}       List all registered projects"
+    echo -e "  ${BOLD}context${NC}    Refresh project context"
+    echo -e "  ${BOLD}update${NC}     Update MyJarbis global installation"
+    echo -e "  ${BOLD}import${NC}     Import a .md or .json into the project DB"
+    echo -e "  ${BOLD}module${NC}     Manage modules (add/list)"
+    echo -e "  ${BOLD}skill${NC}      Manage skills (add/list/edit/delete/enable/disable)"
+    echo -e "  ${BOLD}stats${NC}      Show row counts per table"
+    echo -e "  ${BOLD}status${NC}     git-like overview: project, active module, last session, counts"
+    echo -e "  ${BOLD}config${NC}     Read/write project config (language, persona, ...)"
+    echo -e "  ${BOLD}cost${NC}       Show token usage and cost from Claude Code logs"
+    echo -e "  ${BOLD}help${NC}       Show this help"
+    echo
+    echo -e "${RED}${BOLD}Examples${NC}"
+    echo
     echo "  cd ~/projects/my-app"
-    echo "  myjarbis init              # Initialize project"
-    echo "  myjarbis doctor            # Check if everything works"
-    echo "  myjarbis list              # See all projects"
-    echo ""
-    echo "Documentation:"
-    echo "  https://github.com/braiantroncoso/myjarbis"
-    echo ""
+    echo "  myjarbis init"
+    echo "  myjarbis doctor"
+    echo "  myjarbis list"
+    echo
+    echo -e "  ${DIM}https://github.com/braiantroncoso/myjarbis${NC}"
+    echo
 }
 
-# List registered projects
 list_projects() {
     if [ ! -f "$REGISTRY_FILE" ]; then
-        echo -e "${YELLOW}No projects registered yet${NC}"
-        echo "Run 'myjarbis init' in a project to register it"
+        echo
+        echo -e "  ${RED}WARN${NC}  no projects registered"
+        echo -e "        ${DIM}run 'myjarbis init' in a project to register it${NC}"
+        echo
         exit 0
     fi
 
-    # Parse JSON and list projects
-    echo ""
-    echo "Registered Projects:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo
+    echo -e "${RED}${BOLD}Registered projects${NC}"
+    echo
 
-    # Use node to parse JSON (works cross-platform)
     node -e "
         const fs = require('fs');
         const data = JSON.parse(fs.readFileSync('$REGISTRY_FILE', 'utf-8'));
         const projects = data.projects;
 
         if (Object.keys(projects).length === 0) {
-            console.log('  No projects registered yet');
+            console.log('  (none)');
         } else {
             for (const [name, config] of Object.entries(projects)) {
+                console.log('  ' + name);
+                console.log('    path       ' + config.path);
+                console.log('    framework  ' + (config.framework || 'generic'));
+                console.log('    created    ' + config.initialized);
                 console.log('');
-                console.log('  Name:      ' + name);
-                console.log('  Path:      ' + config.path);
-                console.log('  Framework: ' + (config.framework || 'generic'));
-                console.log('  Created:   ' + config.initialized);
             }
         }
     "
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
 }
 
-# Generate/refresh project context
 generate_context() {
     if [ ! -d ".myjarbis" ]; then
-        echo -e "${RED}Error: Not a MyJarbis project${NC}"
-        echo "Run 'myjarbis init' first"
+        echo
+        echo -e "  ${RED}${BOLD}FAIL${NC}  not a MyJarbis project"
+        echo -e "        ${DIM}run 'myjarbis init' first${NC}"
+        echo
         exit 1
     fi
 
-    echo ""
-    echo -e "${BLUE}Refreshing project context...${NC}"
-    echo ""
+    echo
+    echo -e "${RED}${BOLD}MyJarbis${NC} · refresh project context"
+    echo
 
-    # Detect framework from settings
+    # Project structure analysis is delegated to the framework-detect skill
+    # (Phase 3 of the v0.2 upgrade). The legacy JS analyzers under
+    # global/core/analyzers/ never existed.
     if [ -f ".myjarbis/config/settings.json" ]; then
-        FRAMEWORK=$(grep -o '"framework"[[:space:]]*:[[:space:]]*"[^"]*"' .myjarbis/config/settings.json | cut -d'"' -f4)
-        PROJECT_NAME=$(basename "$(pwd)")
-
-        # Re-run appropriate analyzer
-        if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing Laravel project..."
-            node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
-                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-
-        elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing Express project..."
-            node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                echo -e "${GREEN}✓${NC} project-summary.md updated with latest code structure" || \
-                echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-
-        else
-            echo -e "${BLUE}[1/2]${NC} Re-analyzing project structure..."
-            if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
-                node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$(pwd)" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null && \
-                    echo -e "${GREEN}✓${NC} project-summary.md updated" || \
-                    echo -e "${YELLOW}!${NC} Could not re-analyze (using existing summary)"
-            else
-                echo -e "${YELLOW}!${NC} Analyzer not found, skipping project-summary update"
-            fi
-        fi
+        echo -e "  ${RED}[1/2]${NC}  ${BOLD}project-summary.md${NC}"
+        echo -e "         ${DIM}re-analysis happens inside Claude via the${NC}"
+        echo -e "         ${DIM}framework-detect skill — open Claude and ask${NC}"
+        echo -e "         ${DIM}the agent to refresh the summary${NC}"
     else
-        echo -e "${YELLOW}!${NC} Settings not found, skipping project-summary update"
+        echo -e "  ${RED}WARN${NC}  settings not found, skipping"
     fi
 
-    # Generate codebase.txt (optional)
     if [ -f ".myjarbis/bin/generate-context.sh" ]; then
-        echo ""
-        echo -e "${BLUE}[2/2]${NC} Generating codebase.txt (optional)..."
+        echo
+        echo -e "  ${RED}[2/2]${NC}  ${BOLD}codebase.txt${NC}"
         bash .myjarbis/bin/generate-context.sh
-        echo -e "${GREEN}✓${NC} codebase.txt generated"
+        echo "         OK"
     fi
 
-    echo ""
-    echo -e "${GREEN}Context refresh complete!${NC}"
-    echo ""
-    echo "Updated files:"
-    echo "  - .myjarbis/context/project-summary.md (Claude reads this)"
+    echo
+    echo -e "  ${BOLD}done${NC}"
     if [ -f ".myjarbis/context/codebase.txt" ]; then
-        echo "  - .myjarbis/context/codebase.txt (optional reference)"
+        echo -e "    ${DIM}.myjarbis/context/codebase.txt${NC}"
     fi
-    echo ""
+    echo
 }
 
 # Main command router
 case "${1:-help}" in
     init)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
-            echo "Please run the installation script"
-            exit 1
+        # Resolve script: prefer $INSTALL_DIR/bin (production install
+        # layout), fall back to $INSTALL_DIR/../bin (dev layout where
+        # MYJARBIS_INSTALL_DIR points to <repo>/global).
+        if [ -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-init"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-init" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-init"
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-init"
+        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-init not found"
+        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
+        exit 1
         ;;
 
     doctor)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
-            echo "Please run the installation script"
-            exit 1
+        if [ -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-doctor"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-doctor" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-doctor"
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-doctor"
+        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-doctor not found"
+        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
+        exit 1
         ;;
 
     list)
@@ -179,11 +156,24 @@ case "${1:-help}" in
         ;;
 
     update)
-        if [ ! -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
-            echo -e "${RED}Error: MyJarbis not properly installed${NC}"
+        if [ -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-update"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-update" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-update"
+        fi
+        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-update not found"
+        exit 1
+        ;;
+
+    import|module|skill|stats|cost|config|status)
+        # v0.2 subcommands delegated to the node CLI helper
+        CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
+        if [ ! -f "$CLI_JS" ]; then
+            echo -e "  ${RED}${BOLD}FAIL${NC}  cli.js not found at $CLI_JS"
+            echo -e "        ${DIM}re-run the installer or rebuild: cd $INSTALL_DIR/mcp-server && npm run build${NC}"
             exit 1
         fi
-        exec "$INSTALL_DIR/bin/myjarbis-update"
+        exec node "$CLI_JS" "$@"
         ;;
 
     help|--help|-h)
@@ -191,12 +181,12 @@ case "${1:-help}" in
         ;;
 
     --version|-v)
-        echo "MyJarbis v0.1.0"
+        echo "MyJarbis v0.2.0"
         ;;
 
     *)
-        echo -e "${RED}Error: Unknown command '${1}'${NC}"
-        echo "Run 'myjarbis help' for usage"
+        echo -e "  ${RED}${BOLD}FAIL${NC}  unknown command: ${1}"
+        echo -e "        ${DIM}run 'myjarbis help' for usage${NC}"
         exit 1
         ;;
 esac

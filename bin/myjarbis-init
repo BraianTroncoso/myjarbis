@@ -1,92 +1,78 @@
 #!/bin/bash
-
 #
 # MyJarbis Project Initialization Script
-#
-# This script initializes MyJarbis in the current project:
-# 1. Creates .myjarbis/ folder structure
-# 2. Copies templates (prompts, config, scripts)
-# 3. Detects project framework
-# 4. Generates project summary
-# 5. Registers project in global registry
-# 6. Updates .gitignore
 #
 
 set -e
 
-# Colors - Iron Man theme (red and gold)
-RED='\033[1;31m'      # Bright red (Iron Man red)
-GOLD='\033[1;33m'     # Bright yellow/gold (Iron Man gold)
-GREEN='\033[0;32m'    # Keep green for success
-YELLOW='\033[1;33m'   # Warning yellow
-NC='\033[0m'          # No Color
+# Minimal palette: blood red as the only accent, bold + dim for hierarchy.
+RED='\033[38;5;88m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
 
 # Paths
-INSTALL_DIR="$HOME/.myjarbis-global"
+INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
 TEMPLATES_DIR="$INSTALL_DIR/templates"
 REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 CURRENT_DIR="$(pwd)"
 PROJECT_NAME="$(basename "$CURRENT_DIR")"
 
-echo ""
-echo -e "${RED}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${RED}║${GOLD}         🤖 JARBIS PROJECT SETUP             ${RED}║${NC}"
-echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${GOLD}Project:${NC} $PROJECT_NAME"
-echo -e "${GOLD}Path:${NC}    $CURRENT_DIR"
-echo ""
+# ─── helpers ──────────────────────────────────────────────────────
+section() { echo; echo -e "${RED}${BOLD}$1${NC}"; }
+step()    { echo -e "${RED}[$1/9]${NC}  ${BOLD}$2${NC}"; }
+ok()      { echo -e "       OK"; }
+note()    { echo -e "       ${DIM}$1${NC}"; }
+warn()    { echo -e "       ${RED}WARN${NC}  $1"; }
 
-# Check if already initialized
+echo
+echo -e "${RED}${BOLD}MyJarbis${NC} · project setup"
+echo
+echo -e "  ${BOLD}Project${NC}   $PROJECT_NAME"
+echo -e "  ${BOLD}Path${NC}      $CURRENT_DIR"
+echo
+
+# ─── reinit guard ─────────────────────────────────────────────────
 if [ -d ".myjarbis" ]; then
-    echo -e "${YELLOW}Warning: .myjarbis/ folder already exists${NC}"
-    read -p "Reinitialize? This will overwrite existing files (y/n) " -n 1 -r
+    echo -e "${RED}WARN${NC}  .myjarbis/ already exists"
+    read -p "      Reinitialize and overwrite? (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Initialization cancelled"
+        echo "      Cancelled"
         exit 0
     fi
 fi
 
-# Detect framework
-echo -e "${GOLD}[1/6]${NC} Detecting project framework..."
+# ─── [1/8] framework detect ───────────────────────────────────────
+step 1 "Detect framework"
 FRAMEWORK="generic"
-
 if [ -f "artisan" ] && [ -f "composer.json" ]; then
     FRAMEWORK="laravel"
-    echo -e "${GREEN}✓${NC} Detected: Laravel"
+    note "Laravel"
 elif [ -f "package.json" ]; then
     if grep -q "\"next\"" package.json; then
-        FRAMEWORK="nextjs"
-        echo -e "${GREEN}✓${NC} Detected: Next.js"
+        FRAMEWORK="nextjs"; note "Next.js"
     elif grep -q "\"react\"" package.json; then
-        FRAMEWORK="react"
-        echo -e "${GREEN}✓${NC} Detected: React"
+        FRAMEWORK="react"; note "React"
     elif grep -q "\"vue\"" package.json; then
-        FRAMEWORK="vue"
-        echo -e "${GREEN}✓${NC} Detected: Vue.js"
+        FRAMEWORK="vue"; note "Vue.js"
     elif grep -q "\"express\"" package.json; then
-        FRAMEWORK="express"
-        echo -e "${GREEN}✓${NC} Detected: Express.js"
+        FRAMEWORK="express"; note "Express.js"
     else
-        echo -e "${YELLOW}!${NC} Detected: Node.js (generic)"
+        note "Node.js (generic)"
     fi
 else
-    echo -e "${YELLOW}!${NC} Framework: Generic"
+    note "generic"
 fi
 
-# Create .myjarbis folder structure
-echo ""
-echo -e "${GOLD}[2/6]${NC} Creating .myjarbis folder structure..."
+# ─── [2/8] folder structure ───────────────────────────────────────
+step 2 "Create .myjarbis structure"
 mkdir -p .myjarbis/{bin,context,prompts,config}
 mkdir -p .claude/commands
-echo -e "${GREEN}✓${NC} Created folder structure"
+ok
 
-# Run analyzer and copy templates
-echo ""
-echo -e "${GOLD}[3/6]${NC} Analyzing project and setting up templates..."
-
-# Copy framework-specific system.md
+# ─── [3/8] templates ──────────────────────────────────────────────
+step 3 "Apply framework template"
 if [ "$FRAMEWORK" = "laravel" ]; then
     cp "$INSTALL_DIR/core/prompts/system-laravel.md" .myjarbis/prompts/system.md
 elif [ "$FRAMEWORK" = "express" ]; then
@@ -95,10 +81,11 @@ else
     cp "$INSTALL_DIR/core/prompts/system-generic.md" .myjarbis/prompts/system.md
 fi
 
-# Run appropriate analyzer to generate project-summary.md
-if [ "$FRAMEWORK" = "laravel" ] && [ -f "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" ]; then
-    echo -e "${GOLD}Running Laravel analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/laravel-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << 'EOF'
+# Project structure analysis is delegated to the framework-detect skill
+# (Phase 3 of the v0.2 upgrade). The legacy JS analyzers under
+# global/core/analyzers/ never existed — we write a placeholder template
+# that the agent enriches on the first session.
+cat > .myjarbis/context/project-summary.md << EOF
 # $PROJECT_NAME - Project Summary
 
 ## Overview
@@ -109,53 +96,9 @@ Project initialized on $(date +%Y-%m-%d).
 
 ## Project Structure
 
-TODO: Update with actual structure
-EOF
-elif [ "$FRAMEWORK" = "express" ] && [ -f "$INSTALL_DIR/core/analyzers/express-analyzer.js" ]; then
-    echo -e "${GOLD}Running Express analyzer...${NC}"
-    node "$INSTALL_DIR/core/analyzers/express-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
-EOF
-else
-    # Use generic analyzer
-    echo -e "${GOLD}Running generic analyzer...${NC}"
-    if [ -f "$INSTALL_DIR/core/analyzers/generic-analyzer.js" ]; then
-        node "$INSTALL_DIR/core/analyzers/generic-analyzer.js" "$CURRENT_DIR" "$PROJECT_NAME" > .myjarbis/context/project-summary.md 2>/dev/null || cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
-EOF
-    else
-        cat > .myjarbis/context/project-summary.md << EOF
-# $PROJECT_NAME - Project Summary
-
-## Overview
-
-Project initialized on $(date +%Y-%m-%d).
-
-**Framework:** $FRAMEWORK
-
-## Project Structure
-
-TODO: Update with actual structure
+TODO: Will be enriched by the framework-detect skill on first
+Claude session. Run 'claude' from this directory and the agent
+will analyze the codebase and update this file.
 
 ## Architecture
 
@@ -170,10 +113,7 @@ TODO: List main components/modules
 - Initialized with MyJarbis on $(date +%Y-%m-%d)
 - Framework detected: $FRAMEWORK
 EOF
-    fi
-fi
 
-# knowledge-base.md (context)
 cat > .myjarbis/context/knowledge-base.md << 'EOF'
 # Knowledge Base
 
@@ -191,7 +131,6 @@ This serves as project memory for Claude and documentation for the team.
 
 EOF
 
-# daily.md (context)
 cat > .myjarbis/context/daily.md << EOF
 # Daily Context - $(date +%Y-%m-%d)
 
@@ -219,7 +158,6 @@ TODO: What are we working on today?
 Last updated: $(date +%Y-%m-%d)
 EOF
 
-# settings.json (config)
 cat > .myjarbis/config/settings.json << EOF
 {
   "project": {
@@ -227,29 +165,20 @@ cat > .myjarbis/config/settings.json << EOF
     "framework": "$FRAMEWORK",
     "initialized": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
   },
-  "mcp": {
-    "enabled": true
-  },
-  "context": {
-    "autoGenerateCodebase": false,
-    "maxCodebaseSize": "10MB"
-  }
+  "mcp": { "enabled": true },
+  "context": { "autoGenerateCodebase": false, "maxCodebaseSize": "10MB" }
 }
 EOF
 
-# generate-context.sh (bin)
 cat > .myjarbis/bin/generate-context.sh << 'EOF'
 #!/bin/bash
-# Generate codebase.txt - a text dump of the entire codebase
-# Useful for giving Claude full project context
+# Generate codebase.txt — a text dump of the entire codebase.
 
 OUTPUT=".myjarbis/context/codebase.txt"
-
 echo "Generating codebase context..."
 echo "# Codebase Context - Generated $(date)" > "$OUTPUT"
 echo "" >> "$OUTPUT"
 
-# Find all relevant files (exclude node_modules, vendor, etc.)
 find . -type f \
   -not -path "*/node_modules/*" \
   -not -path "*/vendor/*" \
@@ -260,61 +189,78 @@ find . -type f \
   -not -name "*.min.js" \
   -not -name "package-lock.json" \
   | while read file; do
-    echo "━━━ $file" >> "$OUTPUT"
+    echo "--- $file" >> "$OUTPUT"
     cat "$file" >> "$OUTPUT"
-    echo "" >> "$OUTPUT"
     echo "" >> "$OUTPUT"
 done
 
-echo "✓ Generated: $OUTPUT"
+echo "Generated: $OUTPUT"
 EOF
 chmod +x .myjarbis/bin/generate-context.sh
 
-# daily.sh (bin)
 cat > .myjarbis/bin/daily.sh << 'EOF'
 #!/bin/bash
-# Update daily.md with current date
-
+# Update daily.md with current date.
 DAILY_FILE=".myjarbis/context/daily.md"
 TODAY=$(date +%Y-%m-%d)
-
-# Update header
 sed -i.bak "1s/.*/# Daily Context - $TODAY/" "$DAILY_FILE"
 sed -i.bak "s/Last updated: .*/Last updated: $TODAY/" "$DAILY_FILE"
 rm -f "${DAILY_FILE}.bak"
-
-echo "✓ Updated daily.md"
+echo "Updated daily.md"
 EOF
 chmod +x .myjarbis/bin/daily.sh
+ok
 
-echo -e "${GREEN}✓${NC} Created initial files"
+# ─── [4/8] /jarbis command ────────────────────────────────────────
+step 4 "Install /jarbis command"
 
-# Create .claude commands from templates
-echo ""
-echo -e "${GOLD}[4/6]${NC} Creating Claude commands..."
+# Language has to be known BEFORE this step so we can pick the right
+# trilingual variant of jarbis.md. Step 7 also needs it (for the
+# interaction-style skill); we just resolve it once here.
+LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
+if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
+    echo
+    echo -e "       ${BOLD}Language for the /jarbis prompt${NC}"
+    echo -e "         EN  English (United States) ${DIM}[default]${NC}"
+    echo -e "         ES  Español (Argentina)"
+    echo -e "         PT  Português (Brazil)"
+    read -p "       Choice [EN]: " LANG_CHOICE
+    echo
+fi
+LANG_CHOICE="${LANG_CHOICE:-EN}"
+LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
+JARBIS_LANG=$(echo "$LANG_CHOICE" | tr '[:upper:]' '[:lower:]')
 
-# Copy improved command templates
-cp "$INSTALL_DIR/templates/.claude/commands/jarbis.md" .claude/commands/jarbis.md
-cp "$INSTALL_DIR/templates/.claude/commands/plan.md" .claude/commands/plan.md
-cp "$INSTALL_DIR/templates/.claude/commands/implement.md" .claude/commands/implement.md
-cp "$INSTALL_DIR/templates/.claude/commands/complete.md" .claude/commands/complete.md
+JARBIS_TEMPLATE="$INSTALL_DIR/templates/.claude/commands/jarbis.${JARBIS_LANG}.md"
+if [ ! -f "$JARBIS_TEMPLATE" ]; then
+    note "jarbis.${JARBIS_LANG}.md not found, falling back to ES"
+    JARBIS_TEMPLATE="$INSTALL_DIR/templates/.claude/commands/jarbis.es.md"
+fi
+cp "$JARBIS_TEMPLATE" .claude/commands/jarbis.md
+note "installed jarbis.md ($LANG_CHOICE variant)"
 
-echo -e "${GREEN}✓${NC} Created command files (including /jarbis)"
+# Cleanup stale slash commands from previous MyJarbis versions
+STALE_REMOVED=0
+for stale in plan implement complete module skill resume import compact; do
+    if [ -f ".claude/commands/${stale}.md" ]; then
+        rm -f ".claude/commands/${stale}.md"
+        STALE_REMOVED=$((STALE_REMOVED + 1))
+    fi
+done
+if [ "$STALE_REMOVED" -gt 0 ]; then
+    note "removed $STALE_REMOVED stale command(s) from previous version"
+fi
+ok
 
-# Register project in global registry
-echo ""
-echo -e "${GOLD}[5/6]${NC} Registering project..."
-
+# ─── [5/8] register project ───────────────────────────────────────
+step 5 "Register project"
 node -e "
 const fs = require('fs');
 const registryPath = '$REGISTRY_FILE';
-
 let registry = { _version: '1.0', _comment: 'Auto-generated', projects: {} };
-
 if (fs.existsSync(registryPath)) {
     registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
 }
-
 registry.projects['$PROJECT_NAME'] = {
     name: '$PROJECT_NAME',
     path: '$CURRENT_DIR',
@@ -322,125 +268,115 @@ registry.projects['$PROJECT_NAME'] = {
     initialized: new Date().toISOString(),
     lastAccessed: new Date().toISOString()
 };
-
 registry._lastUpdated = new Date().toISOString();
-
 fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
 "
+ok
 
-echo -e "${GREEN}✓${NC} Project registered in global registry"
+# ─── [6/8] plugin (hooks + manifest) ──────────────────────────────
+step 6 "Install hooks"
+if [ -d "$INSTALL_DIR/templates/.claude-plugin" ]; then
+    rm -rf .claude-plugin
+    cp -r "$INSTALL_DIR/templates/.claude-plugin" .claude-plugin
+    chmod +x .claude-plugin/scripts/*.sh 2>/dev/null || true
+    ok
+else
+    warn "plugin templates not found at $INSTALL_DIR/templates/.claude-plugin"
+fi
 
-# Update .gitignore
-echo ""
-echo -e "${GOLD}[6/6]${NC} Updating .gitignore..."
+# ─── [7/9] Claude auto-memory pointer ─────────────────────────────
+step 7 "Provision Claude auto-memory pointer"
+
+CLAUDE_PROJECT_SLUG=$(echo "$CURRENT_DIR" | sed 's|/|-|g')
+CLAUDE_MEMORY_DIR="$HOME/.claude/projects/$CLAUDE_PROJECT_SLUG/memory"
+TEMPLATE_SRC="$INSTALL_DIR/templates/auto-memory/MEMORY.md"
+
+mkdir -p "$CLAUDE_MEMORY_DIR"
+
+if [ ! -f "$TEMPLATE_SRC" ]; then
+    warn "auto-memory template not found at $TEMPLATE_SRC — skipping"
+elif [ -f "$CLAUDE_MEMORY_DIR/MEMORY.md" ]; then
+    BACKUP="$CLAUDE_MEMORY_DIR/MEMORY.md.bak.$(date +%s)"
+    cp "$CLAUDE_MEMORY_DIR/MEMORY.md" "$BACKUP"
+    cp "$TEMPLATE_SRC" "$CLAUDE_MEMORY_DIR/MEMORY.md"
+    note "auto-memory replaced (backup: $(basename "$BACKUP"))"
+else
+    cp "$TEMPLATE_SRC" "$CLAUDE_MEMORY_DIR/MEMORY.md"
+    note "auto-memory pointer written under ~/.claude/projects/<slug>/memory/"
+fi
+ok
+
+# ─── [8/9] persona + seed memory.db ───────────────────────────────
+step 8 "Configure persona and seed memory.db"
+
+# LANG_CHOICE was resolved at step 4 (needed there to pick the right
+# trilingual jarbis.md). We only need persona here.
+PERSONA_CHOICE="${MYJARBIS_PERSONA:-}"
+
+if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
+    echo -e "       ${BOLD}Personas${NC}"
+    echo -e "         1   Concise            ${DIM}terse, no preamble [default]${NC}"
+    echo -e "         2   Pair programmer    ${DIM}1-line intent before each change${NC}"
+    echo -e "         3   Mentor             ${DIM}WHAT/WHY/HOW/BENEFITS${NC}"
+    echo -e "         4   Critical reviewer  ${DIM}challenges your assumptions first${NC}"
+    read -p "       Choice [1]: " PERSONA_CHOICE
+    echo
+fi
+PERSONA_CHOICE="${PERSONA_CHOICE:-1}"
+
+note "language: $LANG_CHOICE"
+note "persona:  $PERSONA_CHOICE"
+
+CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
+if [ -f "$CLI_JS" ]; then
+    if node "$CLI_JS" init-project \
+        --name="$PROJECT_NAME" --framework="$FRAMEWORK" \
+        --language="$LANG_CHOICE" --persona="$PERSONA_CHOICE" >/dev/null; then
+        note "memory.db + 10 baseline skills + interaction-style"
+        ok
+    else
+        warn "init-project failed (DB will be created on first session)"
+    fi
+else
+    warn "cli.js not found at $CLI_JS"
+fi
+
+# ─── [9/9] update .gitignore + Claude MCP config ──────────────────
+step 9 "Update .gitignore and Claude MCP config"
 
 if [ -f ".gitignore" ]; then
     if ! grep -q ".myjarbis/context/codebase.txt" .gitignore; then
         echo "" >> .gitignore
         echo "# MyJarbis" >> .gitignore
         echo ".myjarbis/context/codebase.txt" >> .gitignore
-        echo -e "${GREEN}✓${NC} Updated .gitignore"
-    else
-        echo -e "${YELLOW}!${NC} .gitignore already configured"
     fi
 else
     cat > .gitignore << 'EOF'
 # MyJarbis
 .myjarbis/context/codebase.txt
 EOF
-    echo -e "${GREEN}✓${NC} Created .gitignore"
 fi
 
-# Success
-echo ""
-echo -e "${RED}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${RED}║${GREEN}       ✓ JARBIS ONLINE - READY TO ASSIST     ${RED}║${NC}"
-echo -e "${RED}╚════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${GOLD}Project:${NC}    $PROJECT_NAME"
-echo -e "${GOLD}Framework:${NC}  $FRAMEWORK"
-echo -e "${GOLD}Structure:${NC}  .myjarbis/ + .claude/ configured"
-echo ""
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GOLD}[ BOOT SEQUENCE ]${NC}"
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${GOLD}1. ACTIVATE JARBIS${NC}"
-echo -e "   \$ claude"
-echo -e "   > ${GOLD}/jarbis${NC}  ${NC}← Loads project context + MCP tools${NC}"
-echo ""
-echo -e "${GOLD}2. WORKFLOW COMMANDS${NC}"
-echo ""
-echo -e "   ${GOLD}/plan${NC}       ${NC}Break down features, ask questions, strategize${NC}"
-echo -e "   ${GOLD}/implement${NC}  ${NC}Execute current phase with laser focus${NC}"
-echo -e "   ${GOLD}/complete${NC}   ${NC}Archive work, update knowledge base${NC}"
-echo ""
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GOLD}[ MCP INTELLIGENCE LAYER ]${NC}"
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "  ${GOLD}search_code${NC}     ${NC}Intelligent codebase search${NC}"
-echo -e "                  ${NC}When: \"Where's the auth logic?\"${NC}"
-echo ""
-echo -e "  ${GOLD}get_context${NC}     ${NC}Curated context retrieval${NC}"
-echo -e "                  ${NC}When: \"Explain the payment flow\"${NC}"
-echo ""
-echo -e "  ${GOLD}update_memory${NC}   ${NC}Persistent knowledge storage${NC}"
-echo -e "                  ${NC}When: Auto-called by /complete${NC}"
-echo ""
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GOLD}[ OPERATIONAL NOTES ]${NC}"
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "  Run ${GOLD}/jarbis${NC} every new Claude session"
-echo -e "  MCP tools activate automatically when Claude needs them"
-echo -e "  Use ${GOLD}myjarbis context${NC} to refresh project analysis"
-echo -e "  Knowledge base builds over time in ${GOLD}.myjarbis/context/${NC}"
-echo ""
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GOLD}[ RECOMMENDED FIRST ACTION ]${NC}"
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "  \$ ${GREEN}claude${NC}"
-echo -e "  > ${GOLD}/jarbis${NC}"
-echo -e "  > ${GOLD}/plan${NC} \"Add user registration feature\""
-echo ""
-echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${NC}Built by Braian Troncoso  |  Run ${GOLD}myjarbis help${NC} for more info${NC}"
-echo ""
-
-# Configure Claude Code to use global MCP servers
-echo ""
-echo -e "${GOLD}[7/7]${NC} Configuring Claude Code MCP servers..."
-
-# Use Python to safely update .claude.json
-# Use Python to safely update .claude.json
-python3 << 'PYTHON_EOF'
+# Configure Claude Code MCP locally for this project
+python3 << 'PYTHON_EOF' >/dev/null
 import json
 import os
 
 claude_config = os.path.expanduser('~/.claude.json')
 
-# Load existing config
 if os.path.exists(claude_config):
     with open(claude_config, 'r') as f:
         data = json.load(f)
 else:
     data = {'projects': {}}
 
-# Ensure projects key exists
 if 'projects' not in data:
     data['projects'] = {}
 
-# Get current project path
 project_path = os.getcwd()
-
-# Ensure project entry exists
 if project_path not in data['projects']:
     data['projects'][project_path] = {}
 
-# Configure MCP server LOCALLY for this project
 mcp_server_path = os.path.expanduser('~/.myjarbis-global/mcp-server/build/index.js')
 data['projects'][project_path]['mcpServers'] = {
     'myjarbis': {
@@ -451,12 +387,22 @@ data['projects'][project_path]['mcpServers'] = {
     }
 }
 
-# Save config
 with open(claude_config, 'w') as f:
     json.dump(data, f, indent=2)
-
-print("✓ Configured MCP server locally for this project")
 PYTHON_EOF
+ok
 
-echo -e "${GREEN}✓${NC} Claude Code configured to use global MCP servers"
-
+# ─── done ─────────────────────────────────────────────────────────
+section "Setup complete"
+echo
+echo -e "  ${BOLD}Project${NC}    $PROJECT_NAME"
+echo -e "  ${BOLD}Framework${NC}  $FRAMEWORK"
+echo -e "  ${BOLD}Language${NC}   $LANG_CHOICE"
+echo -e "  ${BOLD}Persona${NC}    $PERSONA_CHOICE"
+echo -e "  ${BOLD}Skills${NC}     10 baselines materialized in .claude/skills/"
+echo
+section "Next"
+echo
+echo -e "  ${RED}\$${NC} claude"
+echo -e "  ${RED}>${NC} /jarbis"
+echo

@@ -1,0 +1,11 @@
+{
+  "name": "myjarbis",
+  "version": "0.2.0",
+  "description": "Persistent memory for Claude Code with per-project modules and skills.",
+  "author": {
+    "name": "Braian Axel Troncoso",
+    "url": "https://github.com/braiantroncoso"
+  },
+  "repository": "https://github.com/braiantroncoso/myjarbis",
+  "license": "MIT"
+}
