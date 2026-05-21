@@ -138,6 +138,9 @@ interface ContextEntryExcerpt {
   excerpt: string;
   bytes: number;
   updated_at: string;
+  /** Set when the entry collapses N chunks of the same source doc. */
+  chunks?: number;
+  chunk_ids?: number[];
 }
 
 export interface LoadModuleResult {
@@ -230,27 +233,85 @@ export function loadModule(
   }
 
   // Default: index mode — excerpts only.
+  const rawEntries: ContextEntryExcerpt[] = sliced.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    title: r.title,
+    source_path: r.source_path,
+    tags: r.tags,
+    progress: r.progress,
+    excerpt:
+      r.content.length > MODULE_EXCERPT_LEN
+        ? r.content.slice(0, MODULE_EXCERPT_LEN - 1).replace(/\s+/g, ' ').trim() + '…'
+        : r.content.replace(/\s+/g, ' ').trim(),
+    bytes: r.content.length,
+    updated_at: r.updated_at,
+  }));
+  const entries = collapseChunkedExcerpts(rawEntries);
   return {
     project: { id: project.id, name: project.name },
     module: { id: mod.id, name: mod.name },
     mode: 'index',
-    count: sliced.length,
+    count: entries.length,
     total_in_module: all.length,
-    entries: sliced.map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      title: r.title,
-      source_path: r.source_path,
-      tags: r.tags,
-      progress: r.progress,
-      excerpt: r.content.length > MODULE_EXCERPT_LEN
-        ? r.content.slice(0, MODULE_EXCERPT_LEN - 1).replace(/\s+/g, ' ').trim() + '…'
-        : r.content.replace(/\s+/g, ' ').trim(),
-      bytes: r.content.length,
-      updated_at: r.updated_at,
-    })),
+    entries,
     hint: truncated
-      ? `Showing first ${limit} of ${filtered.length} matching rows. Use search() to narrow, or load_module(row_ids=[...]) once you know which rows you need.`
-      : `Index mode (excerpts only). Pull a row's full body via load_module(row_ids=[<id>]).`,
+      ? `Showing first ${limit} of ${filtered.length} matching rows (collapsed into ${entries.length} entries when chunks share a source doc). Use search() to narrow, or load_module(row_ids=[...]) once you know which rows you need.`
+      : `Index mode (collapsed). Pull a row's full body via load_module(row_ids=[<id>]); for chunked docs use search() to land on the right chunk.`,
   };
+}
+
+/** Group chunks of the same source doc into one entry — same logic as
+ *  collapseChunkedSummaries() in session.ts. Reads source_path before
+ *  the `#` anchor, picks the first chunk's id as the representative,
+ *  and lists every chunk id under `chunk_ids`. */
+function collapseChunkedExcerpts(
+  rows: ContextEntryExcerpt[],
+): ContextEntryExcerpt[] {
+  const groups = new Map<string, ContextEntryExcerpt[]>();
+  const passthrough: ContextEntryExcerpt[] = [];
+  for (const r of rows) {
+    if (!r.source_path || !r.source_path.includes('#')) {
+      passthrough.push(r);
+      continue;
+    }
+    const prefix = r.source_path.slice(0, r.source_path.indexOf('#'));
+    const key = `${prefix} ${r.kind}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(r);
+    groups.set(key, bucket);
+  }
+  const collapsed: ContextEntryExcerpt[] = [];
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => a.id - b.id);
+    if (bucket.length === 1) {
+      collapsed.push(bucket[0]);
+      continue;
+    }
+    const first = bucket[0];
+    const totalBytes = bucket.reduce((acc, b) => acc + b.bytes, 0);
+    const progressed = bucket.find((b) => b.progress);
+    const baseTitle = first.title.includes(' / ')
+      ? first.title.slice(0, first.title.indexOf(' / '))
+      : first.title;
+    const sourcePath = first.source_path!.slice(
+      0,
+      first.source_path!.indexOf('#'),
+    );
+    const out: ContextEntryExcerpt = {
+      id: first.id,
+      kind: first.kind,
+      title: baseTitle,
+      source_path: sourcePath,
+      tags: first.tags,
+      excerpt: first.excerpt,
+      bytes: totalBytes,
+      updated_at: first.updated_at,
+      chunks: bucket.length,
+      chunk_ids: bucket.map((b) => b.id),
+    };
+    if (progressed?.progress) out.progress = progressed.progress;
+    collapsed.push(out);
+  }
+  return [...passthrough, ...collapsed].sort((a, b) => a.id - b.id);
 }

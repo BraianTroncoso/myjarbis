@@ -45,6 +45,12 @@ interface ContextEntrySummary {
   excerpt: string;
   /** Present only on module_context rows that have a non-null `progress`. */
   progress?: string;
+  /** Set when this summary represents a source doc that was split into
+   *  multiple chunks. `id` points at the first chunk; the agent should
+   *  use search() to find the right chunk, then load_module(row_ids=[...])
+   *  with one of `chunk_ids`. */
+  chunks?: number;
+  chunk_ids?: number[];
 }
 
 interface StoryIndexEntry {
@@ -85,8 +91,8 @@ export function startSession(
   const session = ctx.db.sessions.start(module.id);
   ctx.setActiveSession(session.id, module.id);
 
-  const projectCtx = ctx.db.projectContext.listByProject(project.id).map(
-    summarizeProjectContext,
+  const projectCtx = collapseChunkedSummaries(
+    ctx.db.projectContext.listByProject(project.id).map(summarizeProjectContext),
   );
   // Split module_context: stories get an index-only summary (count +
   // localIds), the rest (workflow / plan / use_cases / functional_doc /
@@ -95,7 +101,9 @@ export function startSession(
   const allModuleCtx = ctx.db.moduleContext.listByModule(module.id);
   const storyRows = allModuleCtx.filter((r) => r.kind === 'story');
   const nonStoryRows = allModuleCtx.filter((r) => r.kind !== 'story');
-  const moduleCtx = nonStoryRows.map(summarizeModuleContext);
+  const moduleCtx = collapseChunkedSummaries(
+    nonStoryRows.map(summarizeModuleContext),
+  );
   const storyEntries: StoryIndexEntry[] = storyRows
     .map((r) => {
       const localId = extractLocalId(r);
@@ -290,6 +298,63 @@ function makeExcerpt(content: string): string {
   const normalized = content.trim().replace(/\s+/g, ' ');
   if (normalized.length <= EXCERPT_LEN) return normalized;
   return normalized.slice(0, EXCERPT_LEN - 1) + '…';
+}
+
+/** Group summaries that share a `source_path` prefix before `#`.
+ *  A multi-chunk source doc collapses to one summary whose `id` is the
+ *  first chunk's id, `chunk_ids` lists every chunk, and `chunks` is the
+ *  total. The title is de-suffixed (strip `" / <section>"`) to match the
+ *  pre-chunking shape the agent expects. Unchunked rows pass through.
+ *
+ *  Stories never reach this helper — they're handled separately above. */
+function collapseChunkedSummaries(
+  summaries: ContextEntrySummary[],
+): ContextEntrySummary[] {
+  const groups = new Map<string, ContextEntrySummary[]>();
+  const passthrough: ContextEntrySummary[] = [];
+
+  for (const s of summaries) {
+    if (!s.source_path || !s.source_path.includes('#')) {
+      passthrough.push(s);
+      continue;
+    }
+    const prefix = s.source_path.slice(0, s.source_path.indexOf('#'));
+    const key = `${prefix} ${s.kind}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(s);
+    groups.set(key, bucket);
+  }
+
+  const collapsed: ContextEntrySummary[] = [];
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => a.id - b.id);
+    if (bucket.length === 1) {
+      collapsed.push(bucket[0]);
+      continue;
+    }
+    const first = bucket[0];
+    const progressed = bucket.find((b) => b.progress);
+    const baseTitle = first.title.includes(' / ')
+      ? first.title.slice(0, first.title.indexOf(' / '))
+      : first.title;
+    const sourcePath = first.source_path!.slice(
+      0,
+      first.source_path!.indexOf('#'),
+    );
+    const out: ContextEntrySummary = {
+      id: first.id,
+      kind: first.kind,
+      title: baseTitle,
+      source_path: sourcePath,
+      excerpt: first.excerpt,
+      chunks: bucket.length,
+      chunk_ids: bucket.map((b) => b.id),
+    };
+    if (progressed?.progress) out.progress = progressed.progress;
+    collapsed.push(out);
+  }
+
+  return [...passthrough, ...collapsed].sort((a, b) => a.id - b.id);
 }
 
 /** Pulls the story localId from the row. import_json writes
