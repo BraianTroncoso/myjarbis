@@ -135,6 +135,21 @@ export class MyJarbisDB {
     this.db.close();
   }
 
+  /** Absolute path of the underlying memory.db file. */
+  get path(): string {
+    return this.dbPath;
+  }
+
+  /** Checkpoint the WAL and write a clean copy of the database to
+   *  `targetPath`. Used by destructive migrations (`rechunk`) so the
+   *  caller can roll back by copying the backup over the live DB. */
+  backupTo(targetPath: string): void {
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+    this.db.exec(`VACUUM INTO '${targetPath.replace(/'/g, "''")}'`);
+  }
+
   private prep(sql: string): Database.Statement {
     let s = this.stmtCache.get(sql);
     if (!s) {
@@ -268,6 +283,22 @@ export class MyJarbisDB {
       this.prep('SELECT * FROM project_context WHERE project_id = ? ORDER BY kind, title').all(
         projectId,
       ) as ProjectContextRow[],
+
+    /** Rows whose `content` is at or above the given size, skipping rows
+     *  whose `source_path` already contains a `#` anchor (those came from
+     *  import_json or a previous rechunk). Used by `myjarbis rechunk`. */
+    listOversized: (projectId: number, minBytes: number): ProjectContextRow[] =>
+      this.prep(
+        `SELECT * FROM project_context
+          WHERE project_id = ?
+            AND LENGTH(content) >= ?
+            AND (source_path IS NULL OR source_path NOT LIKE '%#%')
+          ORDER BY LENGTH(content) DESC`,
+      ).all(projectId, minBytes) as ProjectContextRow[],
+
+    deleteById: (id: number): void => {
+      this.prep('DELETE FROM project_context WHERE id = ?').run(id);
+    },
   };
 
   // ─────────────────────────────────────────────────────────────────
@@ -388,6 +419,32 @@ export class MyJarbisDB {
             AND title LIKE ?
           ORDER BY id DESC LIMIT 1`,
       ).get(moduleId, `%${localId}%`) as ModuleContextRow | undefined) ?? null;
+    },
+
+    /** Rows whose `content` is at or above the given size, skipping rows
+     *  whose `source_path` already contains a `#` anchor (those came from
+     *  import_json or a previous rechunk). Used by `myjarbis rechunk`. */
+    listOversized: (moduleId: number | null, minBytes: number): ModuleContextRow[] => {
+      if (moduleId !== null) {
+        return this.prep(
+          `SELECT * FROM module_context
+            WHERE module_id = ?
+              AND LENGTH(content) >= ?
+              AND (source_path IS NULL OR source_path NOT LIKE '%#%')
+            ORDER BY LENGTH(content) DESC`,
+        ).all(moduleId, minBytes) as ModuleContextRow[];
+      }
+      return this.prep(
+        `SELECT mc.* FROM module_context mc
+           JOIN modules m ON m.id = mc.module_id
+          WHERE LENGTH(mc.content) >= ?
+            AND (mc.source_path IS NULL OR mc.source_path NOT LIKE '%#%')
+          ORDER BY LENGTH(mc.content) DESC`,
+      ).all(minBytes) as ModuleContextRow[];
+    },
+
+    deleteById: (id: number): void => {
+      this.prep('DELETE FROM module_context WHERE id = ?').run(id);
     },
 
     setProgress: (id: number, progress: string | null): ModuleContextRow => {

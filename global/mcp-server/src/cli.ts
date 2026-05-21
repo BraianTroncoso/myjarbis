@@ -31,6 +31,8 @@ import {
   personaLabel,
 } from './personas.js';
 import { computeCost, formatTable } from './tools/cost.js';
+import { chunkMarkdown } from './utils/chunk.js';
+import { ContextKind } from './db/schema.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -803,6 +805,259 @@ function runCost(argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: rechunk
+//
+// Splits long pre-existing context rows (project_context / module_context)
+// into per-section chunks using the same algorithm import_md applies to
+// new imports. A `VACUUM INTO` backup is taken first so the migration is
+// trivially reversible.
+//
+// Scopes (positional):
+//   <empty>         → every project_context + module_context row over threshold
+//   project         → only project_context
+//   <module-name>   → only that module's module_context
+//
+// Flags:
+//   --threshold=<bytes>  default 4096
+//   --dry-run            print what would change without writing
+// ─────────────────────────────────────────────────────────────────────
+
+const RECHUNK_DEFAULT_THRESHOLD = 4096;
+
+function runRechunk(argv: string[]): void {
+  const { positional, flags } = parseFlags(argv);
+  const scope = positional[0] ?? 'all';
+  const threshold = (() => {
+    const raw = flags.threshold;
+    if (typeof raw === 'string') {
+      const n = parseInt(raw, 10);
+      if (!Number.isNaN(n) && n > 0) return n;
+    }
+    return RECHUNK_DEFAULT_THRESHOLD;
+  })();
+  const dryRun = flags['dry-run'] === true || flags['dry-run'] === 'true';
+  const json = wantsJson(flags);
+
+  const ctx = ServerContext.initialize();
+  try {
+    const project = ctx.requireProject();
+
+    // ─── pick the rows in scope ───
+    const projectRows =
+      scope === 'all' || scope === 'project'
+        ? ctx.db.projectContext.listOversized(project.id, threshold)
+        : [];
+    const moduleRows = (() => {
+      if (scope === 'project') return [];
+      if (scope === 'all') return ctx.db.moduleContext.listOversized(null, threshold);
+      const mod = ctx.db.modules.findByName(project.id, scope);
+      if (!mod) fail(`Unknown module: ${scope}`);
+      return ctx.db.moduleContext.listOversized(mod!.id, threshold);
+    })();
+
+    interface PlanItem {
+      table: 'project_context' | 'module_context';
+      rowId: number;
+      kind: ContextKind;
+      title: string;
+      sourcePath: string | null;
+      tags: string | null;
+      bytes: number;
+      chunks: Array<{ slug: string; title: string; bytes: number; content: string }>;
+      ownerId: number;
+    }
+
+    const plan: PlanItem[] = [];
+
+    for (const r of projectRows) {
+      const chunks = chunkMarkdown(r.content, { threshold });
+      if (chunks.length <= 1) continue;
+      plan.push({
+        table: 'project_context',
+        rowId: r.id,
+        kind: r.kind,
+        title: r.title,
+        sourcePath: r.source_path,
+        tags: r.tags,
+        bytes: r.content.length,
+        ownerId: r.project_id,
+        chunks: chunks.map((c) => ({
+          slug: c.slug,
+          title: c.title,
+          bytes: c.content.length,
+          content: c.content,
+        })),
+      });
+    }
+    for (const r of moduleRows) {
+      const chunks = chunkMarkdown(r.content, { threshold });
+      if (chunks.length <= 1) continue;
+      plan.push({
+        table: 'module_context',
+        rowId: r.id,
+        kind: r.kind,
+        title: r.title,
+        sourcePath: r.source_path,
+        tags: r.tags,
+        bytes: r.content.length,
+        ownerId: r.module_id,
+        chunks: chunks.map((c) => ({
+          slug: c.slug,
+          title: c.title,
+          bytes: c.content.length,
+          content: c.content,
+        })),
+      });
+    }
+
+    if (plan.length === 0) {
+      if (json) {
+        printJson({
+          scope,
+          threshold,
+          dry_run: dryRun,
+          backup: null,
+          rows: [],
+          total_rows: 0,
+          total_chunks: 0,
+        });
+        return;
+      }
+      ptySection(red(bold('rechunk')));
+      ptyLine(`no rows >= ${threshold} bytes in scope "${scope}"`);
+      return;
+    }
+
+    // ─── backup (skipped on dry-run) ───
+    let backupPath: string | null = null;
+    if (!dryRun) {
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, '-')
+        .replace(/Z$/, '');
+      backupPath = path.join(
+        project.path,
+        '.myjarbis',
+        'backups',
+        `memory-pre-rechunk-${stamp}.db`,
+      );
+      ctx.db.backupTo(backupPath);
+    }
+
+    // ─── apply (each row in its own tx so a mid-row failure leaves the
+    //     rest intact and the backup is always recoverable) ───
+    const applied: Array<{
+      table: string;
+      old_row_id: number;
+      title: string;
+      bytes_before: number;
+      chunks: number;
+      bytes_after_avg: number;
+      new_row_ids: number[];
+    }> = [];
+
+    if (!dryRun) {
+      for (const item of plan) {
+        const newIds: number[] = [];
+        ctx.db.tx(() => {
+          // Delete the original row first to avoid UNIQUE collisions
+          // when one of the chunks happens to keep the original
+          // source_path (theoretical: chunkMarkdown above the threshold
+          // always returns >1, but be defensive).
+          if (item.table === 'project_context') {
+            ctx.db.projectContext.deleteById(item.rowId);
+          } else {
+            ctx.db.moduleContext.deleteById(item.rowId);
+          }
+          for (const chunk of item.chunks) {
+            const newSource =
+              item.sourcePath && chunk.slug
+                ? `${item.sourcePath}#${chunk.slug}`
+                : item.sourcePath ?? null;
+            if (item.table === 'project_context') {
+              const r = ctx.db.projectContext.upsert({
+                projectId: item.ownerId,
+                kind: item.kind,
+                title: chunk.title,
+                content: chunk.content,
+                tags: item.tags ?? undefined,
+                sourcePath: newSource ?? undefined,
+              });
+              newIds.push(r.row.id);
+            } else {
+              const r = ctx.db.moduleContext.upsert({
+                moduleId: item.ownerId,
+                kind: item.kind,
+                title: chunk.title,
+                content: chunk.content,
+                tags: item.tags ?? undefined,
+                sourcePath: newSource ?? undefined,
+              });
+              newIds.push(r.row.id);
+            }
+          }
+        });
+        applied.push({
+          table: item.table,
+          old_row_id: item.rowId,
+          title: item.title,
+          bytes_before: item.bytes,
+          chunks: item.chunks.length,
+          bytes_after_avg: Math.round(item.bytes / item.chunks.length),
+          new_row_ids: newIds,
+        });
+      }
+    }
+
+    if (json) {
+      printJson({
+        scope,
+        threshold,
+        dry_run: dryRun,
+        backup: backupPath,
+        rows: dryRun
+          ? plan.map((p) => ({
+              table: p.table,
+              old_row_id: p.rowId,
+              title: p.title,
+              bytes_before: p.bytes,
+              chunks: p.chunks.length,
+              bytes_after_avg: Math.round(p.bytes / p.chunks.length),
+            }))
+          : applied,
+        total_rows: plan.length,
+        total_chunks: plan.reduce((acc, p) => acc + p.chunks.length, 0),
+      });
+      return;
+    }
+
+    ptySection(red(bold('rechunk')));
+    ptyKV('scope', scope);
+    ptyKV('threshold', `${threshold} bytes`);
+    if (backupPath) ptyKV('backup', backupPath);
+    if (dryRun) ptyKV('mode', 'dry-run (no writes)');
+    console.log();
+    for (const p of plan) {
+      const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;
+      ptyLine(
+        `${red('•')} ${p.table.padEnd(15)} ${kb(p.bytes).padEnd(9)} → ` +
+          `${p.chunks.length} chunks (avg ${kb(
+            Math.round(p.bytes / p.chunks.length),
+          )}) ${dim(p.title.slice(0, 60))}`,
+      );
+    }
+    console.log();
+    ptyKV('rows', String(plan.length));
+    ptyKV(
+      'chunks',
+      String(plan.reduce((acc, p) => acc + p.chunks.length, 0)),
+    );
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Subcommand: init-project
 //
 // Called by bin/myjarbis-init AFTER it has prepared .myjarbis/ skeleton.
@@ -1436,6 +1691,8 @@ export function main(argv: string[]): void {
         return runStats(rest);
       case 'cost':
         return runCost(rest);
+      case 'rechunk':
+        return runRechunk(rest);
       case 'config':
         return runConfig(rest);
       case 'status':
