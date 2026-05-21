@@ -17,6 +17,7 @@ import * as path from 'path';
 import { ServerContext } from '../context.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import { ContextKind } from '../db/schema.js';
+import { chunkMarkdown } from '../utils/chunk.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -119,13 +120,29 @@ const importMdArgsZ = z
   .strict();
 
 export interface ImportResult {
+  /** Aggregated status across all chunks: `inserted` if any chunk was
+   *  newly created, else `updated` if any chunk changed, else `unchanged`. */
   status: 'inserted' | 'updated' | 'unchanged';
   target: string;
   kind: ContextKind;
   title: string;
   source_path: string;
   bytes: number;
+  /** Number of rows written. 1 for short documents (chunking off). */
+  chunks: number;
+  /** Per-chunk row ids in insertion order. */
+  rowIds: number[];
+  /** First chunk's row id, kept for back-compat with callers that
+   *  expected a single id. */
   rowId: number;
+}
+
+function aggregateStatus(
+  statuses: Array<'inserted' | 'updated' | 'unchanged'>,
+): 'inserted' | 'updated' | 'unchanged' {
+  if (statuses.some((s) => s === 'inserted')) return 'inserted';
+  if (statuses.some((s) => s === 'updated')) return 'updated';
+  return 'unchanged';
 }
 
 export function importMd(ctx: ServerContext, rawArgs: unknown): ImportResult {
@@ -144,49 +161,63 @@ export function importMd(ctx: ServerContext, rawArgs: unknown): ImportResult {
   const content = fs.readFileSync(abs, 'utf-8');
   const sourcePath = relativeFromProject(ctx, abs);
   const baseName = path.basename(abs, path.extname(abs));
-  const title = args.title ?? extractTitle(content, baseName);
+  const baseTitle = args.title ?? extractTitle(content, baseName);
   const kind = args.kind as ContextKind;
 
   const target = parseTarget(args.target);
+  const chunks = chunkMarkdown(content);
 
-  if (target.kind === 'project') {
-    const r = ctx.db.projectContext.upsert({
-      projectId: project.id,
-      kind,
-      title,
-      content,
-      tags: args.tags,
-      sourcePath,
-    });
-    return {
-      status: r.status,
-      target: 'project',
-      kind: r.row.kind,
-      title: r.row.title,
-      source_path: r.row.source_path ?? sourcePath,
-      bytes: content.length,
-      rowId: r.row.id,
-    };
-  }
+  // For short docs the helper returns a single chunk with an empty slug;
+  // the row keeps the original source_path and the user-provided (or
+  // extracted) title, so the on-disk shape stays identical to pre-chunking.
+  const rowIds: number[] = [];
+  const statuses: Array<'inserted' | 'updated' | 'unchanged'> = [];
 
-  // module:<name>
-  const mod = ctx.requireModule(target.moduleName!);
-  const r = ctx.db.moduleContext.upsert({
-    moduleId: mod.id,
-    kind,
-    title,
-    content,
-    tags: args.tags,
-    sourcePath,
+  ctx.db.tx(() => {
+    for (const chunk of chunks) {
+      const chunkPath = chunk.slug ? `${sourcePath}#${chunk.slug}` : sourcePath;
+      const chunkTitle =
+        chunk.slug && args.title === undefined ? chunk.title : args.title ?? chunk.title;
+      const r =
+        target.kind === 'project'
+          ? ctx.db.projectContext.upsert({
+              projectId: project.id,
+              kind,
+              title: chunkTitle,
+              content: chunk.content,
+              tags: args.tags,
+              sourcePath: chunkPath,
+            })
+          : ctx.db.moduleContext.upsert({
+              moduleId: ctx.requireModule(target.moduleName!).id,
+              kind,
+              title: chunkTitle,
+              content: chunk.content,
+              tags: args.tags,
+              sourcePath: chunkPath,
+            });
+      rowIds.push(r.row.id);
+      statuses.push(r.status);
+    }
   });
+
+  // Resolve target label after the transaction; for module imports we
+  // hit requireModule above but want the canonical name for the output.
+  const targetLabel =
+    target.kind === 'project'
+      ? 'project'
+      : `module:${ctx.requireModule(target.moduleName!).name}`;
+
   return {
-    status: r.status,
-    target: `module:${mod.name}`,
-    kind: r.row.kind,
-    title: r.row.title,
-    source_path: r.row.source_path ?? sourcePath,
+    status: aggregateStatus(statuses),
+    target: targetLabel,
+    kind,
+    title: baseTitle,
+    source_path: sourcePath,
     bytes: content.length,
-    rowId: r.row.id,
+    chunks: chunks.length,
+    rowIds,
+    rowId: rowIds[0],
   };
 }
 
