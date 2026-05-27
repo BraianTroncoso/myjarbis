@@ -20,7 +20,7 @@ import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
-import { startSession } from './tools/session.js';
+import { startSession, readStaleThreshold, computeStaleness } from './tools/session.js';
 import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
 import { SCHEMA_VERSION } from './db/schema.js';
@@ -1013,6 +1013,8 @@ const HOOK_I18N = {
     create_option: '· "nuevo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → cambiar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ Esta bitácora tiene más de ${threshold} día(s). Antes de continuar, confirmá con el usuario que el contexto sigue siendo válido (ramas, PRs, decisiones que pudieron cambiar).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   en: {
@@ -1031,6 +1033,8 @@ const HOOK_I18N = {
     create_option: '· "new module <name>" → create_module + start_session',
     settings_option: '· "settings" → change language / persona',
     resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ This resume note is more than ${threshold} day(s) old. Before continuing, confirm with the user that the context still applies (branches, PRs, decisions that may have moved).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   pt: {
@@ -1049,6 +1053,8 @@ const HOOK_I18N = {
     create_option: '· "novo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → mudar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ Esta nota de retomada tem mais de ${threshold} dia(s). Antes de continuar, confirme com o usuário que o contexto ainda se aplica (branches, PRs, decisões que podem ter mudado).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
 } as const;
@@ -1116,6 +1122,14 @@ function runHookSessionStart(): void {
         if (last?.next_session) {
           blocks.push('', t.resume_label(target.name, stableDateLabel(last.ended_at)));
           blocks.push(last.next_session);
+          const staleAfter = readStaleThreshold(ctx.projectPath);
+          const staleness = computeStaleness(last.ended_at, staleAfter);
+          if (staleness?.stale) {
+            // The warning copy intentionally uses the threshold (stable per
+            // settings) and not the live day count — keeps the hook output
+            // byte-stable until the user changes the threshold.
+            blocks.push('', t.stale_warning(staleAfter));
+          }
         } else {
           blocks.push('', 'No previous session — starting fresh.');
         }
@@ -1164,6 +1178,11 @@ function runHookSessionStart(): void {
     if (mostRecent) {
       lines.push('', t.resume_label(mostRecent.mod, stableDateLabel(mostRecent.ended_at)));
       lines.push(mostRecent.next);
+      const staleAfter = readStaleThreshold(ctx.projectPath);
+      const staleness = computeStaleness(mostRecent.ended_at, staleAfter);
+      if (staleness?.stale) {
+        lines.push('', t.stale_warning(staleAfter));
+      }
     }
     lines.push('', t.memory_contract);
     console.log(lines.join('\n'));
@@ -1401,6 +1420,14 @@ interface ProjectSettings {
     /** When set to N>0, UserPromptSubmit hints to save an observation
      *  if none has landed in the last N+ minutes (bucketed per hour). */
     save_reminder_minutes?: number;
+  };
+  /** Session-related knobs. */
+  session?: {
+    /** Days after which a previous next_session is considered stale and
+     *  the SessionStart hook + start_session response surface a warning.
+     *  Default 7. Disable by setting a very large number; 0/negative are
+     *  ignored (fall back to default). */
+    stale_after_days?: number;
   };
   [k: string]: unknown;
 }
