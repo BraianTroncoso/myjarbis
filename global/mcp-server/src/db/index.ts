@@ -81,6 +81,28 @@ export type SearchScope =
   | 'observations'  // observations in module sessions
   | 'skills';       // skills (project + module-level)
 
+/** Chronological event in a module's timeline (sessions + observations).
+ *  Ordered newest first by `at` when returned from `MyJarbisDB.timeline`. */
+export type TimelineEvent =
+  | { type: 'session_start'; at: string; sessionId: number }
+  | {
+      type: 'session_end';
+      at: string;
+      sessionId: number;
+      summary: string | null;
+      nextSession: string | null;
+      observationsCount: number;
+    }
+  | {
+      type: 'observation';
+      at: string;
+      sessionId: number;
+      observationId: number;
+      kind: ObservationKind;
+      title: string;
+      storyLocalId: string | null;
+    };
+
 export interface SearchHit {
   source: 'project_context' | 'module_context' | 'observation' | 'skill';
   rowid: number;
@@ -585,6 +607,82 @@ export class MyJarbisDB {
           LIMIT ?`,
       ).all(moduleId, limit) as ObservationRow[],
   };
+
+  // ─────────────────────────────────────────────────────────────────
+  // timeline: chronological feed of sessions + observations for a
+  // module. Reading the feed is 10× faster than loading the full
+  // module_context dump when ramping back into a paused module.
+  // ─────────────────────────────────────────────────────────────────
+  timeline(
+    moduleId: number,
+    opts: { limit?: number } = {},
+  ): TimelineEvent[] {
+    const limit = opts.limit ?? 100;
+    const sessions = this.prep(
+      `SELECT id, started_at, ended_at, summary, next_session
+         FROM sessions
+        WHERE module_id = ?
+        ORDER BY started_at`,
+    ).all(moduleId) as Array<{
+      id: number;
+      started_at: string;
+      ended_at: string | null;
+      summary: string | null;
+      next_session: string | null;
+    }>;
+
+    const observations = this.prep(
+      `SELECT o.id, o.session_id, o.kind, o.title, o.story_local_id, o.created_at
+         FROM observations o
+         JOIN sessions s ON s.id = o.session_id
+        WHERE s.module_id = ?
+        ORDER BY o.created_at`,
+    ).all(moduleId) as Array<{
+      id: number;
+      session_id: number;
+      kind: ObservationKind;
+      title: string;
+      story_local_id: string | null;
+      created_at: string;
+    }>;
+
+    const observationsBySession = new Map<number, number>();
+    for (const o of observations) {
+      observationsBySession.set(
+        o.session_id,
+        (observationsBySession.get(o.session_id) ?? 0) + 1,
+      );
+    }
+
+    const events: TimelineEvent[] = [];
+    for (const s of sessions) {
+      events.push({ type: 'session_start', at: s.started_at, sessionId: s.id });
+      if (s.ended_at) {
+        events.push({
+          type: 'session_end',
+          at: s.ended_at,
+          sessionId: s.id,
+          summary: s.summary,
+          nextSession: s.next_session,
+          observationsCount: observationsBySession.get(s.id) ?? 0,
+        });
+      }
+    }
+    for (const o of observations) {
+      events.push({
+        type: 'observation',
+        at: o.created_at,
+        sessionId: o.session_id,
+        observationId: o.id,
+        kind: o.kind,
+        title: o.title,
+        storyLocalId: o.story_local_id,
+      });
+    }
+
+    events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    return events.slice(0, limit);
+  }
 
   // ─────────────────────────────────────────────────────────────────
   // search (FTS5 across the 4 indexed tables, scoped)

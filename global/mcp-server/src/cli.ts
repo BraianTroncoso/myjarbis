@@ -1443,13 +1443,97 @@ function readSettingsJson(projectPath: string): ProjectSettings {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: timeline
+//
+// Chronological feed of sessions + observations for a module. Reading
+// the timeline is much faster than `load_module --full` when ramping
+// back into a module that's been paused for weeks: you only need to
+// know the sequence of decisions/sessions, not the body of every story.
+// ─────────────────────────────────────────────────────────────────────
+
+function runTimeline(argv: string[]): void {
+  const { positional, flags } = parseFlags(argv);
+  let moduleName = positional[0];
+  const limit = typeof flags.limit === 'string' ? parseInt(flags.limit, 10) : 100;
+  if (Number.isNaN(limit) || limit <= 0) {
+    fail('Invalid --limit (must be a positive integer)');
+  }
+
+  const ctx = ServerContext.initialize();
+  try {
+    const project = ctx.project;
+    if (!project) {
+      fail('Not a MyJarbis project. Run `myjarbis init` first.');
+    }
+
+    if (!moduleName) {
+      const active = readActiveModule(ctx.projectPath);
+      if (active) {
+        moduleName = active;
+      } else {
+        fail(
+          'Usage: myjarbis timeline <module> [--limit=N] [--json]\n' +
+          '       (no module given and no active module set — try `myjarbis module use <name>` first)',
+        );
+      }
+    }
+
+    const mod = ctx.db.modules.findByName(project.id, moduleName);
+    if (!mod) {
+      fail(`Module "${moduleName}" not found in project "${project.name}".`);
+    }
+
+    const events = ctx.db.timeline(mod.id, { limit });
+
+    if (wantsJson(flags)) {
+      printJson({
+        project: project.name,
+        module: mod.name,
+        limit,
+        count: events.length,
+        events,
+      });
+      return;
+    }
+
+    // Pretty render. Matches install.sh / status palette: blood-red accents
+    // on plain white, no boxes. One line per event with timestamp prefix.
+    ptySection('MyJarbis · timeline of ' + red(bold(mod.name)) + dim(' (' + project.name + ')'));
+    if (events.length === 0) {
+      console.log('');
+      ptyDim('No events yet — start a session in this module to populate the timeline.');
+      console.log('');
+      return;
+    }
+    console.log('');
+    for (const ev of events) {
+      const ts = stableDateLabel(ev.at) + ' UTC';
+      if (ev.type === 'session_start') {
+        console.log(`  ${dim(ts)}  ${bold('▶ session #' + ev.sessionId)}  started`);
+      } else if (ev.type === 'session_end') {
+        const tail = ev.summary ? '  ' + dim(ev.summary.slice(0, 80) + (ev.summary.length > 80 ? '…' : '')) : '';
+        console.log(`  ${dim(ts)}  ${bold('■ session #' + ev.sessionId)}  closed · ${ev.observationsCount} obs${tail}`);
+      } else {
+        const sid = ev.storyLocalId ? ' [' + ev.storyLocalId + ']' : '';
+        console.log(`  ${dim(ts)}  ${red('●')} ${bold(ev.kind)}${sid}  ${ev.title}`);
+      }
+    }
+    console.log('');
+    ptyDim(`${events.length} event(s) · newest first · limit ${limit}`);
+    console.log('');
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
 export function main(argv: string[]): void {
   const [cmd, ...rest] = argv;
   if (!cmd) {
-    fail('Usage: cli.js <import|module|skill|stats|cost|hook|init-project> [args...]');
+    fail('Usage: cli.js <import|module|skill|stats|cost|hook|init-project|timeline> [args...]');
   }
   try {
     switch (cmd) {
@@ -1467,6 +1551,8 @@ export function main(argv: string[]): void {
         return runConfig(rest);
       case 'status':
         return runStatus(rest);
+      case 'timeline':
+        return runTimeline(rest);
       case 'hook':
         return runHook(rest);
       case 'init-project':
