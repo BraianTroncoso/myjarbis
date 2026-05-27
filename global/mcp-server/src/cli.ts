@@ -956,7 +956,7 @@ function appendToGitignore(projectPath: string, patterns: string[]): void {
 
 function runHook(argv: string[]): void {
   const [event, ...rest] = argv;
-  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit>');
+  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit|git-post-commit|install>');
 
   switch (event) {
     case 'session-start':
@@ -967,6 +967,10 @@ function runHook(argv: string[]): void {
       return runHookSessionStop();
     case 'user-prompt-submit':
       return runHookUserPromptSubmit(rest);
+    case 'git-post-commit':
+      return runHookGitPostCommit();
+    case 'install':
+      return runHookInstall(rest);
     default:
       fail(`Unknown hook event: ${event}`);
   }
@@ -1395,6 +1399,213 @@ function runHookUserPromptSubmit(_rest: string[]): void {
     if (messages.length > 0) {
       console.log(messages.join('\n\n'));
     }
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// hook git-post-commit
+//
+// Fired by the per-project .git/hooks/post-commit script (installed by
+// `myjarbis hook install`). Reads HEAD, detects a story_local_id via
+// the configured story_pattern, finds the active module's open session,
+// and persists a `progress` observation tagged "auto,git-post-commit".
+//
+// Silently exits 0 when MyJarbis isn't initialized, no module is active,
+// no session is open, or git produces unexpected output. We never want
+// to interfere with the user's commit flow — the hook is best-effort.
+// ─────────────────────────────────────────────────────────────────────
+
+function runHookGitPostCommit(): void {
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+  try {
+    const project = ctx.project;
+    if (!project) return;
+
+    // Latest commit metadata. Each call is wrapped so a missing git binary
+    // or a non-repo cwd silently no-ops.
+    const headHash = safeGit(ctx.projectPath, ['rev-parse', 'HEAD']);
+    if (!headHash) return;
+    const shortHash = headHash.slice(0, 8);
+    const fullMessage =
+      safeGit(ctx.projectPath, ['log', '-1', '--pretty=%B', 'HEAD']) ?? '';
+    const firstLine = fullMessage.split(/\r?\n/, 1)[0] ?? '';
+    const branch = safeGit(ctx.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const filesRaw = safeGit(ctx.projectPath, [
+      'diff-tree',
+      '--name-only',
+      '--no-commit-id',
+      '-r',
+      'HEAD',
+    ]);
+    const files = filesRaw
+      ? filesRaw
+          .split(/\r?\n/)
+          .filter((s) => s.length > 0)
+          .slice(0, 25) // cap to keep the row small
+          .join(',')
+      : null;
+
+    // Story detection: branch name first, then commit message. The
+    // story_pattern setting is reused as-is for symmetry with the
+    // UserPromptSubmit hook.
+    const settings = readSettingsJson(ctx.projectPath);
+    const storyPattern = settings.story_pattern as string | undefined;
+    let storyLocalId: string | null = null;
+    if (storyPattern) {
+      try {
+        const re = new RegExp(storyPattern);
+        const fromBranch = branch ? branch.match(re) : null;
+        const fromMessage = fullMessage.match(re);
+        storyLocalId = fromBranch?.[0] ?? fromMessage?.[0] ?? null;
+      } catch {
+        // Bad regex — ignore.
+      }
+    }
+
+    // Find active module + its open session. If either is missing, exit
+    // silently — the user just committed; we don't want to spam stderr.
+    const activeName = readActiveModule(ctx.projectPath);
+    if (!activeName) return;
+    const mod = ctx.db.modules.findByName(project.id, activeName);
+    if (!mod) return;
+    const openSession = ctx.db.sessions.findActiveByModule(mod.id);
+    if (!openSession) return;
+
+    // Skip if we already auto-recorded this exact hash (idempotent re-runs
+    // of the post-commit hook after `git commit --amend`, etc.). Cheap
+    // LIKE on the title column.
+    const dup = ctx.db.db
+      .prepare(
+        `SELECT id FROM observations
+          WHERE session_id = ?
+            AND kind = 'progress'
+            AND title LIKE ?
+            AND tags LIKE '%git-post-commit%'
+          LIMIT 1`,
+      )
+      .get(openSession.id, `commit ${shortHash}%`) as { id: number } | undefined;
+    if (dup) return;
+
+    ctx.db.observations.add({
+      sessionId: openSession.id,
+      kind: 'progress',
+      title: `commit ${shortHash}${firstLine ? ' · ' + firstLine.slice(0, 60) : ''}`,
+      content: fullMessage.trim() || `(commit ${headHash} had an empty message)`,
+      storyLocalId: storyLocalId ?? undefined,
+      files: files ?? undefined,
+      tags: 'auto,git-post-commit',
+    });
+    // Best-effort log to stderr so a tail -f .git/hooks debugging session
+    // sees what happened. The actual git commit output stays clean.
+    console.error(
+      `[MyJarbis] auto-observation saved for commit ${shortHash}` +
+        (storyLocalId ? ` (story ${storyLocalId})` : '') +
+        ` in module "${mod.name}".`,
+    );
+  } catch (err) {
+    // Best-effort: never fail the user's commit. Log to stderr so issues
+    // surface during debugging without disrupting normal flow.
+    console.error(
+      '[MyJarbis hook git-post-commit] non-fatal:',
+      err instanceof Error ? err.message : err,
+    );
+  } finally {
+    ctx.close();
+  }
+}
+
+/** Tiny wrapper over execSync that returns trimmed stdout or null on
+ *  failure. Used by runHookGitPostCommit so a missing git binary / non
+ *  git repo never throws. */
+function safeGit(cwd: string, args: string[]): string | null {
+  try {
+    return execSync('git ' + args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' '), {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// hook install [git-post-commit]
+//
+// Writes a per-project .git/hooks/post-commit that calls
+// `myjarbis hook git-post-commit`. Idempotent: if our marker is already
+// in the file, we no-op. If a different hook already exists, we refuse
+// and tell the user how to install manually.
+// ─────────────────────────────────────────────────────────────────────
+
+const POST_COMMIT_MARKER = '# MyJarbis git-post-commit hook v1';
+const POST_COMMIT_SCRIPT = `#!/usr/bin/env bash
+${POST_COMMIT_MARKER}
+# Saves a 'progress' observation for the latest commit into the active
+# module's open session. Silently no-ops when MyJarbis is not set up,
+# no module is active, or no session is open.
+command -v myjarbis >/dev/null 2>&1 || exit 0
+( cd "$(git rev-parse --show-toplevel 2>/dev/null)" && myjarbis hook git-post-commit ) >/dev/null 2>&1 || true
+`;
+
+function runHookInstall(rest: string[]): void {
+  const which = rest[0] ?? 'git-post-commit';
+  if (which !== 'git-post-commit') {
+    fail(`Unknown hook to install: ${which}. Currently only 'git-post-commit' is supported.`);
+  }
+
+  const ctx = ServerContext.initialize();
+  try {
+    if (!ctx.project) {
+      fail('Not a MyJarbis project. Run `myjarbis init` first.');
+    }
+
+    const gitDir = path.join(ctx.projectPath, '.git');
+    if (!fs.existsSync(gitDir)) {
+      fail('No .git directory at ' + ctx.projectPath + ' — initialize a git repo first.');
+    }
+
+    const hooksDir = path.join(gitDir, 'hooks');
+    if (!fs.existsSync(hooksDir)) {
+      fs.mkdirSync(hooksDir, { recursive: true });
+    }
+
+    const target = path.join(hooksDir, 'post-commit');
+    if (fs.existsSync(target)) {
+      const existing = fs.readFileSync(target, 'utf-8');
+      if (existing.includes(POST_COMMIT_MARKER)) {
+        ptySection('MyJarbis · git-post-commit hook');
+        ptyKV('Status', dim('already installed (no changes)'));
+        ptyKV('Path', dim(target));
+        console.log('');
+        return;
+      }
+      ptySection('MyJarbis · git-post-commit hook');
+      ptyKV('Status', red('NOT installed — conflicting hook found'));
+      ptyKV('Path', dim(target));
+      console.log('');
+      ptyDim('A different post-commit hook already exists. To enable MyJarbis,');
+      ptyDim('append this single line to that script:');
+      console.log('');
+      console.log('  ( cd "$(git rev-parse --show-toplevel)" && myjarbis hook git-post-commit ) >/dev/null 2>&1 || true');
+      console.log('');
+      process.exit(1);
+    }
+
+    fs.writeFileSync(target, POST_COMMIT_SCRIPT);
+    fs.chmodSync(target, 0o755);
+
+    ptySection('MyJarbis · git-post-commit hook installed');
+    ptyKV('Path', dim(target));
+    ptyKV('What', 'each commit while a session is open → auto progress observation');
+    console.log('');
+    ptyDim('To uninstall: rm ' + target);
+    console.log('');
   } finally {
     ctx.close();
   }

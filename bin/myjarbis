@@ -166,7 +166,7 @@ case "${1:-help}" in
         exit 1
         ;;
 
-    import|module|skill|stats|cost|config|status|timeline)
+    import|module|skill|stats|cost|config|status|timeline|hook)
         # v0.2 subcommands delegated to the node CLI helper
         CLI_JS="$INSTALL_DIR/mcp-server/build/cli.js"
         if [ ! -f "$CLI_JS" ]; then
