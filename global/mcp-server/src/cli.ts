@@ -20,7 +20,7 @@ import { MyJarbisError } from './types.js';
 import { importMd, importJson } from './tools/import.js';
 import { listModules, createModule } from './tools/discovery.js';
 import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
-import { startSession } from './tools/session.js';
+import { startSession, readStaleThreshold, computeStaleness } from './tools/session.js';
 import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
 import { SCHEMA_VERSION } from './db/schema.js';
@@ -956,7 +956,7 @@ function appendToGitignore(projectPath: string, patterns: string[]): void {
 
 function runHook(argv: string[]): void {
   const [event, ...rest] = argv;
-  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit>');
+  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit|git-post-commit|install>');
 
   switch (event) {
     case 'session-start':
@@ -967,6 +967,10 @@ function runHook(argv: string[]): void {
       return runHookSessionStop();
     case 'user-prompt-submit':
       return runHookUserPromptSubmit(rest);
+    case 'git-post-commit':
+      return runHookGitPostCommit();
+    case 'install':
+      return runHookInstall(rest);
     default:
       fail(`Unknown hook event: ${event}`);
   }
@@ -1013,6 +1017,8 @@ const HOOK_I18N = {
     create_option: '· "nuevo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → cambiar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ Esta bitácora tiene más de ${threshold} día(s). Antes de continuar, confirmá con el usuario que el contexto sigue siendo válido (ramas, PRs, decisiones que pudieron cambiar).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   en: {
@@ -1031,6 +1037,8 @@ const HOOK_I18N = {
     create_option: '· "new module <name>" → create_module + start_session',
     settings_option: '· "settings" → change language / persona',
     resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ This resume note is more than ${threshold} day(s) old. Before continuing, confirm with the user that the context still applies (branches, PRs, decisions that may have moved).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
   pt: {
@@ -1049,6 +1057,8 @@ const HOOK_I18N = {
     create_option: '· "novo módulo <name>" → create_module + start_session',
     settings_option: '· "settings" → mudar language / persona',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
+    stale_warning: (threshold: number) =>
+      `⚠ Esta nota de retomada tem mais de ${threshold} dia(s). Antes de continuar, confirme com o usuário que o contexto ainda se aplica (branches, PRs, decisões que podem ter mudado).`,
     memory_contract: '[MyJarbis] Memory: prefer mcp__myjarbis__* tools over ~/.claude/projects/<slug>/memory/*.md (the latter is fallback only).',
   },
 } as const;
@@ -1116,6 +1126,14 @@ function runHookSessionStart(): void {
         if (last?.next_session) {
           blocks.push('', t.resume_label(target.name, stableDateLabel(last.ended_at)));
           blocks.push(last.next_session);
+          const staleAfter = readStaleThreshold(ctx.projectPath);
+          const staleness = computeStaleness(last.ended_at, staleAfter);
+          if (staleness?.stale) {
+            // The warning copy intentionally uses the threshold (stable per
+            // settings) and not the live day count — keeps the hook output
+            // byte-stable until the user changes the threshold.
+            blocks.push('', t.stale_warning(staleAfter));
+          }
         } else {
           blocks.push('', 'No previous session — starting fresh.');
         }
@@ -1164,6 +1182,11 @@ function runHookSessionStart(): void {
     if (mostRecent) {
       lines.push('', t.resume_label(mostRecent.mod, stableDateLabel(mostRecent.ended_at)));
       lines.push(mostRecent.next);
+      const staleAfter = readStaleThreshold(ctx.projectPath);
+      const staleness = computeStaleness(mostRecent.ended_at, staleAfter);
+      if (staleness?.stale) {
+        lines.push('', t.stale_warning(staleAfter));
+      }
     }
     lines.push('', t.memory_contract);
     console.log(lines.join('\n'));
@@ -1381,6 +1404,213 @@ function runHookUserPromptSubmit(_rest: string[]): void {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// hook git-post-commit
+//
+// Fired by the per-project .git/hooks/post-commit script (installed by
+// `myjarbis hook install`). Reads HEAD, detects a story_local_id via
+// the configured story_pattern, finds the active module's open session,
+// and persists a `progress` observation tagged "auto,git-post-commit".
+//
+// Silently exits 0 when MyJarbis isn't initialized, no module is active,
+// no session is open, or git produces unexpected output. We never want
+// to interfere with the user's commit flow — the hook is best-effort.
+// ─────────────────────────────────────────────────────────────────────
+
+function runHookGitPostCommit(): void {
+  const init = safeContext();
+  if (!init) return;
+  const { ctx } = init;
+  try {
+    const project = ctx.project;
+    if (!project) return;
+
+    // Latest commit metadata. Each call is wrapped so a missing git binary
+    // or a non-repo cwd silently no-ops.
+    const headHash = safeGit(ctx.projectPath, ['rev-parse', 'HEAD']);
+    if (!headHash) return;
+    const shortHash = headHash.slice(0, 8);
+    const fullMessage =
+      safeGit(ctx.projectPath, ['log', '-1', '--pretty=%B', 'HEAD']) ?? '';
+    const firstLine = fullMessage.split(/\r?\n/, 1)[0] ?? '';
+    const branch = safeGit(ctx.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const filesRaw = safeGit(ctx.projectPath, [
+      'diff-tree',
+      '--name-only',
+      '--no-commit-id',
+      '-r',
+      'HEAD',
+    ]);
+    const files = filesRaw
+      ? filesRaw
+          .split(/\r?\n/)
+          .filter((s) => s.length > 0)
+          .slice(0, 25) // cap to keep the row small
+          .join(',')
+      : null;
+
+    // Story detection: branch name first, then commit message. The
+    // story_pattern setting is reused as-is for symmetry with the
+    // UserPromptSubmit hook.
+    const settings = readSettingsJson(ctx.projectPath);
+    const storyPattern = settings.story_pattern as string | undefined;
+    let storyLocalId: string | null = null;
+    if (storyPattern) {
+      try {
+        const re = new RegExp(storyPattern);
+        const fromBranch = branch ? branch.match(re) : null;
+        const fromMessage = fullMessage.match(re);
+        storyLocalId = fromBranch?.[0] ?? fromMessage?.[0] ?? null;
+      } catch {
+        // Bad regex — ignore.
+      }
+    }
+
+    // Find active module + its open session. If either is missing, exit
+    // silently — the user just committed; we don't want to spam stderr.
+    const activeName = readActiveModule(ctx.projectPath);
+    if (!activeName) return;
+    const mod = ctx.db.modules.findByName(project.id, activeName);
+    if (!mod) return;
+    const openSession = ctx.db.sessions.findActiveByModule(mod.id);
+    if (!openSession) return;
+
+    // Skip if we already auto-recorded this exact hash (idempotent re-runs
+    // of the post-commit hook after `git commit --amend`, etc.). Cheap
+    // LIKE on the title column.
+    const dup = ctx.db.db
+      .prepare(
+        `SELECT id FROM observations
+          WHERE session_id = ?
+            AND kind = 'progress'
+            AND title LIKE ?
+            AND tags LIKE '%git-post-commit%'
+          LIMIT 1`,
+      )
+      .get(openSession.id, `commit ${shortHash}%`) as { id: number } | undefined;
+    if (dup) return;
+
+    ctx.db.observations.add({
+      sessionId: openSession.id,
+      kind: 'progress',
+      title: `commit ${shortHash}${firstLine ? ' · ' + firstLine.slice(0, 60) : ''}`,
+      content: fullMessage.trim() || `(commit ${headHash} had an empty message)`,
+      storyLocalId: storyLocalId ?? undefined,
+      files: files ?? undefined,
+      tags: 'auto,git-post-commit',
+    });
+    // Best-effort log to stderr so a tail -f .git/hooks debugging session
+    // sees what happened. The actual git commit output stays clean.
+    console.error(
+      `[MyJarbis] auto-observation saved for commit ${shortHash}` +
+        (storyLocalId ? ` (story ${storyLocalId})` : '') +
+        ` in module "${mod.name}".`,
+    );
+  } catch (err) {
+    // Best-effort: never fail the user's commit. Log to stderr so issues
+    // surface during debugging without disrupting normal flow.
+    console.error(
+      '[MyJarbis hook git-post-commit] non-fatal:',
+      err instanceof Error ? err.message : err,
+    );
+  } finally {
+    ctx.close();
+  }
+}
+
+/** Tiny wrapper over execSync that returns trimmed stdout or null on
+ *  failure. Used by runHookGitPostCommit so a missing git binary / non
+ *  git repo never throws. */
+function safeGit(cwd: string, args: string[]): string | null {
+  try {
+    return execSync('git ' + args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' '), {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// hook install [git-post-commit]
+//
+// Writes a per-project .git/hooks/post-commit that calls
+// `myjarbis hook git-post-commit`. Idempotent: if our marker is already
+// in the file, we no-op. If a different hook already exists, we refuse
+// and tell the user how to install manually.
+// ─────────────────────────────────────────────────────────────────────
+
+const POST_COMMIT_MARKER = '# MyJarbis git-post-commit hook v1';
+const POST_COMMIT_SCRIPT = `#!/usr/bin/env bash
+${POST_COMMIT_MARKER}
+# Saves a 'progress' observation for the latest commit into the active
+# module's open session. Silently no-ops when MyJarbis is not set up,
+# no module is active, or no session is open.
+command -v myjarbis >/dev/null 2>&1 || exit 0
+( cd "$(git rev-parse --show-toplevel 2>/dev/null)" && myjarbis hook git-post-commit ) >/dev/null 2>&1 || true
+`;
+
+function runHookInstall(rest: string[]): void {
+  const which = rest[0] ?? 'git-post-commit';
+  if (which !== 'git-post-commit') {
+    fail(`Unknown hook to install: ${which}. Currently only 'git-post-commit' is supported.`);
+  }
+
+  const ctx = ServerContext.initialize();
+  try {
+    if (!ctx.project) {
+      fail('Not a MyJarbis project. Run `myjarbis init` first.');
+    }
+
+    const gitDir = path.join(ctx.projectPath, '.git');
+    if (!fs.existsSync(gitDir)) {
+      fail('No .git directory at ' + ctx.projectPath + ' — initialize a git repo first.');
+    }
+
+    const hooksDir = path.join(gitDir, 'hooks');
+    if (!fs.existsSync(hooksDir)) {
+      fs.mkdirSync(hooksDir, { recursive: true });
+    }
+
+    const target = path.join(hooksDir, 'post-commit');
+    if (fs.existsSync(target)) {
+      const existing = fs.readFileSync(target, 'utf-8');
+      if (existing.includes(POST_COMMIT_MARKER)) {
+        ptySection('MyJarbis · git-post-commit hook');
+        ptyKV('Status', dim('already installed (no changes)'));
+        ptyKV('Path', dim(target));
+        console.log('');
+        return;
+      }
+      ptySection('MyJarbis · git-post-commit hook');
+      ptyKV('Status', red('NOT installed — conflicting hook found'));
+      ptyKV('Path', dim(target));
+      console.log('');
+      ptyDim('A different post-commit hook already exists. To enable MyJarbis,');
+      ptyDim('append this single line to that script:');
+      console.log('');
+      console.log('  ( cd "$(git rev-parse --show-toplevel)" && myjarbis hook git-post-commit ) >/dev/null 2>&1 || true');
+      console.log('');
+      process.exit(1);
+    }
+
+    fs.writeFileSync(target, POST_COMMIT_SCRIPT);
+    fs.chmodSync(target, 0o755);
+
+    ptySection('MyJarbis · git-post-commit hook installed');
+    ptyKV('Path', dim(target));
+    ptyKV('What', 'each commit while a session is open → auto progress observation');
+    console.log('');
+    ptyDim('To uninstall: rm ' + target);
+    console.log('');
+  } finally {
+    ctx.close();
+  }
+}
+
 interface ProjectSettings {
   shared?: boolean;
   search_default_scope?: string;
@@ -1402,6 +1632,14 @@ interface ProjectSettings {
      *  if none has landed in the last N+ minutes (bucketed per hour). */
     save_reminder_minutes?: number;
   };
+  /** Session-related knobs. */
+  session?: {
+    /** Days after which a previous next_session is considered stale and
+     *  the SessionStart hook + start_session response surface a warning.
+     *  Default 7. Disable by setting a very large number; 0/negative are
+     *  ignored (fall back to default). */
+    stale_after_days?: number;
+  };
   [k: string]: unknown;
 }
 
@@ -1416,13 +1654,97 @@ function readSettingsJson(projectPath: string): ProjectSettings {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: timeline
+//
+// Chronological feed of sessions + observations for a module. Reading
+// the timeline is much faster than `load_module --full` when ramping
+// back into a module that's been paused for weeks: you only need to
+// know the sequence of decisions/sessions, not the body of every story.
+// ─────────────────────────────────────────────────────────────────────
+
+function runTimeline(argv: string[]): void {
+  const { positional, flags } = parseFlags(argv);
+  let moduleName = positional[0];
+  const limit = typeof flags.limit === 'string' ? parseInt(flags.limit, 10) : 100;
+  if (Number.isNaN(limit) || limit <= 0) {
+    fail('Invalid --limit (must be a positive integer)');
+  }
+
+  const ctx = ServerContext.initialize();
+  try {
+    const project = ctx.project;
+    if (!project) {
+      fail('Not a MyJarbis project. Run `myjarbis init` first.');
+    }
+
+    if (!moduleName) {
+      const active = readActiveModule(ctx.projectPath);
+      if (active) {
+        moduleName = active;
+      } else {
+        fail(
+          'Usage: myjarbis timeline <module> [--limit=N] [--json]\n' +
+          '       (no module given and no active module set — try `myjarbis module use <name>` first)',
+        );
+      }
+    }
+
+    const mod = ctx.db.modules.findByName(project.id, moduleName);
+    if (!mod) {
+      fail(`Module "${moduleName}" not found in project "${project.name}".`);
+    }
+
+    const events = ctx.db.timeline(mod.id, { limit });
+
+    if (wantsJson(flags)) {
+      printJson({
+        project: project.name,
+        module: mod.name,
+        limit,
+        count: events.length,
+        events,
+      });
+      return;
+    }
+
+    // Pretty render. Matches install.sh / status palette: blood-red accents
+    // on plain white, no boxes. One line per event with timestamp prefix.
+    ptySection('MyJarbis · timeline of ' + red(bold(mod.name)) + dim(' (' + project.name + ')'));
+    if (events.length === 0) {
+      console.log('');
+      ptyDim('No events yet — start a session in this module to populate the timeline.');
+      console.log('');
+      return;
+    }
+    console.log('');
+    for (const ev of events) {
+      const ts = stableDateLabel(ev.at) + ' UTC';
+      if (ev.type === 'session_start') {
+        console.log(`  ${dim(ts)}  ${bold('▶ session #' + ev.sessionId)}  started`);
+      } else if (ev.type === 'session_end') {
+        const tail = ev.summary ? '  ' + dim(ev.summary.slice(0, 80) + (ev.summary.length > 80 ? '…' : '')) : '';
+        console.log(`  ${dim(ts)}  ${bold('■ session #' + ev.sessionId)}  closed · ${ev.observationsCount} obs${tail}`);
+      } else {
+        const sid = ev.storyLocalId ? ' [' + ev.storyLocalId + ']' : '';
+        console.log(`  ${dim(ts)}  ${red('●')} ${bold(ev.kind)}${sid}  ${ev.title}`);
+      }
+    }
+    console.log('');
+    ptyDim(`${events.length} event(s) · newest first · limit ${limit}`);
+    console.log('');
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
 export function main(argv: string[]): void {
   const [cmd, ...rest] = argv;
   if (!cmd) {
-    fail('Usage: cli.js <import|module|skill|stats|cost|hook|init-project> [args...]');
+    fail('Usage: cli.js <import|module|skill|stats|cost|hook|init-project|timeline> [args...]');
   }
   try {
     switch (cmd) {
@@ -1440,6 +1762,8 @@ export function main(argv: string[]): void {
         return runConfig(rest);
       case 'status':
         return runStatus(rest);
+      case 'timeline':
+        return runTimeline(rest);
       case 'hook':
         return runHook(rest);
       case 'init-project':
