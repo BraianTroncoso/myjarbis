@@ -8,16 +8,24 @@
         <mxCell id="title" value="MyJarbis &#8212; Arquitectura del Sistema" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="400" y="20" width="900" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Memoria persistente + orquestaci&#243;n por m&#243;dulos para Claude Code (v0.2 + dx-batch-1)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;" vertex="1" parent="1">
-          <mxGeometry x="400" y="60" width="900" height="20" as="geometry" />
+        <mxCell id="subtitle" value="Capa de memoria sobre MCP &#8212; hoy optimizada para Claude Code, abierta a cualquier cliente MCP-compatible (Cursor, OpenClaw, futuros agentes). v0.2 + dx-batch-1." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="150" y="60" width="1400" height="30" as="geometry" />
         </mxCell>
 
         <mxCell id="user" value="DESARROLLADOR&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;habla en lenguaje natural en la terminal&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="750" y="100" width="200" height="50" as="geometry" />
+          <mxGeometry x="750" y="110" width="200" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="harness" value="CLAUDE CODE  (HARNESS)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Harness = la aplicaci&#243;n CLI que ejecuta Claude en tu terminal&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+        <mxCell id="harness" value="CLAUDE CODE  (HARNESS  &#8722;  hoy)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Harness = la aplicaci&#243;n CLI que ejecuta Claude en tu terminal. Es el cliente MCP que MyJarbis prioriza hoy &#8212; pero NO es el &#250;nico posible: cualquier cliente que hable MCP (Cursor, OpenClaw, Continue, futuros agentes) puede usar la misma DB + tools sin cambiar nada en el server.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
           <mxGeometry x="150" y="190" width="1400" height="240" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agnostic_note" value="&lt;b&gt;Otros clientes MCP-compatibles  (futuro)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;Cursor &#183; OpenClaw &#183; Continue &#183; agentes propios&lt;br&gt;&#8594; mismo MCP server, misma DB, mismas tools.&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;dashed=1;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="110" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agnostic_edge" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;dashed=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="agnostic_note" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <mxCell id="jarbis-cmd" value="&lt;b&gt;/jarbis&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;Comando &#250;nico de entrada&lt;br&gt;(EN / ES / PT)&lt;/font&gt;&lt;br&gt;&lt;br&gt;.claude/commands/jarbis.md" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
@@ -203,7 +211,7 @@
   </diagram>
 
   <diagram name="4. Glosario ejecutivo" id="glossary">
-    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1400" math="0" shadow="0">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1550" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -216,8 +224,8 @@
           <mxGeometry x="80" y="100" width="760" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="g2" value="&lt;b&gt;MCP  (Model Context Protocol)&lt;/b&gt;&lt;br&gt;Est&#225;ndar abierto que permite a Claude hablar con herramientas y bases de datos externas. Es el &#8220;USB&#8221; entre el modelo y el mundo." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
-          <mxGeometry x="860" y="100" width="760" height="90" as="geometry" />
+        <mxCell id="g2" value="&lt;b&gt;MCP  (Model Context Protocol)&lt;/b&gt;&lt;br&gt;Est&#225;ndar abierto que permite a CUALQUIER modelo / cliente hablar con herramientas y bases de datos externas. Es el &#8220;USB&#8221; entre el modelo y el mundo. MyJarbis expone su memoria v&#237;a MCP &#8212; por eso el harness es intercambiable (Claude Code hoy, cualquier cliente MCP-compatible ma&#241;ana)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="100" width="760" height="110" as="geometry" />
         </mxCell>
 
         <mxCell id="g3" value="&lt;b&gt;stdio  (Standard Input / Output)&lt;/b&gt;&lt;br&gt;Canal de comunicaci&#243;n local entre dos programas en la misma m&#225;quina. No hay red, no hay servidor remoto: todo queda en tu computadora." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
@@ -294,6 +302,10 @@
 
         <mxCell id="g21" value="&lt;b&gt;Day-bucketing  (UTC)&lt;/b&gt;&lt;br&gt;T&#233;cnica del helper de stale-warning: la cuenta de d&#237;as se calcula contra medianoches UTC, no minutos. As&#237; el valor flipea s&#243;lo cuando cruza el calendario &#8722; mantiene la salida del hook byte-stable y la prompt cache viva dentro del d&#237;a." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
           <mxGeometry x="80" y="1220" width="1540" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g22" value="&lt;b&gt;Harness-agnostic  /  Model-agnostic&lt;/b&gt;&lt;br&gt;Que el sistema NO depende de un harness o modelo espec&#237;fico. MyJarbis se conecta v&#237;a MCP est&#225;ndar &#8212; hoy est&#225; optimizado para Claude Code, pero cualquier cliente MCP-compatible (Cursor, OpenClaw, Continue, agentes propios) puede leer/escribir la misma DB sin cambios en el server. A futuro: tareas mec&#225;nicas (clasificar observations, expandir queries de search) podr&#237;an delegarse a un modelo local open-weight (ej. Hermes v&#237;a Ollama) para bajar costos sin tocar el modelo principal." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1340" width="1540" height="140" as="geometry" />
         </mxCell>
 
       </root>
