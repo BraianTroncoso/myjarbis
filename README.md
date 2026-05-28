@@ -3,10 +3,20 @@
 > **Persistent memory + per-project workflow + scoped skills — one
 > slash command, everything else conversational.**
 
-MyJarbis turns Claude Code into a project-aware orchestrator: it
-remembers what you decided, where you left off, and which workflow
-applies for each vertical of the project — without dumping
-everything into context every session.
+MyJarbis is a **persistent-memory layer over MCP (Model Context
+Protocol)**. Today it's optimized for Claude Code as the harness, but
+because every read/write goes through standard MCP tools + a local
+SQLite database, **any MCP-compatible client** (Cursor, OpenClaw,
+future agents) can sit on top of the same memory. The architecture is
+also designed so mechanical tasks (classifying observations, expanding
+search queries) can later be delegated to a **local open-weight model**
+(e.g. Hermes via Ollama) for zero-cost token savings, keeping the
+primary model for high-quality reasoning.
+
+It turns Claude Code into a project-aware orchestrator: it remembers
+what you decided, where you left off, and which workflow applies for
+each vertical of the project — without dumping everything into context
+every session.
 
 ```
 cd ~/dev/<project>
@@ -495,6 +505,33 @@ invoke them — Claude Code does:
   (default off, hour-bucketed when on, also cache-stable).
 - **Stop** → if there's an open session, reminds you to close it
 
+### Optional: git `post-commit` hook (opt-in per project)
+
+Run once per project:
+
+```bash
+myjarbis hook install git-post-commit
+```
+
+This drops a tiny `.git/hooks/post-commit` script that, on every
+commit while a session is open in the active module, persists a
+`progress` observation tagged `auto,git-post-commit`. The observation
+captures the commit hash, full message, files changed, and the
+detected `story_local_id` (matched via the project's `story_pattern`
+regex against branch name + commit message). Silently no-ops when
+no session is open. Idempotent: re-running the hook on the same HEAD
+does not duplicate the observation. Kills the "I forgot to save that
+decision" problem.
+
+### Stale-resume warning
+
+When `start_session` finds a `previousSession.nextSession` older than
+**7 days** (configurable via `session.stale_after_days` in
+`settings.json`), it sets `previousSession.stale = true` and the
+SessionStart hook surfaces a clear warning to confirm the context still
+applies (branches merged, PRs landed, decisions reversed) before the
+agent proceeds. Prevents stale-autopilot mistakes after long breaks.
+
 ---
 
 ## Architecture
@@ -622,10 +659,12 @@ re-import.
 myjarbis init                       # init project (interactive)
 myjarbis doctor                     # health check (25+ probes)
 myjarbis status                     # git-like overview: project, active module, last session, counts
+myjarbis timeline <module>          # chronological feed of sessions + observations (--json, --limit=N)
 myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio + USD approx
 myjarbis list                       # registered projects
 myjarbis update                     # pull + rebuild MCP server
+myjarbis hook install git-post-commit  # auto-save a progress observation on every commit
 
 myjarbis module list                              # list with active marker
 myjarbis module use <name>                        # set active (.myjarbis/active)
@@ -677,6 +716,9 @@ MYJARBIS_LANGUAGE=PT MYJARBIS_PERSONA=mentor myjarbis init    # non-interactive
   },
   "nudges": {
     "save_reminder_minutes": null
+  },
+  "session": {
+    "stale_after_days": 7
   }
 }
 ```
@@ -696,6 +738,7 @@ tests/bootstrap-prolicht.sh    # 12 .md + 1 JSON bulk import idempotency
 tests/skills-lifecycle.sh      # baselines + module-level + cleanup on switch
 tests/full-session-cycle.sh    # open → work → close → reopen → resume
 tests/compact-cycle.sh         # snapshot pre/post /compact roundtrip
+tests/dx-batch-1.sh            # stale-resume + timeline + post-commit auto-observation
 ```
 
 ---

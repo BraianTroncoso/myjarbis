@@ -1,0 +1,314 @@
+<mxfile host="app.diagrams.net" modified="2026-05-27T21:30:00.000Z" agent="MyJarbis-Architect" version="24.0.0">
+  <diagram name="1. Arquitectura" id="arch">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1320" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="MyJarbis &#8212; Arquitectura del Sistema" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Capa de memoria sobre MCP &#8212; hoy optimizada para Claude Code, abierta a cualquier cliente MCP-compatible (Cursor, OpenClaw, futuros agentes). v0.2 + dx-batch-1." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="150" y="60" width="1400" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user" value="DESARROLLADOR&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;habla en lenguaje natural en la terminal&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="750" y="110" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="harness" value="CLAUDE CODE  (HARNESS  &#8722;  hoy)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Harness = la aplicaci&#243;n CLI que ejecuta Claude en tu terminal. Es el cliente MCP que MyJarbis prioriza hoy &#8212; pero NO es el &#250;nico posible: cualquier cliente que hable MCP (Cursor, OpenClaw, Continue, futuros agentes) puede usar la misma DB + tools sin cambiar nada en el server.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="150" y="190" width="1400" height="240" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agnostic_note" value="&lt;b&gt;Otros clientes MCP-compatibles  (futuro)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;Cursor &#183; OpenClaw &#183; Continue &#183; agentes propios&lt;br&gt;&#8594; mismo MCP server, misma DB, mismas tools.&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;dashed=1;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="110" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agnostic_edge" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;dashed=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="agnostic_note" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="jarbis-cmd" value="&lt;b&gt;/jarbis&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;Comando &#250;nico de entrada&lt;br&gt;(EN / ES / PT)&lt;/font&gt;&lt;br&gt;&lt;br&gt;.claude/commands/jarbis.md" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="200" y="250" width="280" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hooks" value="&lt;b&gt;HOOKS&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Scripts que el harness o git disparan en eventos clave&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;&#8226; SessionStart  &lt;font style=&quot;font-size: 9px&quot;&gt;(imprime &#8222;Retomar aqu&#237;&#8220; + &#9888; stale warning si aplica)&lt;/font&gt;&lt;br&gt;&#8226; SessionStart (compact)&lt;br&gt;&#8226; UserPromptSubmit&lt;br&gt;&#8226; Stop&lt;br&gt;&#8226; &lt;b&gt;Git post-commit&lt;/b&gt; &lt;font style=&quot;font-size: 9px&quot;&gt;(opt-in por proyecto v&#237;a `myjarbis hook install`)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=10;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="510" y="250" width="320" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="skills" value="&lt;b&gt;SKILLS materializadas&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Instrucciones en .md que gu&#237;an a Claude en tareas espec&#237;ficas&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;.claude/skills/myjarbis-*&lt;br&gt;10 baseline: session-protocol, observation-protocol, module-orchestration, story-driven, bitacora-progress, framework-detect, compact-protocol, subagent-delegation, interaction-style, commit-hygiene" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=10;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="250" width="660" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mcp" value="MCP SERVER  (Node.js local, transporte stdio)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;MCP (Model Context Protocol) = est&#225;ndar abierto que permite a Claude hablar con herramientas externas. stdio = canal local entre dos programas en la misma m&#225;quina, sin red.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="150" y="480" width="1400" height="300" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tools-always" value="&lt;b&gt;Tools siempre cargadas&lt;/b&gt;  (10)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Lo b&#225;sico de cada sesi&#243;n&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;&#8226; current_project&lt;br&gt;&#8226; list_modules&lt;br&gt;&#8226; start_session &lt;font style=&quot;font-size: 9px&quot;&gt;(★ devuelve previousSession.stale + daysSinceClose)&lt;/font&gt;&lt;br&gt;&#8226; end_session&lt;br&gt;&#8226; resume&lt;br&gt;&#8226; load_project_core&lt;br&gt;&#8226; load_module&lt;br&gt;&#8226; search&lt;br&gt;&#8226; save_observation&lt;br&gt;&#8226; update_progress" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="200" y="560" width="380" height="210" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tools-deferred" value="&lt;b&gt;Tools diferidas&lt;/b&gt;  (lazy-load, 8)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Diferidas = se cargan solo cuando hacen falta, para ahorrar tokens del contexto&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;&#8226; create_module&lt;br&gt;&#8226; import_md  /  import_json&lt;br&gt;&#8226; add_skill  /  list_skills  /  materialize_skills&lt;br&gt;&#8226; set_interaction_style&lt;br&gt;&#8226; (legacy aliases: search_code, get_context, update_memory)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="610" y="560" width="500" height="210" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cli" value="&lt;b&gt;CLI&lt;/b&gt;  (bin/myjarbis)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Wrapper Bash que ejecuta scripts Node sin pasar por Claude (acceso directo a la DB)&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;init &#8901; doctor &#8901; status&lt;br&gt;module &#8901; config &#8901; skill&lt;br&gt;import &#8901; stats &#8901; cost&lt;br&gt;list &#8901; update&lt;br&gt;&lt;b&gt;timeline&lt;/b&gt; &#8901; &lt;b&gt;hook install&lt;/b&gt;  &lt;font style=&quot;font-size: 9px&quot;&gt;(★ dx-batch-1)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="560" width="380" height="210" as="geometry" />
+        </mxCell>
+
+        <mxCell id="storage" value="ALMACENAMIENTO  &#8212;  SQLite local por proyecto&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;.myjarbis/memory.db &#8212; base de datos de un solo archivo, sin servidor; FTS5 = motor de b&#250;squeda de texto completo de SQLite&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="150" y="830" width="1400" height="260" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tables" value="&lt;b&gt;Tablas relacionales&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#8226; projects&lt;br&gt;&#8226; modules&lt;br&gt;&#8226; project_context  (pr&#225;cticas, convenciones, deps)&lt;br&gt;&#8226; module_context  (workflow, plan, stories, AC, progress)&lt;br&gt;&#8226; sessions  (resumen + next_session)&lt;br&gt;&#8226; observations  (decisi&#243;n / gotcha / progreso / error / discovery)&lt;br&gt;&#8226; skills  (project &#8901; module &#8901; session)&lt;br&gt;&#8226; meta  (versi&#243;n de schema)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="200" y="900" width="640" height="175" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fts" value="&lt;b&gt;&#205;ndices FTS5&lt;/b&gt;  (tablas virtuales)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Permiten buscar palabras dentro de los documentos en milisegundos&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;&#8226; project_context_fts&lt;br&gt;&#8226; module_context_fts&lt;br&gt;&#8226; skills_fts&lt;br&gt;&#8226; observations_fts&lt;br&gt;&lt;br&gt;Triggers (8) mantienen los &#237;ndices sincronizados ante INSERT / UPDATE / DELETE." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="870" y="900" width="650" height="175" as="geometry" />
+        </mxCell>
+
+        <mxCell id="files" value="&lt;b&gt;Archivos del proyecto&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#8226; .myjarbis/memory.db  &#8212; base de datos&lt;br&gt;&#8226; .myjarbis/active  &#8212; m&#243;dulo activo (una l&#237;nea)&lt;br&gt;&#8226; .myjarbis/config/settings.json  &#8212; idioma, persona, story_pattern, &lt;b&gt;session.stale_after_days&lt;/b&gt; (★ default 7)&lt;br&gt;&#8226; .claude/commands/jarbis.md  &#8212; comando localizado&lt;br&gt;&#8226; .claude/skills/myjarbis-*  &#8212; skills materializadas en disco&lt;br&gt;&#8226; .git/hooks/post-commit  &lt;font style=&quot;font-size: 10px&quot;&gt;(★ instalado por `myjarbis hook install git-post-commit`)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1120" width="1400" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="harness">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="MCP / stdio" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" edge="1" parent="1" source="harness" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="better-sqlite3" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" edge="1" parent="1" source="mcp" target="storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="SQL directo" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;fontSize=10;" edge="1" parent="1" source="cli" target="storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram name="2. Ciclo de sesi&#243;n" id="flow">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t" value="C&#243;mo funciona una sesi&#243;n de MyJarbis" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Del comando &#250;nico /jarbis al cierre con bit&#225;cora para la pr&#243;xima sesi&#243;n" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="60" width="900" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="1.  El usuario abre la terminal y escribe&lt;br&gt;&lt;b&gt;/jarbis&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Es el &#250;nico comando que necesita recordar&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="120" y="120" width="320" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s2" value="2.  Hook &lt;b&gt;SessionStart&lt;/b&gt; se dispara&lt;br&gt;&lt;br&gt;current_project &#8594; list_modules&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Detecta el proyecto y muestra (o autoselecciona) el m&#243;dulo&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="510" y="120" width="320" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3" value="3.  &lt;b&gt;start_session(module)&lt;/b&gt;&lt;br&gt;&lt;br&gt;Devuelve:&lt;br&gt;&#8226; next_session previo (&#8220;Resume aqu&#237;&#8221;)&lt;br&gt;&#8226; &#237;ndice de contexto del proyecto&lt;br&gt;&#8226; &#237;ndice de contexto del m&#243;dulo&lt;br&gt;&#8226; inventario de stories&lt;br&gt;&#8226; &lt;b&gt;★ stale flag + daysSinceClose&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="900" y="120" width="320" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3b" value="4.  Materializaci&#243;n de skills&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Materializar = escribir los .md activos en .claude/skills/ para que el harness los cargue&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="120" width="320" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stale_callout" value="&#9888;  Si daysSinceClose &#8805; stale_after_days (default 7), el hook imprime: &#8222;Esta bit&#225;cora tiene m&#225;s de N d&#237;a(s)&#8230;&#8220; y el hint del MCP cambia a STALE RESUME. (★ dx-batch-1)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=2;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="900" y="270" width="320" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s4" value="5.  El usuario trabaja en lenguaje natural.&lt;br&gt;&lt;br&gt;Claude (gu&#237;ado por las skills) llama internamente:&lt;br&gt;&lt;br&gt;&#8226; &lt;b&gt;search&lt;/b&gt; &#8594; FTS5 devuelve fragmentos + IDs&lt;br&gt;&#8226; &lt;b&gt;load_module&lt;/b&gt; &#8594; recupera filas completas solo de lo necesario&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Patr&#243;n RAG: Retrieval-Augmented Generation &#8212; buscar primero, responder con lo justo, no cargar toda la base&lt;/i&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;&#8226; &lt;b&gt;save_observation&lt;/b&gt; &#8594; decisiones / gotchas / progreso&lt;br&gt;&#8226; &lt;b&gt;update_progress&lt;/b&gt; &#8594; actualiza el campo progress de una story" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=18;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="390" width="1170" height="240" as="geometry" />
+        </mxCell>
+
+        <mxCell id="git_callout" value="&#11042;  En paralelo: cada &lt;b&gt;git commit&lt;/b&gt; (con hook instalado) &#8594; auto progress observation (hash + mensaje + story_id + files), tagged auto,git-post-commit. (★ dx-batch-1)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=2;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="280" y="660" width="1170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s5" value="6.  El usuario cierra: &lt;b&gt;end_session(summary, next_session)&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#8226; Se persiste el resumen de lo hecho&lt;br&gt;&#8226; Se guarda una l&#237;nea &lt;b&gt;next_session&lt;/b&gt; (la &#8220;bit&#225;cora&#8221;)&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;&lt;i&gt;Esa l&#237;nea es lo primero que la pr&#243;xima sesi&#243;n leer&#225; al abrir /jarbis&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=18;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="740" width="1170" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop" value="&#8635;  Al d&#237;a siguiente, /jarbis vuelve a abrir &#8212; lee next_session &#8212; y la continuidad ya est&#225; servida.  Si pasaron m&#225;s de N d&#237;as, antes de seguir aparece el aviso &#9888; STALE." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="930" width="1170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ef1" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef2" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef3" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;" edge="1" parent="1" source="s3" target="s3b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef4" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s3b" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef5" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef6" style="endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;dashed=1;" edge="1" parent="1" source="s5" target="loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram name="3. DX batch 1  (3 features nuevas)" id="dx">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="dxtitle" value="dx-batch-1  &#8212;  3 mejoras de DX sobre v0.2" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dxsub" value="Branch feat/dx-batch-1  &#183;  4 commits at&#243;micos  &#183;  cero regresiones en la suite" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="60" width="900" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f1" value="&lt;b&gt;1.  Git post-commit  &#8594;  auto observation&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;i&gt;Mata el &#8222;me olvid&#233; de saveear esa decisi&#243;n&#8220;.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="110" width="510" height="500" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f1body" value="&lt;b&gt;C&#243;mo se instala (opt-in por proyecto):&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#160;&#160;myjarbis hook install git-post-commit&lt;br&gt;&lt;br&gt;Escribe .git/hooks/post-commit con un marker idempotente:&lt;br&gt;&#8222;# MyJarbis git-post-commit hook v1&#8220;.&lt;br&gt;&lt;br&gt;&lt;b&gt;Qu&#233; pasa en cada commit:&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#8226; Lee HEAD: hash, mensaje, branch, files (max 25).&lt;br&gt;&#8226; Detecta &lt;b&gt;story_local_id&lt;/b&gt; con story_pattern regex (rama primero, mensaje despu&#233;s).&lt;br&gt;&#8226; Busca .myjarbis/active &#8594; m&#243;dulo activo.&lt;br&gt;&#8226; Busca sesi&#243;n abierta de ese m&#243;dulo.&lt;br&gt;&#8226; Si todo OK: INSERT observation &lt;b&gt;kind=progress&lt;/b&gt;, tags=&lt;b&gt;auto,git-post-commit&lt;/b&gt;.&lt;br&gt;&#8226; Si algo falta (no module, no session, no git): exit 0 silencioso. Nunca rompe el flujo de git.&lt;br&gt;&lt;br&gt;&lt;b&gt;Idempotente:&lt;/b&gt; dedupe por short-hash en el title &#8594; re-run del hook (ej. tras `--amend`) no duplica.&lt;br&gt;&lt;br&gt;&lt;b&gt;Verificado:&lt;/b&gt; observation #6 en tgf-web &#8722; commit 112396e1 detect&#243; RGPD-2." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="160" width="470" height="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f2" value="&lt;b&gt;2.  myjarbis timeline &amp;lt;module&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;i&gt;Cronolog&#237;a leg&#237;ble para retomar un m&#243;dulo en pausa.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="110" width="450" height="500" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f2body" value="&lt;b&gt;Comando:&lt;/b&gt;&lt;br&gt;&lt;br&gt;&#160;&#160;myjarbis timeline               &lt;font style=&quot;font-size: 10px&quot;&gt;(usa m&#243;dulo activo)&lt;/font&gt;&lt;br&gt;&#160;&#160;myjarbis timeline &amp;lt;MM&amp;gt; --limit=10&lt;br&gt;&#160;&#160;myjarbis timeline &amp;lt;MM&amp;gt; --json&lt;br&gt;&lt;br&gt;&lt;b&gt;Qu&#233; devuelve:&lt;/b&gt;  feed cronol&#243;gico (newest first):&lt;br&gt;&lt;br&gt;&#8226; &lt;b&gt;&#9654; session_start&lt;/b&gt;  (sid + timestamp)&lt;br&gt;&#8226; &lt;b&gt;&#9632; session_end&lt;/b&gt;  (sid + summary truncado + obs count)&lt;br&gt;&#8226; &lt;b&gt;&#9679; observation&lt;/b&gt;  (kind + story_id + title)&lt;br&gt;&lt;br&gt;&lt;b&gt;Por qu&#233; sirve:&lt;/b&gt;  cuando volv&#233;s a un m&#243;dulo pausado 3 semanas, leer la timeline es 10&#215; m&#225;s r&#225;pido que &lt;b&gt;load_module --full&lt;/b&gt; (que carga el cuerpo completo de cada story).&lt;br&gt;&lt;br&gt;&lt;b&gt;Costo:&lt;/b&gt;  SQL puro (2 queries + merge en memoria). &lt;b&gt;Cero tokens de LLM.&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;Verificado:&lt;/b&gt;  prolicht/Bugs &#8722; render pretty + --json correcto, ordering newest-first, --limit honrado." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="160" width="410" height="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f3" value="&lt;b&gt;3.  Stale-resume warning&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;i&gt;Aviso cuando la bit&#225;cora previa est&#225; vieja.&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=top;strokeWidth=2;fontStyle=1;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="110" width="510" height="500" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f3body" value="&lt;b&gt;Trigger:&lt;/b&gt;  start_session encuentra que la &#250;ltima next_session de ese m&#243;dulo tiene m&#225;s d&#237;as que &lt;b&gt;session.stale_after_days&lt;/b&gt; (default 7, en settings.json).&lt;br&gt;&lt;br&gt;&lt;b&gt;Helper puro:&lt;/b&gt;  computeStaleness(ended_at, threshold) usa day-bucketing contra UTC midnight. La cuenta cambia s&#243;lo cuando cruza el calendario &#8722; no por minuto.&lt;br&gt;&lt;br&gt;&lt;b&gt;Salida:&lt;/b&gt;&lt;br&gt;&#8226; MCP tool: previousSession.&lt;b&gt;stale&lt;/b&gt;=true, &lt;b&gt;daysSinceClose&lt;/b&gt;=N, &lt;b&gt;staleAfterDays&lt;/b&gt;=N. El hint cambia a &#8222;&#9888; STALE RESUME&#8220; pidiendo confirmar branches/PRs antes de seguir.&lt;br&gt;&#8226; SessionStart hook: imprime el texto localizado (ES/EN/PT) usando el threshold (no el conteo) para mantener byte-stable la salida y preservar la prompt cache.&lt;br&gt;&lt;br&gt;&lt;b&gt;Configurable:&lt;/b&gt;  settings.json &#8594; &lt;b&gt;&quot;session&quot;: { &quot;stale_after_days&quot;: 7 }&lt;/b&gt;. Valores &lt;=0 o no num&#233;ricos &#8594; default 7.&lt;br&gt;&lt;br&gt;&lt;b&gt;Verificado:&lt;/b&gt;  prolicht/MM con threshold=1 y bit&#225;cora del d&#237;a anterior &#8594; imprimi&#243; &#8222;&#9888; Esta bit&#225;cora tiene m&#225;s de 1 d&#237;a(s)&#8230;&#8220;." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="160" width="470" height="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="testfoot" value="&lt;b&gt;Test E2E:&lt;/b&gt;  tests/dx-batch-1.sh &#8722; backdatea ended_at a 30 d&#237;as para forzar stale, ejerce timeline json+pretty+--limit, instala el post-commit hook y verifica observation persistida + dedupe en re-fire. &lt;b&gt;4/4 suites verdes.&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;fontStyle=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="640" width="1530" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="commitfoot" value="&lt;b&gt;Commits at&#243;micos en la branch:&lt;/b&gt;&lt;br&gt;f44a48e  feat(session): warn when previous next_session is stale (&#8805; N days)&lt;br&gt;81b9382  feat(cli): add `timeline &amp;lt;module&amp;gt;` for module chronology&lt;br&gt;a147605  feat(hook): git post-commit auto-observation + opt-in installer&lt;br&gt;5373b47  docs+test(dx-batch-1): reposition pitch + E2E coverage for 3 DX features" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;fontFamily=Courier New;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="720" width="1530" height="120" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram name="4. Glosario ejecutivo" id="glossary">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1550" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="gtitle" value="Glosario ejecutivo &#8212; traducciones cortas de los t&#233;rminos t&#233;cnicos" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g1" value="&lt;b&gt;Harness&lt;/b&gt;&lt;br&gt;La aplicaci&#243;n CLI (Claude Code) que ejecuta a Claude dentro de tu terminal. Es la &#8220;cabina&#8221; donde corre el modelo." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="100" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g2" value="&lt;b&gt;MCP  (Model Context Protocol)&lt;/b&gt;&lt;br&gt;Est&#225;ndar abierto que permite a CUALQUIER modelo / cliente hablar con herramientas y bases de datos externas. Es el &#8220;USB&#8221; entre el modelo y el mundo. MyJarbis expone su memoria v&#237;a MCP &#8212; por eso el harness es intercambiable (Claude Code hoy, cualquier cliente MCP-compatible ma&#241;ana)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="100" width="760" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g3" value="&lt;b&gt;stdio  (Standard Input / Output)&lt;/b&gt;&lt;br&gt;Canal de comunicaci&#243;n local entre dos programas en la misma m&#225;quina. No hay red, no hay servidor remoto: todo queda en tu computadora." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="210" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g4" value="&lt;b&gt;SQLite&lt;/b&gt;&lt;br&gt;Base de datos completa contenida en un solo archivo. No requiere servidor ni instalaci&#243;n separada. Una DB por proyecto, en .myjarbis/memory.db." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="210" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g5" value="&lt;b&gt;FTS5  (Full-Text Search v5)&lt;/b&gt;&lt;br&gt;Motor de b&#250;squeda de palabras dentro de los documentos guardados, integrado en SQLite. Encuentra resultados relevantes en milisegundos." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="320" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g6" value="&lt;b&gt;RAG  (Retrieval-Augmented Generation)&lt;/b&gt;&lt;br&gt;Patr&#243;n donde el sistema primero busca solo lo relevante y luego se lo pasa al modelo. Evita cargar la base entera y baja costos y errores." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="320" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g7" value="&lt;b&gt;Hook&lt;/b&gt;&lt;br&gt;Script peque&#241;o que se ejecuta autom&#225;ticamente cuando ocurre un evento. Pueden venir del harness (al iniciar/cerrar sesi&#243;n, al recibir un prompt) o de git (post-commit)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="430" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g8" value="&lt;b&gt;Skill&lt;/b&gt;&lt;br&gt;Instrucciones reutilizables guardadas como archivo .md que ense&#241;an a Claude c&#243;mo hacer una tarea espec&#237;fica del proyecto." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="430" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g9" value="&lt;b&gt;Materializar&lt;/b&gt;&lt;br&gt;Acci&#243;n de escribir las skills activas como archivos .md reales en .claude/skills/ para que el harness las cargue al abrir la sesi&#243;n." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="540" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g10" value="&lt;b&gt;M&#243;dulo&lt;/b&gt;&lt;br&gt;Rebanada vertical de trabajo dentro de un proyecto (ej.: &#8220;Autenticaci&#243;n&#8221;, &#8220;Facturaci&#243;n&#8221;). Cada m&#243;dulo tiene su propio contexto y sus stories." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="540" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g11" value="&lt;b&gt;Observation  (observaci&#243;n)&lt;/b&gt;&lt;br&gt;Nota corta y tipada que Claude guarda autom&#225;ticamente: decisi&#243;n, gotcha, progreso, error o descubrimiento. Asociada a una sesi&#243;n y a una story." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="650" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g12" value="&lt;b&gt;Bit&#225;cora  /  next_session&lt;/b&gt;&lt;br&gt;L&#237;nea curada al cerrar la sesi&#243;n que dice &#8220;por d&#243;nde seguir ma&#241;ana&#8221;. La pr&#243;xima sesi&#243;n la lee primero y arranca sin fricci&#243;n." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="650" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g13" value="&lt;b&gt;Tools diferidas  (deferred / lazy-loaded)&lt;/b&gt;&lt;br&gt;Herramientas cuyo esquema no se carga al abrir la sesi&#243;n, sino solo cuando se las invoca. Ahorra tokens de contexto y dinero." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="760" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g14" value="&lt;b&gt;WAL  (Write-Ahead Logging)&lt;/b&gt;&lt;br&gt;Modo de SQLite que permite leer mientras otro proceso escribe. M&#225;s seguro y m&#225;s r&#225;pido para uso concurrente local." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="760" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g15" value="&lt;b&gt;Chunking&lt;/b&gt;&lt;br&gt;Partir un documento largo (markdown) en secciones m&#225;s peque&#241;as al importarlo, para que cada b&#250;squeda devuelva fragmentos precisos en lugar de muros de texto." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="870" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g16" value="&lt;b&gt;Story  (con story_local_id)&lt;/b&gt;&lt;br&gt;Unidad de trabajo estilo Jira/Linear dentro de un m&#243;dulo, con un id local (ej.: AUTH-12). Permite asociar decisiones y progreso a una tarea concreta." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="870" width="760" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g17" value="&lt;b&gt;Stale-resume warning  (★ dx-batch-1)&lt;/b&gt;&lt;br&gt;Aviso autom&#225;tico cuando la bit&#225;cora previa tiene m&#225;s de N d&#237;as (default 7). Evita arrancar en piloto autom&#225;tico sobre contexto que ya pudo cambiar (PRs mergeados, branches renombrados, decisiones revertidas)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="980" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g18" value="&lt;b&gt;Timeline  (★ dx-batch-1)&lt;/b&gt;&lt;br&gt;Vista cronol&#243;gica plana (sessions + observations) de un m&#243;dulo. SQL puro, sin LLM. Pensada para retomar un m&#243;dulo pausado mucho m&#225;s r&#225;pido que cargar el m&#243;dulo completo." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="980" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g19" value="&lt;b&gt;Auto-observation  (★ dx-batch-1)&lt;/b&gt;&lt;br&gt;Observation tipo &lt;b&gt;progress&lt;/b&gt; creada autom&#225;ticamente por el hook git-post-commit (opt-in). Captura hash, mensaje, files, story_id. Tag &lt;b&gt;auto,git-post-commit&lt;/b&gt; para distinguir de las hechas a mano." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1100" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g20" value="&lt;b&gt;Idempotente&lt;/b&gt;&lt;br&gt;Una operaci&#243;n que ejecutada N veces produce el mismo resultado que ejecutada 1 vez. Aplica al hook git-post-commit (dedupe por hash) y al installer (marker que evita reinstalar)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1100" width="760" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g21" value="&lt;b&gt;Day-bucketing  (UTC)&lt;/b&gt;&lt;br&gt;T&#233;cnica del helper de stale-warning: la cuenta de d&#237;as se calcula contra medianoches UTC, no minutos. As&#237; el valor flipea s&#243;lo cuando cruza el calendario &#8722; mantiene la salida del hook byte-stable y la prompt cache viva dentro del d&#237;a." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1220" width="1540" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g22" value="&lt;b&gt;Harness-agnostic  /  Model-agnostic&lt;/b&gt;&lt;br&gt;Que el sistema NO depende de un harness o modelo espec&#237;fico. MyJarbis se conecta v&#237;a MCP est&#225;ndar &#8212; hoy est&#225; optimizado para Claude Code, pero cualquier cliente MCP-compatible (Cursor, OpenClaw, Continue, agentes propios) puede leer/escribir la misma DB sin cambios en el server. A futuro: tareas mec&#225;nicas (clasificar observations, expandir queries de search) podr&#237;an delegarse a un modelo local open-weight (ej. Hermes v&#237;a Ollama) para bajar costos sin tocar el modelo principal." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontColor=#000000;align=left;verticalAlign=top;spacingLeft=15;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1340" width="1540" height="140" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

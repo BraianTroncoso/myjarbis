@@ -11,6 +11,8 @@
  */
 
 import { z } from 'zod';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ServerContext } from '../context.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import {
@@ -18,6 +20,50 @@ import {
   ModuleContextRow,
   ContextKind,
 } from '../db/schema.js';
+
+// ─────────────────────────────────────────────────────────────────────
+// Stale-resume detection
+//
+// A "Retomar aquí" line older than N days is a tripwire: the user is
+// about to act on context that may have moved on (PRs merged, branches
+// renamed, decisions reversed). Surfacing the age before the agent
+// assumes the note still applies prevents stale-autopilot mistakes.
+// Day-bucketed against UTC midnight so the value flips only when the
+// calendar date crosses — keeps prompt-cache survival within the day.
+// ─────────────────────────────────────────────────────────────────────
+
+export const DEFAULT_STALE_AFTER_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function readStaleThreshold(projectPath: string): number {
+  try {
+    const p = path.join(projectPath, '.myjarbis', 'config', 'settings.json');
+    if (!fs.existsSync(p)) return DEFAULT_STALE_AFTER_DAYS;
+    const s = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const v = s?.session?.stale_after_days;
+    if (typeof v === 'number' && v > 0 && Number.isFinite(v)) {
+      return Math.floor(v);
+    }
+    return DEFAULT_STALE_AFTER_DAYS;
+  } catch {
+    return DEFAULT_STALE_AFTER_DAYS;
+  }
+}
+
+export function computeStaleness(
+  endedAtIso: string | null,
+  thresholdDays: number,
+  now: number = Date.now(),
+): { days: number; stale: boolean } | null {
+  if (!endedAtIso) return null;
+  const normalized = endedAtIso.replace(' ', 'T');
+  const parsed = new Date(normalized.endsWith('Z') ? normalized : normalized + 'Z');
+  if (Number.isNaN(parsed.getTime())) return null;
+  const nowDays = Math.floor(now / DAY_MS);
+  const endedDays = Math.floor(parsed.getTime() / DAY_MS);
+  const days = Math.max(0, nowDays - endedDays);
+  return { days, stale: days >= thresholdDays };
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // start_session
@@ -70,6 +116,17 @@ export interface StartSessionResult {
     endedAt: string | null;
     summary: string | null;
     nextSession: string | null;
+    /** Whole days between the previous session's ended_at and now (UTC,
+     *  day-bucketed). Null when there is no previous closed session or
+     *  ended_at could not be parsed. */
+    daysSinceClose: number | null;
+    /** True when daysSinceClose >= settings.session.stale_after_days
+     *  (default 7). Signals the agent (and the hook) to surface a
+     *  "context may have moved on" warning before continuing. */
+    stale: boolean;
+    /** Threshold actually applied for the staleness check, for transparency
+     *  in the tool response. */
+    staleAfterDays: number;
   } | null;
   hint?: string;
 }
@@ -112,6 +169,10 @@ export function startSession(
   };
 
   const previousClosed = ctx.db.sessions.findLastClosedByModule(module.id);
+  const staleAfterDays = readStaleThreshold(ctx.projectPath);
+  const staleness = previousClosed
+    ? computeStaleness(previousClosed.ended_at, staleAfterDays)
+    : null;
 
   return {
     sessionId: session.id,
@@ -132,10 +193,15 @@ export function startSession(
           endedAt: previousClosed.ended_at,
           summary: previousClosed.summary,
           nextSession: previousClosed.next_session,
+          daysSinceClose: staleness?.days ?? null,
+          stale: staleness?.stale ?? false,
+          staleAfterDays,
         }
       : null,
     hint: previousClosed?.next_session
-      ? `READ previousSession.nextSession FIRST — that is the canonical "Retomar aquí". Use it to greet the user. The catalog (projectContext, moduleContext, stories) is for on-demand lookup via search/load_module.`
+      ? (staleness?.stale
+          ? `⚠ STALE RESUME — previousSession.nextSession is ${staleness.days} day(s) old (closed ${previousClosed.ended_at} UTC, threshold ${staleAfterDays}d). Before assuming it still applies, ask the user: branch state, open PRs, anything that moved since. THEN continue from previousSession.nextSession.`
+          : `READ previousSession.nextSession FIRST — that is the canonical "Retomar aquí". Use it to greet the user. The catalog (projectContext, moduleContext, stories) is for on-demand lookup via search/load_module.`)
       : `New module — no previous session. Surface counts (project_context: ${projectCtx.length}, module_context: ${moduleCtx.length}, stories: ${stories.count}) and ask the user where to start.`,
   };
 }
