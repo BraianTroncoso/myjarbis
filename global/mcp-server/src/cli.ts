@@ -31,6 +31,8 @@ import {
   personaLabel,
 } from './personas.js';
 import { computeCost, formatTable } from './tools/cost.js';
+import { generateModuleDiagram, isDiagramAuto } from './diagram/generate.js';
+import { openInVscode } from './diagram/open.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execSync } from 'child_process';
@@ -386,7 +388,30 @@ function runConfig(argv: string[]): void {
       console.log('');
       return;
     }
-    fail(`Unknown config subcommand: ${sub}. Use list | language | persona.`);
+    if (sub === 'diagram') {
+      const { positional } = parseFlags(rest);
+      const value = positional[0];
+      const settings = readSettingsJson(ctx.projectPath);
+      const current = settings.diagram?.auto !== false;
+      if (!value) {
+        ptySection('MyJarbis · config');
+        ptyKV('Diagram', current ? 'on (auto)' : 'off');
+        console.log('');
+        return;
+      }
+      const on = value === 'on' || value === 'true' || value === 'enable';
+      const off = value === 'off' || value === 'false' || value === 'disable';
+      if (!on && !off) fail('Usage: myjarbis config diagram <on|off>');
+      const settingsPath = path.join(ctx.projectPath, '.myjarbis', 'config', 'settings.json');
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      const next = { ...settings, diagram: { auto: on } };
+      fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2) + '\n', 'utf-8');
+      ptySection('MyJarbis · config');
+      ptyLine('  ' + `Auto-diagram ${bold(on ? 'enabled' : 'disabled')}`);
+      console.log('');
+      return;
+    }
+    fail(`Unknown config subcommand: ${sub}. Use list | language | persona | diagram.`);
   } finally {
     ctx.close();
   }
@@ -1114,6 +1139,15 @@ function runHookSessionStart(): void {
           openSession = ctx.db.sessions.start(target.id);
         }
         ctx.setActiveSession(openSession.id, target.id);
+        // Living diagram: regenerate for this module and pop it open in VS Code.
+        if (isDiagramAuto(ctx.projectPath)) {
+          try {
+            const dia = generateModuleDiagram(ctx, target.name);
+            if (dia.ok && dia.path) openInVscode(dia.path);
+          } catch {
+            /* best-effort: never block session start */
+          }
+        }
         const mat = materializeSkills(ctx, { module: target.name });
         const last = ctx.db.sessions.findLastClosedByModule(target.id);
         const blocks: string[] = [
@@ -1270,6 +1304,11 @@ function runHookSessionStop(): void {
   try {
     const project = ctx.project;
     if (!project) return;
+
+    // Living diagram: refresh the active module's diagram as the session ends.
+    if (isDiagramAuto(ctx.projectPath)) {
+      generateModuleDiagram(ctx);
+    }
 
     // If there's an open session, remind the agent to close it.
     const modules = ctx.db.modules.listByProject(project.id);
@@ -1640,6 +1679,12 @@ interface ProjectSettings {
      *  ignored (fall back to default). */
     stale_after_days?: number;
   };
+  /** Living draw.io diagram. `auto` (default true) regenerates the active
+   *  module's diagram on save_observation/update_progress and on session
+   *  hooks. Toggle with `myjarbis config diagram on|off`. */
+  diagram?: {
+    auto?: boolean;
+  };
   [k: string]: unknown;
 }
 
@@ -1738,6 +1783,41 @@ function runTimeline(argv: string[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Subcommand: diagram — regenerate the (active or named) module's living
+// draw.io diagram and open it in VS Code. Also invoked internally by hooks.
+// ─────────────────────────────────────────────────────────────────────
+
+function runDiagram(argv: string[]): void {
+  const { positional, flags } = parseFlags(argv);
+  const moduleName = positional[0];
+  const ctx = ServerContext.initialize();
+  try {
+    const res = generateModuleDiagram(ctx, moduleName);
+    if (wantsJson(flags)) {
+      printJson(res);
+      return;
+    }
+    ptySection('MyJarbis · diagram');
+    if (!res.ok) {
+      ptyDim('Could not generate: ' + (res.reason ?? 'unknown'));
+      console.log('');
+      return;
+    }
+    ptyKV('Module', bold(res.module ?? '—'));
+    ptyKV('File', res.path ?? '—');
+    ptyKV('Nodes', String(res.nodeCount ?? 0));
+    ptyKV('Status', res.changed ? 'updated' : 'unchanged');
+    if (res.path && flags['no-open'] !== true) {
+      const opened = openInVscode(res.path);
+      ptyDim(opened ? 'Opened in VS Code.' : 'Tip: open it with the draw.io extension.');
+    }
+    console.log('');
+  } finally {
+    ctx.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Dispatcher
 // ─────────────────────────────────────────────────────────────────────
 
@@ -1764,6 +1844,8 @@ export function main(argv: string[]): void {
         return runStatus(rest);
       case 'timeline':
         return runTimeline(rest);
+      case 'diagram':
+        return runDiagram(rest);
       case 'hook':
         return runHook(rest);
       case 'init-project':
