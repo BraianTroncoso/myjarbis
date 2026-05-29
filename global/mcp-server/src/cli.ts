@@ -1143,7 +1143,7 @@ function runHookSessionStart(): void {
         if (isDiagramAuto(ctx.projectPath)) {
           try {
             const dia = generateModuleDiagram(ctx, target.name);
-            if (dia.ok && dia.path) openInVscode(dia.path);
+            if (dia.ok && dia.path) openInVscode(dia.path, ctx.projectPath);
           } catch {
             /* best-effort: never block session start */
           }
@@ -1808,7 +1808,7 @@ function runDiagram(argv: string[]): void {
     ptyKV('Nodes', String(res.nodeCount ?? 0));
     ptyKV('Status', res.changed ? 'updated' : 'unchanged');
     if (res.path && flags['no-open'] !== true) {
-      const opened = openInVscode(res.path);
+      const opened = openInVscode(res.path, ctx.projectPath);
       ptyDim(opened ? 'Opened in VS Code.' : 'Tip: open it with the draw.io extension.');
     }
     console.log('');

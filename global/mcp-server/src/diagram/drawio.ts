@@ -1,12 +1,13 @@
 /**
  * draw.io (mxfile) XML builder — pure, no DB / no FS.
  *
- * Emits plain `.drawio` XML (the same format as docs/myjarbis-architecture.drawio)
- * so the VS Code `hediet.vscode-drawio` extension renders it and reloads on disk
- * change. Per-node hyperlinks use the canonical `<UserObject link="…">` wrapper.
+ * Emits plain `.drawio` XML (same format as docs/myjarbis-architecture.drawio)
+ * so the VS Code `hediet.vscode-drawio` extension renders it and reloads on
+ * disk change. Supports collapsible containers (a feature card that groups its
+ * files) and per-node hyperlinks via the canonical `<UserObject link="…">`.
  *
- * Output is intentionally deterministic (no timestamps / random ids) so the
- * generator can compare against the previous file and skip identical writes.
+ * Output is deterministic (no timestamps / random ids) so the generator can
+ * compare against the previous file and skip identical writes.
  */
 
 export function escapeXml(s: string): string {
@@ -29,42 +30,92 @@ export interface BoxOpts {
   y: number;
   w: number;
   h: number;
+  /** Parent cell id. '1' = root layer; a container id nests the box inside it. */
+  parent?: string;
   fill?: string;
+  stroke?: string;
+  fontColor?: string;
   /** When set, the node becomes a clickable hyperlink (UserObject wrapper). */
   link?: string;
-  /** 0 = normal, 1 = bold, 2 = italic. */
-  fontStyle?: number;
+  /** Hover tooltip (e.g. the full file path while the label shows the name). */
+  tooltip?: string;
+  fontStyle?: number; // 0 normal, 1 bold, 2 italic
+  fontSize?: number;
   align?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  rounded?: boolean;
+  spacingLeft?: number;
+  /** Render as a collapsible container that holds child cells. */
+  container?: boolean;
+  /** Header height kept visible when a container is collapsed. */
+  startSize?: number;
+  /** Pass the label as raw HTML (already escaped where needed). */
+  rawLabel?: boolean;
+}
+
+function styleOf(o: BoxOpts): string {
+  const va = o.container ? 'top' : o.verticalAlign ?? 'middle';
+  const parts = [
+    `rounded=${o.rounded ? 1 : 0}`,
+    'whiteSpace=wrap',
+    'html=1',
+    `fillColor=${o.fill ?? '#ffffff'}`,
+    `strokeColor=${o.stroke ?? '#000000'}`,
+    `fontColor=${o.fontColor ?? '#000000'}`,
+    `align=${o.align ?? 'center'}`,
+    `verticalAlign=${va}`,
+    `fontStyle=${o.fontStyle ?? 0}`,
+  ];
+  if (o.fontSize) parts.push(`fontSize=${o.fontSize}`);
+  if (o.spacingLeft) parts.push(`spacingLeft=${o.spacingLeft}`);
+  if (o.container) {
+    parts.push('container=1', 'collapsible=1');
+    parts.push(`startSize=${o.startSize ?? 30}`);
+  }
+  return parts.join(';') + ';';
 }
 
 export function box(o: BoxOpts): string {
-  const style =
-    `rounded=0;whiteSpace=wrap;html=1;` +
-    `fillColor=${o.fill ?? '#ffffff'};strokeColor=#000000;fontColor=#000000;` +
-    `align=${o.align ?? 'center'};verticalAlign=middle;fontStyle=${o.fontStyle ?? 0};`;
+  const parent = o.parent ?? '1';
+  const style = styleOf(o);
   const geom = `<mxGeometry x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" as="geometry" />`;
+  // draw.io stores HTML labels as entity-escaped text in the value attribute
+  // (e.g. <b> → &lt;b&gt;). rawLabel carries literal HTML tags we still escape;
+  // non-raw labels also turn newlines into <br>.
+  const value = o.rawLabel ? escapeXml(o.label) : labelHtml(o.label);
 
   if (o.link) {
-    // Canonical draw.io link pattern: UserObject carries label + link + id,
-    // the inner mxCell has no value (it inherits the UserObject label).
+    const tip = o.tooltip ? ` tooltip="${escapeXml(o.tooltip)}"` : '';
     return (
-      `<UserObject label="${labelHtml(o.label)}" link="${escapeXml(o.link)}" id="${o.id}">` +
-      `<mxCell style="${style}" vertex="1" parent="1">${geom}</mxCell>` +
+      `<UserObject label="${value}" link="${escapeXml(o.link)}"${tip} id="${o.id}">` +
+      `<mxCell style="${style}" vertex="1" parent="${parent}">${geom}</mxCell>` +
       `</UserObject>`
     );
   }
   return (
-    `<mxCell id="${o.id}" value="${labelHtml(o.label)}" style="${style}" vertex="1" parent="1">` +
+    `<mxCell id="${o.id}" value="${value}" style="${style}" vertex="1" parent="${parent}">` +
     `${geom}</mxCell>`
   );
 }
 
-export function edge(id: string, source: string, target: string, label = ''): string {
+export interface EdgeOpts {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  stroke?: string;
+  dashed?: boolean;
+}
+
+export function edge(o: EdgeOpts): string {
   const style =
-    `endArrow=open;html=1;rounded=0;strokeColor=#000000;edgeStyle=orthogonalEdgeStyle;fontSize=10;`;
-  const value = label ? ` value="${escapeXml(label)}"` : '';
+    `endArrow=block;endFill=1;html=1;rounded=0;` +
+    `strokeColor=${o.stroke ?? '#b3b3b3'};${o.dashed ? 'dashed=1;' : ''}` +
+    `edgeStyle=orthogonalEdgeStyle;` +
+    `exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;fontColor=#999999;`;
+  const value = o.label ? ` value="${escapeXml(o.label)}"` : '';
   return (
-    `<mxCell id="${id}"${value} style="${style}" edge="1" parent="1" source="${source}" target="${target}">` +
+    `<mxCell id="${o.id}"${value} style="${style}" edge="1" parent="1" source="${o.source}" target="${o.target}">` +
     `<mxGeometry relative="1" as="geometry" /></mxCell>`
   );
 }
