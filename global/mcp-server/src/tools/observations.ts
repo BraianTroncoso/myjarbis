@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { ServerContext } from '../context.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import { ObservationKind } from '../db/schema.js';
+import { maybeRegenerateDiagram } from '../diagram/generate.js';
 
 export const saveObservationInputSchema = {
   type: 'object' as const,
@@ -85,6 +86,9 @@ export function saveObservation(
   });
 
   const module = ctx.db.modules.findById(moduleId)!;
+
+  // Keep the living diagram in sync (best-effort; honours the toggle).
+  maybeRegenerateDiagram(ctx);
 
   return {
     observationId: obs.id,
@@ -210,6 +214,9 @@ export function updateProgress(
     target.id,
     args.progress.length === 0 ? null : args.progress,
   );
+
+  // Keep the living diagram in sync (best-effort; honours the toggle).
+  maybeRegenerateDiagram(ctx, moduleRow.name);
 
   return {
     rowId: updated.id,
