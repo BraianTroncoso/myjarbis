@@ -229,18 +229,18 @@ by default; pass `--json` for machine-readable JSON.
 ```text
 $ myjarbis status
 
-MyJarbis · prolicht (laravel)
-  Path          /home/dev/prolicht
-  Branch        mm-bt-repository · 2 ahead of origin
+MyJarbis · my-app (laravel)
+  Path          /home/dev/my-app
+  Branch        feature/auth-12-refresh · 2 ahead of origin
 
 Active module
-  Name          MM                                              ← red bold
-  About         Media Manager — directorios, assets, traducciones
+  Name          auth                                            ← red bold
+  About         Authentication — login, OAuth, token refresh
   Last close    2026-05-04 21:19 UTC
 
   "Resume here" excerpt:
-    ## MM al 2026-05-04 — MM-E5 F0 (S5.1+S5.2) scaffold listo
-    **Branch**: `mm-bt-repository` (ahead 2 commits de origin)
+    ## auth at 2026-05-04 — AUTH-12 refresh flow scaffolded
+    **Branch**: `feature/auth-12-refresh` (ahead 2 commits of origin)
     ...
 
 Counts
@@ -255,22 +255,22 @@ Counts
 ```text
 $ myjarbis module list
 
-MyJarbis · modules of prolicht
-  ★ MM        Media Manager — directorios, assets, traducciones    ← ★ red
+MyJarbis · modules of my-app
+  ★ auth      Authentication — login, OAuth, token refresh         ← ★ red
     _general  Default cross-cutting module
 
-  Active: MM  ·  /jarbis will resume this module.
+  Active: auth  ·  /jarbis will resume this module.
 ```
 
 ```text
 $ myjarbis module current
-★ MM
+★ auth
 ```
 
 ```text
 $ myjarbis config list
 
-MyJarbis · config of prolicht
+MyJarbis · config of my-app
   Language      ES
   Persona       concise
   Shared        false
@@ -534,6 +534,77 @@ agent proceeds. Prevents stale-autopilot mistakes after long breaks.
 
 ---
 
+## Living diagrams
+
+Documentation that **draws itself while you work.** Every module gets a
+draw.io diagram that is a *view* of its memory — you never draw it by
+hand. You code, you tell MyJarbis what you did (the same
+`save_observation` you already do), and the diagram redraws itself.
+
+It opens beside your code and stays in sync: the SessionStart hook opens
+it, every `save_observation` / `update_progress` regenerates it, and the
+Stop hook refreshes it on the way out. Install the
+[Draw.io Integration](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio)
+VS Code extension and the `.drawio` renders right inside the editor.
+
+It reads top-to-bottom as a **narrative of the work**: one collapsible
+card per observation — its title, a kind tag, the "why", and the files
+it touched nested inside — chained with arrows in the order things
+happened. Minimalist on purpose: white cards, thin borders, a single
+accent on the banner; meaning comes from the text, not a rainbow of
+colours.
+
+```text
+        ┌───────────────────────────────────────────────┐
+        │                  auth                          │   ← module banner
+        └───────────────────────────────────────────────┘
+                              │
+        ┌───────────────────────────────────────────────┐
+        │ Pick Sanctum over Passport                     │
+        │ DECISION                                       │   ← kind tag
+        │ Simpler token model, no OAuth server needed.   │   ← the "why"
+        └───────────────────────────────────────────────┘
+                              │
+        ┌─[–]───────────────────────────────────────────┐
+        │ AUTH-12 — Google OAuth callback                │
+        │ DONE · validate id_token, link the local user  │
+        │   ┌─────────────────────────────────────────┐  │
+        │   │ GoogleAuthController.php                 │  │   ← files inside,
+        │   │ User.php                                │  │     name only,
+        │   │ routes/web.php                          │  │     full path on hover
+        │   └─────────────────────────────────────────┘  │
+        └───────────────────────────────────────────────┘
+                              │
+        ┌───────────────────────────────────────────────┐
+        │ redirect_uri must match Google exactly         │
+        │ GOTCHA · 400 invalid_request otherwise         │
+        └───────────────────────────────────────────────┘
+```
+
+The tag is the observation `kind`, so the taxonomy you already use to
+save work is the taxonomy you see:
+
+| kind        | tag        | when you use it                         |
+|-------------|------------|-----------------------------------------|
+| `progress`  | `DONE`     | a story / milestone closed              |
+| `decision`  | `DECISION` | an approach or library was chosen       |
+| `gotcha`    | `GOTCHA`   | a non-obvious lesson worth keeping      |
+| `discovery` | `NOTE`     | something learned about the codebase    |
+| `error`     | `OPEN`     | an unresolved issue                     |
+
+```bash
+myjarbis diagram                # (re)generate + open the active module's diagram
+myjarbis diagram <module>       # a specific module
+myjarbis config diagram off     # turn auto-generation off (back on with `... on`)
+```
+
+Diagrams are written to `<project>/.myjarbis/diagrams/<module>.drawio`,
+generated deterministically and idempotently (identical content is never
+rewritten). Each file node shows its full project path in a tooltip;
+copy it + `Ctrl+P` to jump to the file.
+
+---
+
 ## Architecture
 
 ```
@@ -719,6 +790,9 @@ MYJARBIS_LANGUAGE=PT MYJARBIS_PERSONA=mentor myjarbis init    # non-interactive
   },
   "session": {
     "stale_after_days": 7
+  },
+  "diagram": {
+    "auto": true
   }
 }
 ```
@@ -734,7 +808,7 @@ so the output stays stable for an hour at a time.
 ## Tests
 
 ```bash
-tests/bootstrap-prolicht.sh    # 12 .md + 1 JSON bulk import idempotency
+tests/bootstrap-import.sh      # 12 .md + 1 JSON bulk import idempotency
 tests/skills-lifecycle.sh      # baselines + module-level + cleanup on switch
 tests/full-session-cycle.sh    # open → work → close → reopen → resume
 tests/compact-cycle.sh         # snapshot pre/post /compact roundtrip
