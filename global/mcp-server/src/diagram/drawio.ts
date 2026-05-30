@@ -84,10 +84,13 @@ export function box(o: BoxOpts): string {
   // non-raw labels also turn newlines into <br>.
   const value = o.rawLabel ? escapeXml(o.label) : labelHtml(o.label);
 
-  if (o.link) {
+  // A UserObject wrapper is required for a link OR a tooltip (mxCell alone
+  // carries neither). Emit it whenever either is present.
+  if (o.link || o.tooltip) {
+    const lnk = o.link ? ` link="${escapeXml(o.link)}"` : '';
     const tip = o.tooltip ? ` tooltip="${escapeXml(o.tooltip)}"` : '';
     return (
-      `<UserObject label="${value}" link="${escapeXml(o.link)}"${tip} id="${o.id}">` +
+      `<UserObject label="${value}"${lnk}${tip} id="${o.id}">` +
       `<mxCell style="${style}" vertex="1" parent="${parent}">${geom}</mxCell>` +
       `</UserObject>`
     );

@@ -59,11 +59,29 @@ export function isDiagramAuto(projectPath: string): boolean {
   }
 }
 
+/** Build a clickable link that opens the file in the ALREADY-OPEN VS Code
+ *  window WITHOUT a permission prompt and without spawning an empty window.
+ *
+ *  Tested in this env (hediet.vscode-drawio v1.9.0 under Remote-WSL):
+ *    - `vscode://vscode-remote/wsl+...` → prompts AND opens a blank window (ms/vscode#236348)
+ *    - `command:vscode.open?...`        → blocked by the webview, click does nothing
+ *    - RELATIVE path (this)             → extension resolves it and opens the file in-workspace
+ *
+ *  So we emit a path RELATIVE to the .drawio's directory
+ *  (<project>/.myjarbis/diagrams). Note: relative-link support is version-
+ *  dependent. Fallback if a future version stops resolving it (prompts once):
+ *    const distro = process.env.WSL_DISTRO_NAME;
+ *    return distro ? `vscode://vscode-remote/wsl+${distro}${abs}` : `vscode://file${abs}`;
+ */
 function fileLink(projectPath: string, file: string): string {
   const abs = path.isAbsolute(file) ? file : path.resolve(projectPath, file);
-  const distro = process.env.WSL_DISTRO_NAME;
-  if (distro) return `vscode://vscode-remote/wsl+${distro}${abs}`;
-  return `vscode://file${abs}`;
+  // Relative path from the .drawio file's dir (<project>/.myjarbis/diagrams) to
+  // the source file. The hediet drawio extension resolves relative links and
+  // opens the file inside the workspace — no external-URI prompt, no blank
+  // window. (vscode:// opens an empty WSL window; command:vscode.open is blocked
+  // by the webview — both ruled out by testing.)
+  const diagramDir = path.join(projectPath, '.myjarbis', 'diagrams');
+  return path.relative(diagramDir, abs);
 }
 
 /** Minimalist: only a short text tag per kind (no fill colours). */
@@ -305,7 +323,12 @@ export function generateModuleDiagram(
           fill: '#fbfbfb',
           stroke: C_FILE_BORDER,
           fontColor: C_TEXT,
-          link: fileLink(ctx.projectPath, f),
+          // No clickable link: hediet v1.9.0 has no working generic file-link
+          // format (vscode:// → blank window, command: → blocked, relative →
+          // resolves against the extension dir / opens a browser). We show the
+          // full path in the tooltip; copy it + Ctrl+P to open. Native file
+          // links exist via the "Link File With Selected Node" command (manual,
+          // UI-set) — a future option if we ever want real click-to-open.
           tooltip: f,
           align: 'left',
           fontSize: 11,
