@@ -17,10 +17,13 @@ function q(s: string): string {
 
 export function openInVscode(diagramPath: string, projectPath?: string): boolean {
   try {
-    const target = projectPath
-      ? `${q(projectPath)} ${q(diagramPath)}`
-      : q(diagramPath);
-    execSync(`code ${target}`, { stdio: 'ignore', timeout: 5000 });
+    // 1) Open/focus the project workspace window (idempotent — if it's already
+    //    open this just focuses it). 2) Open the diagram REUSING that active
+    //    window (-r) so it lands inside the project instead of a lone window.
+    if (projectPath) {
+      execSync(`code ${q(projectPath)}`, { stdio: 'ignore', timeout: 5000 });
+    }
+    execSync(`code -r ${q(diagramPath)}`, { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch {
     return false;
