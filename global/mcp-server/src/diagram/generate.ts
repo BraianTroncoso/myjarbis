@@ -49,13 +49,13 @@ function readActiveModuleName(projectPath: string): string | null {
 export function isDiagramAuto(projectPath: string): boolean {
   try {
     const p = path.join(projectPath, '.myjarbis', 'config', 'settings.json');
-    if (!fs.existsSync(p)) return true;
+    if (!fs.existsSync(p)) return false;
     const s = JSON.parse(fs.readFileSync(p, 'utf-8')) as {
       diagram?: { auto?: boolean };
     };
-    return s?.diagram?.auto !== false;
+    return s?.diagram?.auto === true;
   } catch {
-    return true;
+    return false;
   }
 }
 

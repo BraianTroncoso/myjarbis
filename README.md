@@ -541,9 +541,12 @@ draw.io diagram that is a *view* of its memory — you never draw it by
 hand. You code, you tell MyJarbis what you did (the same
 `save_observation` you already do), and the diagram redraws itself.
 
-It opens beside your code and stays in sync: the SessionStart hook opens
-it, every `save_observation` / `update_progress` regenerates it, and the
-Stop hook refreshes it on the way out. Install the
+By default it stays out of your way: run `myjarbis diagram` whenever you
+want to (re)generate and open the active module's diagram. Prefer it to
+follow along automatically? Opt in with `myjarbis config diagram on` and
+it stays in sync — the SessionStart hook opens it, every
+`save_observation` / `update_progress` regenerates it, and the Stop hook
+refreshes it on the way out. Install the
 [Draw.io Integration](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio)
 VS Code extension and the `.drawio` renders right inside the editor.
 
@@ -595,7 +598,7 @@ save work is the taxonomy you see:
 ```bash
 myjarbis diagram                # (re)generate + open the active module's diagram
 myjarbis diagram <module>       # a specific module
-myjarbis config diagram off     # turn auto-generation off (back on with `... on`)
+myjarbis config diagram on      # opt in to auto-generate/open (default off)
 ```
 
 Diagrams are written to `<project>/.myjarbis/diagrams/<module>.drawio`,
@@ -792,7 +795,7 @@ MYJARBIS_LANGUAGE=PT MYJARBIS_PERSONA=mentor myjarbis init    # non-interactive
     "stale_after_days": 7
   },
   "diagram": {
-    "auto": true
+    "auto": false
   }
 }
 ```
@@ -802,6 +805,12 @@ UserPromptSubmit hook reminds the agent to call `save_observation` if
 no observation has landed in the last N+ minutes. Default `null` keeps
 the hook output cache-stable. When enabled, the check is hour-bucketed
 so the output stays stable for an hour at a time.
+
+`diagram.auto`: opt-in living diagram. Default `false` — the diagram is
+only generated/opened when you run `myjarbis diagram`. Set to `true`
+(or `myjarbis config diagram on`) to have session hooks,
+`save_observation` and `update_progress` regenerate it and pop it open
+in VS Code automatically.
 
 ---
 

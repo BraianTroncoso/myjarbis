@@ -392,7 +392,7 @@ function runConfig(argv: string[]): void {
       const { positional } = parseFlags(rest);
       const value = positional[0];
       const settings = readSettingsJson(ctx.projectPath);
-      const current = settings.diagram?.auto !== false;
+      const current = settings.diagram?.auto === true;
       if (!value) {
         ptySection('MyJarbis · config');
         ptyKV('Diagram', current ? 'on (auto)' : 'off');
@@ -1679,9 +1679,10 @@ interface ProjectSettings {
      *  ignored (fall back to default). */
     stale_after_days?: number;
   };
-  /** Living draw.io diagram. `auto` (default true) regenerates the active
-   *  module's diagram on save_observation/update_progress and on session
-   *  hooks. Toggle with `myjarbis config diagram on|off`. */
+  /** Living draw.io diagram. `auto` (default false — opt-in) regenerates the
+   *  active module's diagram on save_observation/update_progress and on session
+   *  hooks, popping it open in VS Code. When off, `myjarbis diagram` still
+   *  generates + opens on demand. Toggle with `myjarbis config diagram on|off`. */
   diagram?: {
     auto?: boolean;
   };
