@@ -20,6 +20,8 @@ import {
   ModuleContextRow,
   ContextKind,
 } from '../db/schema.js';
+import { generateModuleDiagram, isDiagramAuto } from '../diagram/generate.js';
+import { openInVscode } from '../diagram/open.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Stale-resume detection
@@ -141,6 +143,18 @@ export function startSession(
 
   const session = ctx.db.sessions.start(module.id);
   ctx.setActiveSession(session.id, module.id);
+
+  // Living diagram: when a module is chosen by chat (start_session) rather than
+  // pre-set via the SessionStart fast-path, open its diagram here too so it
+  // shows up automatically. Best-effort, honours the toggle, never throws.
+  if (isDiagramAuto(ctx.projectPath)) {
+    try {
+      const dia = generateModuleDiagram(ctx, module.name);
+      if (dia.ok && dia.path) openInVscode(dia.path, ctx.projectPath);
+    } catch {
+      /* never block start_session on diagram generation */
+    }
+  }
 
   const projectCtx = ctx.db.projectContext.listByProject(project.id).map(
     summarizeProjectContext,
