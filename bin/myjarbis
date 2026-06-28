@@ -24,6 +24,7 @@ show_help() {
     echo -e "${RED}${BOLD}Commands${NC}"
     echo
     echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project"
+    echo -e "  ${BOLD}start${NC}      Pick a registered project and open it with claude + /jarbis"
     echo -e "  ${BOLD}doctor${NC}     Verify installation and project setup"
     echo -e "  ${BOLD}list${NC}       List all registered projects"
     echo -e "  ${BOLD}context${NC}    Refresh project context"
@@ -144,6 +145,19 @@ case "${1:-help}" in
             exec "$INSTALL_DIR/../bin/myjarbis-doctor"
         fi
         echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-doctor not found"
+        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
+        exit 1
+        ;;
+
+    start)
+        # Global launcher: pick a project, open it with claude + /jarbis.
+        shift
+        if [ -f "$INSTALL_DIR/bin/myjarbis-start" ]; then
+            exec "$INSTALL_DIR/bin/myjarbis-start" "$@"
+        elif [ -f "$INSTALL_DIR/../bin/myjarbis-start" ]; then
+            exec "$INSTALL_DIR/../bin/myjarbis-start" "$@"
+        fi
+        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-start not found"
         echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
         exit 1
         ;;
