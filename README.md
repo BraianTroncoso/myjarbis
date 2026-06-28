@@ -132,7 +132,7 @@ to work.
 
 ```bash
 myjarbis start                 # interactive picker
-myjarbis start aura            # by name (or substring) — skip the picker
+myjarbis start api-server     # by name (or substring) — skip the picker
 myjarbis start                 # then type "1 3" to launch two at once
 ```
 
@@ -191,25 +191,13 @@ It reads top-to-bottom as a **narrative of the work**: one card per
 observation — title, a kind tag, the "why", and the files it touched —
 chained with arrows in the order things happened.
 
-```text
-        ┌───────────────────────────────────────────────┐
-        │                  auth                          │   ← module banner
-        └───────────────────────────────────────────────┘
-                              │
-        ┌───────────────────────────────────────────────┐
-        │ Pick Sanctum over Passport                     │
-        │ DECISION                                       │   ← kind tag
-        │ Simpler token model, no OAuth server needed.   │   ← the "why"
-        └───────────────────────────────────────────────┘
-                              │
-        ┌─[–]───────────────────────────────────────────┐
-        │ AUTH-12 — Google OAuth callback                │
-        │ DONE · validate id_token, link the local user  │
-        │   ┌─────────────────────────────────────────┐  │
-        │   │ GoogleAuthController.php · User.php      │  │   ← files nested,
-        │   └─────────────────────────────────────────┘  │     full path on hover
-        └───────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/media/05-living-diagram.png" width="440" alt="Living diagram — observations chained as a narrative, with kind tags and the files touched">
+</p>
+
+Each card is one observation — its `kind` becomes the tag, the title and
+"why" come straight from what you saved, and the files it touched nest
+inside. Cards chain with arrows in the order things happened.
 
 ```bash
 myjarbis diagram                # (re)generate + open the active module's diagram
