@@ -1,0 +1,278 @@
+#!/bin/bash
+#
+# MyJarbis CLI — `start`: global project launcher.
+#
+# Run from ANYWHERE. Lists registered projects, lets you pick one (or
+# several), then opens a fresh terminal in each project's path with
+# `claude` running and `/jarbis` already fired — so you skip the
+# cd → claude → /jarbis dance and can spin up 2-3 projects fast.
+#
+# Spawn strategy is auto-detected (override with --wt / --tmux / --here):
+#   - WSL + Windows Terminal  → one new wt.exe tab per project
+#   - inside tmux             → one new tmux window per project
+#   - otherwise               → cd + exec claude in the current shell
+#
+# Pure shell + a `node -e` read of the global registry. No MCP server.
+
+set -euo pipefail
+
+# Minimal palette: blood red as the only accent (matches bin/myjarbis).
+RED='\033[38;5;88m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
+
+INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
+REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+
+# ── flags / state ─────────────────────────────────────────────────────
+MODE="auto"          # auto | wt | tmux | here
+PRINT=0              # dry-run: print resolved command(s), don't execute
+USE_JARBIS=1         # fire /jarbis as the initial prompt
+PROMPT="/jarbis"     # initial prompt (overridable via --cmd)
+JSON=0               # list projects as JSON and exit
+SELECTOR=""          # optional positional name/substring (skip the picker)
+
+die() {
+    echo -e "  ${RED}${BOLD}FAIL${NC}  $1" >&2
+    exit "${2:-1}"
+}
+
+show_help() {
+    echo
+    echo -e "${RED}${BOLD}myjarbis start${NC} · launch a project with claude + /jarbis"
+    echo
+    echo "  Usage: myjarbis start [name|substring] [options]"
+    echo
+    echo -e "${RED}${BOLD}Options${NC}"
+    echo
+    echo -e "  ${BOLD}--here${NC}        cd + exec claude in THIS shell (single project)"
+    echo -e "  ${BOLD}--wt${NC}          force Windows Terminal tabs"
+    echo -e "  ${BOLD}--tmux${NC}        force tmux windows"
+    echo -e "  ${BOLD}--print${NC}       dry-run: print the resolved command(s), launch nothing"
+    echo -e "  ${BOLD}--no-jarbis${NC}   open claude without firing /jarbis"
+    echo -e "  ${BOLD}--cmd <text>${NC}  use a custom initial prompt instead of /jarbis"
+    echo -e "  ${BOLD}--json${NC}        print registered projects as JSON and exit"
+    echo -e "  ${BOLD}-h, --help${NC}    show this help"
+    echo
+    echo -e "${RED}${BOLD}Examples${NC}"
+    echo
+    echo "  myjarbis start                 # pick from the list"
+    echo "  myjarbis start aura            # launch by name"
+    echo "  myjarbis start --print         # see what it would run"
+    echo
+}
+
+# ── parse args ────────────────────────────────────────────────────────
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --here)      MODE="here" ;;
+        --wt)        MODE="wt" ;;
+        --tmux)      MODE="tmux" ;;
+        --print)     PRINT=1 ;;
+        --no-jarbis) USE_JARBIS=0 ;;
+        --cmd)       shift; [ $# -gt 0 ] || die "--cmd needs a value"; PROMPT="$1" ;;
+        --json)      JSON=1 ;;
+        -h|--help)   show_help; exit 0 ;;
+        -*)          die "unknown option: $1" ;;
+        *)           SELECTOR="$1" ;;
+    esac
+    shift
+done
+
+[ -f "$REGISTRY_FILE" ] || die "no registry at $REGISTRY_FILE — run 'myjarbis init' in a project first"
+command -v node >/dev/null 2>&1 || die "node not found on PATH"
+
+# ── load registry into parallel arrays ────────────────────────────────
+NAMES=(); PROJ_PATHS=(); FWS=(); EXISTS=()
+while IFS=$'\t' read -r n p f e; do
+    [ -n "$n" ] || continue
+    NAMES+=("$n"); PROJ_PATHS+=("$p"); FWS+=("$f"); EXISTS+=("$e")
+done < <(node -e '
+    const fs = require("fs");
+    const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    for (const [n, c] of Object.entries(d.projects || {})) {
+        const p = c.path || "";
+        const ex = p && fs.existsSync(p) ? "1" : "0";
+        process.stdout.write([n, p, c.framework || "generic", ex].join("\t") + "\n");
+    }
+' "$REGISTRY_FILE")
+
+COUNT=${#NAMES[@]}
+[ "$COUNT" -gt 0 ] || die "registry has no projects"
+
+if [ "$JSON" -eq 1 ]; then
+    node -e '
+        const fs = require("fs");
+        const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        process.stdout.write(JSON.stringify(d.projects || {}, null, 2) + "\n");
+    ' "$REGISTRY_FILE"
+    exit 0
+fi
+
+# ── selection → SEL_IDX[] (0-based indices into the arrays) ────────────
+SEL_IDX=()
+
+# resolve a name/substring token. Always returns 0; the outcome is
+# encoded on stdout: the index, "NONE", or "AMBIGUOUS:<i j k>". (Keeps
+# callers safe under `set -e`, where a non-zero command substitution
+# would abort the script.)
+resolve_token() {
+    local tok="$1" i exact=-1 matches=()
+    for i in "${!NAMES[@]}"; do
+        [ "${NAMES[$i]}" = "$tok" ] && exact=$i
+        case "${NAMES[$i],,}" in *"${tok,,}"*) matches+=("$i") ;; esac
+    done
+    if [ "$exact" -ge 0 ]; then echo "$exact"; return 0; fi
+    if [ "${#matches[@]}" -eq 1 ]; then echo "${matches[0]}"; return 0; fi
+    if [ "${#matches[@]}" -eq 0 ]; then echo "NONE"; return 0; fi
+    echo "AMBIGUOUS:${matches[*]}"
+}
+
+print_list() {
+    echo
+    echo -e "${RED}${BOLD}Your projects${NC}"
+    echo
+    local i
+    for i in "${!NAMES[@]}"; do
+        local mark=""
+        [ "${EXISTS[$i]}" = "1" ] || mark="  ${RED}(path missing)${NC}"
+        printf "  ${BOLD}%2d${NC})  %-22s ${DIM}%s${NC}${mark}\n" \
+            "$((i + 1))" "${NAMES[$i]}" "${PROJ_PATHS[$i]}"
+    done
+    echo
+}
+
+if [ -n "$SELECTOR" ]; then
+    res="$(resolve_token "$SELECTOR")"
+    [ "$res" = "NONE" ] && die "no project matches '$SELECTOR' (try 'myjarbis start' to see the list)"
+    if [[ "$res" == AMBIGUOUS:* ]]; then
+        echo -e "  ${RED}${BOLD}AMBIGUOUS${NC}  '$SELECTOR' matches several projects:"
+        for i in ${res#AMBIGUOUS:}; do echo "    - ${NAMES[$i]}"; done
+        die "be more specific"
+    fi
+    SEL_IDX=("$res")
+else
+    print_list
+    printf "  ${BOLD}Pick${NC} (numbers like '1 3', or a name) ${DIM}[Enter to cancel]${NC}: "
+    read -r line || true
+    [ -n "${line// /}" ] || { echo "  cancelled."; exit 0; }
+    for tok in $line; do
+        if [[ "$tok" =~ ^[0-9]+$ ]]; then
+            idx=$((tok - 1))
+            [ "$idx" -ge 0 ] && [ "$idx" -lt "$COUNT" ] || die "out of range: $tok"
+            SEL_IDX+=("$idx")
+        else
+            res="$(resolve_token "$tok")"
+            [ "$res" = "NONE" ] && die "no project matches '$tok'"
+            [[ "$res" == AMBIGUOUS:* ]] && die "'$tok' is ambiguous — use a number or full name"
+            SEL_IDX+=("$res")
+        fi
+    done
+fi
+
+[ "${#SEL_IDX[@]}" -gt 0 ] || die "nothing selected"
+
+# ── resolve spawn strategy ────────────────────────────────────────────
+STRAT="$MODE"
+if [ "$STRAT" = "auto" ]; then
+    if [ -n "${WSL_DISTRO_NAME:-}" ] && command -v wt.exe >/dev/null 2>&1; then
+        STRAT="wt"
+    elif [ -n "${TMUX:-}" ]; then
+        STRAT="tmux"
+    else
+        STRAT="here"
+    fi
+fi
+
+# initial prompt argument for claude ("" → no prompt)
+launch_prompt=""
+[ "$USE_JARBIS" -eq 1 ] && launch_prompt="$PROMPT"
+
+# inner bash command for wt/tmux: cd, run claude, then drop to an
+# interactive shell in the project dir (keep-alive) so the tab/window
+# doesn't vanish when claude exits. `&& exec bash` (not `; exec bash`)
+# on purpose: a literal `;` is a tab separator at the wt.exe parsing
+# layer, while `&&` passes through untouched (verified). The shell only
+# stays on a clean claude exit, which is the normal /exit path.
+inner_cmd() {
+    local p="$1"
+    if [ -n "$launch_prompt" ]; then
+        printf 'cd %q && claude %q && exec bash' "$p" "$launch_prompt"
+    else
+        printf 'cd %q && claude && exec bash' "$p"
+    fi
+}
+
+run_or_print() {
+    if [ "$PRINT" -eq 1 ]; then
+        echo "  $(printf '%q ' "$@")"
+    else
+        "$@"
+    fi
+}
+
+# ── launch ────────────────────────────────────────────────────────────
+echo
+if [ "$PRINT" -eq 1 ]; then
+    echo -e "${RED}${BOLD}myjarbis start${NC} · dry-run (${STRAT})"
+else
+    echo -e "${RED}${BOLD}myjarbis start${NC} · launching (${STRAT})"
+fi
+echo
+
+launched=0
+for n in "${SEL_IDX[@]}"; do
+    name="${NAMES[$n]}"; ppath="${PROJ_PATHS[$n]}"
+    if [ "${EXISTS[$n]}" != "1" ]; then
+        echo -e "  ${RED}skip${NC}  ${name} ${DIM}(path missing: ${ppath})${NC}"
+        continue
+    fi
+    inner="$(inner_cmd "$ppath")"
+
+    case "$STRAT" in
+        here)
+            if [ "$launched" -ge 1 ]; then
+                echo -e "  ${DIM}--here launches one project; skipping ${name}${NC}"
+                continue
+            fi
+            echo -e "  ${BOLD}${name}${NC}  ${DIM}${ppath}${NC}"
+            if [ "$PRINT" -eq 1 ]; then
+                if [ -n "$launch_prompt" ]; then
+                    echo "    cd $ppath && exec claude $launch_prompt"
+                else
+                    echo "    cd $ppath && exec claude"
+                fi
+            else
+                cd "$ppath"
+                [ -n "$launch_prompt" ] && exec claude "$launch_prompt" || exec claude
+            fi
+            ;;
+        wt)
+            echo -e "  ${BOLD}${name}${NC}  ${DIM}${ppath}${NC}  → wt tab"
+            # --opacity 100 forces an opaque background so the tab doesn't
+            # inherit a transparent/acrylic WSL profile (confusing for work).
+            run_or_print wt.exe -w 0 new-tab --opacity 100 --title "$name" \
+                wsl.exe -d "${WSL_DISTRO_NAME}" -- bash -lic "$inner"
+            ;;
+        tmux)
+            echo -e "  ${BOLD}${name}${NC}  ${DIM}${ppath}${NC}  → tmux window"
+            if [ -n "${TMUX:-}" ]; then
+                run_or_print tmux new-window -n "$name" -c "$ppath" "$inner"
+            else
+                if [ "$PRINT" -eq 0 ] && ! tmux has-session -t jarbis 2>/dev/null; then
+                    tmux new-session -d -s jarbis -n "$name" -c "$ppath" "$inner"
+                else
+                    run_or_print tmux new-window -t jarbis -n "$name" -c "$ppath" "$inner"
+                fi
+            fi
+            ;;
+    esac
+    launched=$((launched + 1))
+done
+
+if [ "$STRAT" = "tmux" ] && [ -z "${TMUX:-}" ] && [ "$PRINT" -eq 0 ] && [ "$launched" -ge 1 ]; then
+    echo
+    echo -e "  ${DIM}attach with:${NC} tmux attach -t jarbis"
+fi
+echo

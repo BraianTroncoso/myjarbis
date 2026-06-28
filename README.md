@@ -26,6 +26,16 @@ claude
 
 That's it. After that, you talk in natural language.
 
+Or skip the `cd` + `claude` + `/jarbis` dance entirely — from **anywhere**:
+
+```
+myjarbis start            # pick a project; it opens a fresh terminal
+                          # already running claude + /jarbis
+```
+
+Pick one project or several at once (e.g. `1 3`) to spin up two or
+three sessions in seconds. See [Launch from anywhere](#launch-from-anywhere-myjarbis-start).
+
 ---
 
 ## Why this exists
@@ -203,6 +213,50 @@ baseline skills:
 | "done, close it"                                   | confirm summary + next_session + end_session     |
 
 The next `/jarbis` resumes where you left off.
+
+---
+
+## Launch from anywhere (`myjarbis start`)
+
+`myjarbis start` is a global launcher. Run it from **any** directory: it
+lists your registered projects, you pick one (or several), and it opens a
+fresh terminal already `cd`'d into the project with `claude` running and
+`/jarbis` fired — no manual `cd` / `claude` / `/jarbis`.
+
+```bash
+myjarbis start                # interactive picker
+myjarbis start aura           # by name (or substring) — skip the picker
+```
+
+In the picker, select multiple by number to launch them at once:
+
+```
+Your projects
+   1)  myjarbis     ~/dev-own/myjarbis
+   3)  aura         ~/dev-own/aura
+  Pick (numbers like '1 3', or a name): 1 3   → two sessions, side by side
+```
+
+It **auto-detects** how to open each project (override with a flag):
+
+| Environment            | Opens as                          | Force      |
+|------------------------|-----------------------------------|------------|
+| WSL + Windows Terminal | a new `wt.exe` tab per project    | `--wt`     |
+| inside a `tmux` session| a new tmux window per project     | `--tmux`   |
+| otherwise              | replaces the current shell (one)  | `--here`   |
+
+Other flags:
+
+```bash
+myjarbis start --print        # dry-run: print the resolved command(s), launch nothing
+myjarbis start --no-jarbis    # open claude without firing /jarbis
+myjarbis start --cmd "/resume" # use a custom initial prompt instead of /jarbis
+myjarbis start --json         # list registered projects as JSON and exit
+```
+
+Projects whose path no longer exists are flagged `(path missing)` and
+skipped. The `wt`/`tmux` tabs drop to a shell in the project dir when you
+exit claude (keep-alive), so the window stays useful.
 
 ---
 
