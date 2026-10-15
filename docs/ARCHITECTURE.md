@@ -1,363 +1,196 @@
 # MyJarbis Architecture
 
-This document explains the technical architecture of MyJarbis.
+What MyJarbis is and what it is built with, as of **v0.4.5 (schema v4)**.
 
-## Overview
+This file replaces a version that described v0.1 — MCP *resources* under
+`myjarbis://{project}/memory/...` and three tools — an API removed in v0.2.
+It had been loaded into every session as `kind=convention` since May, which
+put a three-version-old design at precedence #2. It is `kind=stack` now,
+because that is what the catalogue calls "what the project is and what it is
+built with". Architecture is not a convention.
 
-MyJarbis is a development assistant system that enhances Claude Code with persistent memory and structured workflows using the Model Context Protocol (MCP).
+## The problem it solves
 
-## High-Level Architecture
+Claude Code forgets everything between sessions, and a flat memory file does
+not scale: a project has verticals, and loading all of them to work on one
+burns the context window on things that do not apply.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    CLAUDE CODE                          │
-│         (AI assistant with MCP support)                 │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     │ MCP Protocol (stdio)
-                     │ Resources & Tools
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│           ~/.myjarbis-global/mcp-server/                │
-│              (Node.js MCP Server)                       │
-│                                                          │
-│  Resources:                                             │
-│  • myjarbis://{project}/memory/instructions             │
-│  • myjarbis://{project}/memory/project                  │
-│  • myjarbis://{project}/memory/knowledge                │
-│  • myjarbis://{project}/context/daily                   │
-│                                                          │
-│  Tools:                                                 │
-│  • search_code - Intelligent code search                │
-│  • get_context - Curated context extraction             │
-│  • update_memory - Knowledge base updates               │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     │ File System Access
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│         ~/.myjarbis-global/projects-registry.json       │
-│              (Projects Index)                           │
-│                                                          │
-│  {                                                      │
-│    "my-laravel-app": {                                  │
-│      "path": "/home/user/projects/my-app",              │
-│      "framework": "laravel",                            │
-│      "initialized": "2025-10-19"                        │
-│    }                                                    │
-│  }                                                      │
-└─────────────────────────────────────────────────────────┘
-                     │
-                     │ Project Paths
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│     Project A/.myjarbis/        Project B/.myjarbis/    │
-│     ├── context/                ├── context/            │
-│     │   ├── project-summary.md  │   ├── project-summary │
-│     │   ├── knowledge-base.md   │   ├── knowledge-base  │
-│     │   └── daily.md            │   └── daily.md        │
-│     ├── prompts/                ├── prompts/            │
-│     │   └── system.md           │   └── system.md       │
-│     └── config/                 └── config/             │
-│         └── settings.json           └── settings.json   │
-└─────────────────────────────────────────────────────────┘
-```
+So MyJarbis is an MCP server that sits **on top of** Claude Code and provides
+two things: memory that persists per project, and scope so only the relevant
+slice rides the system prompt.
 
-## Components
+## The two layers
 
-### 1. MCP Server (`global/mcp-server/`)
+| Layer | Holds | Loaded when |
+|---|---|---|
+| **project** | conventions, stack, practices, specs — anything true across the whole repo | always, as an index of excerpts |
+| **module** | one vertical (`auth`, `mcp-server`, `entrevistas`): its workflow, plan, stories, module-level skills | only the active one |
 
-**Technology:** Node.js + TypeScript + `@modelcontextprotocol/sdk`
+A session is always open **in one module**. `search` defaults to
+`scope=module`, which means the active module plus the project core; widening
+to `scope=project` is an explicit act. This is the whole point: 23 projects
+and 115 modules share one database, and a session reads a knowable slice of it.
 
-**Responsibilities:**
-- Expose resources (memory files) to Claude Code
-- Provide tools for code search and context extraction
-- Manage multiple projects from a single server instance
-- Handle communication via stdio protocol
+## Storage
 
-**Key Files:**
-- `src/index.ts` - Main server, request handlers
-- `src/types.ts` - TypeScript type definitions
-- `src/tools/searchCode.ts` - Code search implementation
-- `src/tools/getContext.ts` - Context extraction
-- `src/tools/updateMemory.ts` - Knowledge base updates
+**SQLite + FTS5**, 35 tables counting the FTS shadow tables. The ones that
+matter:
 
-**Communication:**
-- Protocol: MCP over stdio (standard input/output)
-- Started by: Claude Code (configured in `~/.config/claude/mcp.json`)
-- Lifetime: Runs as long as Claude Code is open
+- `projects`, `modules` — the two layers.
+- `project_context`, `module_context` — documents, typed by `kind` from a
+  catalogue (`context_kinds`), not free text. Each has an FTS5 mirror.
+- `observations` — what was learned, with `topic_key` + `supersedes` so saving
+  again **updates** a note instead of adding a rival to it.
+- `sessions` — one row per working block, with `summary` and `next_session`:
+  the handoff.
+- `project_state` — the living "resume here", a single row that gets
+  overwritten, with an advisory lock that expires so a dead process cannot
+  wedge the project.
+- `skills`, `workflows`, `workflow_steps`, `providers`, `orgs`, `refs`.
 
-### 2. Analyzers (`global/core/analyzers/`)
+Retrieval is pure FTS5 and stays that way. Hybrid/vector was measured and
+rejected: at this scale the deciding axis is latency, not recall.
 
-**Technology:** Node.js (JavaScript)
+### Where the database lives
 
-**Purpose:** Extract project structure automatically during `myjarbis init`
+Two shapes, and resolution tries them in that order:
 
-**Analyzers:**
-- `laravel-analyzer.js` - Analyzes Laravel projects
-  - Scans `app/Models/` for Eloquent models
-  - Extracts relationships (hasMany, belongsTo, etc.)
-  - Scans `app/Http/Controllers/` for controllers
-  - Reads `routes/api.php` and `routes/web.php`
-  - Detects Laravel version and database type
+1. **silo** — `<project>/.myjarbis/memory.db`, one file per project.
+2. **shared brain** — `~/.myjarbis/memory.db`, every project as rows.
 
-- `express-analyzer.js` - Analyzes Express.js projects
-  - Scans `routes/` for route definitions
-  - Detects middleware in `middleware/`
-  - Identifies Mongoose/Sequelize models
-  - Detects entry point (index.js, app.js, server.js)
+`resolveProject()` (`global/mcp-server/src/resolve.ts`) matches a directory to
+a project by, in order: an explicit name (`--project` or `MYJARBIS_PROJECT`),
+the **git remote**, the **path**, or single-tenancy. The remote comes before
+the path so a clone to a different directory still resolves. A silo next to
+the project wins over the shared brain, so a project that never migrated keeps
+working untouched.
 
-- `generic-analyzer.js` - Fallback for unknown projects
-  - Analyzes file structure
-  - Counts files by extension
-  - Reads `package.json` dependencies
-  - Detects programming languages used
+`myjarbis migrate` upgrades a brain (backing it up first); `myjarbis merge`
+moves a silo into the shared one. Neither is automatic — a schema change
+should be something you chose, with a backup you know about.
 
-**Output:** Generates `project-summary.md` with real project structure
+## The MCP surface
 
-### 3. CLI Tools (`bin/`)
+**32 tools: 18 always loaded, 14 deferred.** Deferred tools are advertised by
+name and their schemas are fetched on demand, which keeps the system prompt
+small without hiding capability.
 
-**Technology:** Bash scripts
-
-**Commands:**
-- `myjarbis` - Main CLI entry point
-  - `myjarbis init` - Initialize project
-  - `myjarbis list` - List registered projects
-  - `myjarbis context` - Refresh project analysis
-  - `myjarbis update` - Update global installation
-  - `myjarbis help` - Show help
-
-- `myjarbis-init` - Project initialization script
-  - Detects framework
-  - Creates `.myjarbis/` structure
-  - Runs appropriate analyzer
-  - Copies framework-specific templates
-  - Registers project in global registry
-
-- `myjarbis-update` - Global installation updater
-  - Pulls latest changes (if git repo)
-  - Rebuilds MCP server
-  - Updates dependencies
-
-### 4. Templates (`global/templates/` and `global/core/prompts/`)
-
-**Framework-Specific System Instructions:**
-- `system-laravel.md` - Laravel-specific guidelines
-  - Naming conventions (Model singular, table plural)
-  - Eloquent patterns
-  - Artisan commands
-  - Testing with PHPUnit
-
-- `system-express.md` - Express.js guidelines
-  - Router patterns
-  - Middleware usage
-  - Async/await patterns
-  - Testing with Jest
-
-- `system-generic.md` - Universal guidelines
-  - General best practices
-  - Language-agnostic patterns
-
-**Claude Commands:**
-- `plan.md` - Planning mode template
-- `implement.md` - Implementation mode template
-- `complete.md` - Completion mode template
-
-### 5. Project Structure (`.myjarbis/` in each project)
-
-**Created by:** `myjarbis init`
-
-**Structure:**
-```
-.myjarbis/
-├── bin/
-│   ├── generate-context.sh    # Generate codebase.txt
-│   └── daily.sh                # Update daily.md
-├── context/
-│   ├── project-summary.md      # Auto-generated project overview
-│   ├── knowledge-base.md       # Implementation history
-│   ├── daily.md                # Today's context
-│   └── codebase.txt            # Optional full code dump
-├── prompts/
-│   └── system.md               # Claude's instructions
-└── config/
-    └── settings.json           # Project configuration
-```
-
-## Data Flow
-
-### Session Start Flow
+Always loaded — discovery, session lifecycle, read, write:
 
 ```
-1. User opens Claude Code:
-   claude
-
-2. Claude Code reads ~/.config/claude/mcp.json:
-   {
-     "mcpServers": {
-       "myjarbis": {
-         "command": "node",
-         "args": ["~/.myjarbis-global/mcp-server/build/index.js"]
-       }
-     }
-   }
-
-3. Claude Code starts MCP server via stdio
-
-4. MCP server loads projects registry:
-   ~/.myjarbis-global/projects-registry.json
-
-5. Claude Code requests available resources:
-   → ListResourcesRequest
-
-6. MCP server responds with all resources:
-   [
-     "myjarbis://my-app/memory/instructions",
-     "myjarbis://my-app/memory/project",
-     "myjarbis://my-app/memory/knowledge",
-     "myjarbis://my-app/context/daily"
-   ]
-
-7. Claude Code automatically reads these resources:
-   → ReadResourceRequest for each
-
-8. MCP server reads files from project:
-   /home/user/projects/my-app/.myjarbis/prompts/system.md
-   /home/user/projects/my-app/.myjarbis/context/project-summary.md
-   etc.
-
-9. Claude receives context and is ready
+current_project · list_modules · start_session · end_session · resume
+load_project_core · load_module · search
+save_observation · update_progress · suggest_topic_key · update_observation
+find_by_ref · add_ref · get_project_state · set_project_state
+get_workflow · list_workflows
 ```
 
-### Tool Execution Flow (search_code example)
+Deferred: module/skill administration, imports, org packs, providers,
+interaction style, and the three v0.1 legacy aliases (`search_code`,
+`get_context`, `update_memory`).
+
+The canonical read pattern is `search` first (cheap, returns snippets with row
+ids), then `load_module(row_ids=[...])` for the one or two bodies that matter.
+Loading a whole kind with `full=true` on a large module returns 100KB+ and
+drowns the context.
+
+## Sessions and the handoff
+
+`start_session` opens a session in a module and returns the project index, the
+module context, and the previous session's `next_session` — the "resume here".
+
+`end_session` closes it with a summary and the next handoff. The agent is
+supposed to write both, which is what `/jarbis-close` exists to make reflexive.
+
+If the agent never closes it, the **SessionEnd hook does**, with a synthetic
+`[auto]` summary. That is a safety net, not a substitute: it records activity
+("three commits happened") where a handoff states intent ("do this next").
+Because a synthetic close is always the newest close, it used to bury the last
+hand-written handoff; `start_session` and `resume` now also return
+`curatedResume` when the newest close is machine-written, with its own
+staleness clock and the count of closes burying it. Session recency is ordered
+by `(ended_at, id)` — ids are not in close order.
+
+## Skills, commands, and how they reach a project
+
+Two different artifacts with two different propagation paths. This is the
+distinction most likely to bite:
+
+| | Lives as | Seeded by | Propagated by |
+|---|---|---|---|
+| **skills** (10 baselines) | rows in the brain, materialised to `.claude/skills/myjarbis-*/` | `init` | `myjarbis skill reseed [--all]` |
+| **slash commands** (`/jarbis`, `/jarbis-close`) | files in `.claude/commands/` | `init` | `myjarbis commands sync [--all]` |
+| **org packs** | rows, from a directory you own | `org add` | `myjarbis org sync <org>` |
+
+Baselines: `session-protocol`, `observation-protocol`, `bitacora-progress`,
+`commit-hygiene`, `compact-protocol`, `module-orchestration`, `story-driven`,
+`framework-detect`, `subagent-delegation`, `interaction-style`.
+
+The rule that both paths exist to enforce: **anything seeded by `init` reaches
+new projects only.** Every per-project artifact needs a propagation path on day
+one, or improving it silently helps nobody who already uses the tool.
+
+Two guards worth knowing. `skill reseed` refuses `interaction-style`, which is
+composed per project from the user's language and persona, so every project
+legitimately differs from the baseline. `commands sync` refuses a command file
+that matches no shipped template (`diverged`) — nothing distinguishes a
+hand-edit from an old version, so it asks for `--force` instead of guessing.
+
+Every slash command starts with `jarbis`: the slash menu is a flat namespace
+shared with every other plugin, and the prefix is the only thing marking a
+command as ours.
+
+## The hooks
+
+Four, shipped in `global/templates/.claude-plugin/` and copied into each
+project by `init`. Claude Code provides the attachment points; the logic is
+MyJarbis's, and each script just delegates to `cli.js hook <name>`.
+
+| Hook | Fires | Does |
+|---|---|---|
+| `SessionStart` | Claude opens (`startup`/`clear`) | prints project, modules and the last handoff — in the project's language, read from `settings.json` because no agent exists yet |
+| `SessionStart` | after `/compact` | re-surfaces the pre-compaction snapshot |
+| `UserPromptSubmit` | every prompt | the memory-preference reminder, optional nudges |
+| `Stop` | after **every** agent turn | nudges for a real summary; optional module-skill cleanup |
+| `SessionEnd` | Claude actually closes | auto-closes any open session |
+
+`Stop` firing per turn rather than at exit is why "remind the agent to close
+the session" never worked, and why the real close lives in `SessionEnd`.
+
+## Precedence
+
+MyJarbis replaces Claude Code's defaults rather than negotiating with them.
+Strongest first:
+
+1. What the user just said.
+2. `project_context` kind=`convention`/`practice` for this project.
+3. `get_workflow(slug)` — resolved steps and their gates.
+4. Org pack skills (`overrides/` has already replaced the baselines).
+5. The 10 baseline skills.
+6. Claude Code defaults — only where MyJarbis said nothing.
+
+The limit, in the other direction: none of it overrides safety. A workflow does
+not authorise deleting without a backup, pushing unasked, or skipping a
+confirmation the user would want.
+
+## Layout
 
 ```
-1. User asks: "Find the User model"
-
-2. Claude decides to use search_code tool
-
-3. Claude sends CallToolRequest:
-   {
-     "name": "search_code",
-     "arguments": {
-       "projectName": "my-app",
-       "query": "class User",
-       "fileTypes": ["php"]
-     }
-   }
-
-4. MCP server executes searchCode function:
-   a. Gets project path from registry
-   b. Executes ripgrep with filters:
-      rg "class User" --glob="*.php" --glob="!node_modules/**" /path/to/project
-   c. Parses results
-   d. Formats output
-
-5. MCP server responds:
-   {
-     "content": [
-       {
-         "type": "text",
-         "text": "Found in app/Models/User.php line 8: class User extends Model"
-       }
-     ]
-   }
-
-6. Claude receives results and uses them in response
+bin/                      bash entry points: myjarbis, -init, -doctor, -update, -start
+global/mcp-server/src/    the server
+  index.ts                tool declarations (always-loaded vs deferred)
+  cli.ts                  every CLI subcommand
+  resolve.ts              directory → project, and which brain holds it
+  context.ts              ServerContext: the handle tools receive
+  db/                     schema, migrations, per-table repositories
+  tools/                  one module per tool group
+  org/                    packs, registry, fleet sync
+  health.ts gc.ts review.ts commands.ts
+global/templates/         .claude-plugin (hooks) + .claude/commands (es/en/pt)
+tests/                    15 E2E suites, 248 assertions — bash, own fixtures
 ```
 
-### Memory Update Flow (update_memory example)
-
-```
-1. User runs /complete after implementing feature
-
-2. Claude executes update_memory tool:
-   {
-     "name": "update_memory",
-     "arguments": {
-       "projectName": "my-app",
-       "title": "Product Model Implementation",
-       "what": "Created Product model with relationships",
-       "why": "Needed product catalog feature",
-       "how": "Created migration, model with relations to User and Category",
-       "files": ["app/Models/Product.php", "database/migrations/..."]
-     }
-   }
-
-3. MCP server:
-   a. Validates entry
-   b. Formats as markdown
-   c. Appends to knowledge-base.md:
-
-      ## 2025-10-19 - Product Model Implementation
-
-      **What:** Created Product model with relationships
-      **Why:** Needed product catalog feature
-      **How:** Created migration, model with relations to User and Category
-      **Files:**
-      - app/Models/Product.php
-      - database/migrations/...
-
-4. Next session, Claude reads updated knowledge-base.md
-   → Knows about Product model
-```
-
-## Security Considerations
-
-**File Access:**
-- MCP server only reads files in registered project directories
-- Cannot access files outside of `.myjarbis/` without explicit project registration
-- No write access except to `.myjarbis/context/knowledge-base.md`
-
-**Command Execution:**
-- Tools use `ripgrep` with strict filters
-- No arbitrary command execution
-- Paths are validated before access
-
-**Data Storage:**
-- All data stored locally (no cloud)
-- Projects registry in `~/.myjarbis-global/`
-- Project data in project's `.myjarbis/` folder
-
-## Performance
-
-**MCP Server:**
-- Lightweight (< 20MB memory)
-- Fast resource reads (< 10ms)
-- Tool execution depends on project size
-
-**Analyzers:**
-- Laravel: ~2-5 seconds for medium projects
-- Express: ~1-3 seconds
-- Generic: ~1-2 seconds
-
-**search_code Tool:**
-- Uses ripgrep (fastest code search)
-- Filters node_modules, vendor, .git automatically
-- Returns results in < 1 second for most projects
-
-**get_context Tool:**
-- Analyzes only relevant files
-- Limits output to 3KB
-- Typically < 2 seconds
-
-## Scalability
-
-**Multiple Projects:**
-- Single MCP server serves all projects
-- No performance degradation with many projects
-- Registry lookup is O(1)
-
-**Large Codebases:**
-- Tools use streaming where possible
-- Result limits prevent memory issues
-- Works well with projects up to 100K+ files
-
-## Future Improvements
-
-1. **Auto-detect project changes** - Re-analyze when code changes
-2. **Incremental analysis** - Only analyze changed files
-3. **Caching** - Cache analyzer results
-4. **VS Code extension** - Direct IDE integration
-5. **Team collaboration** - Shared knowledge bases
-6. **Multi-language support** - More framework analyzers
+Tests build their own fixtures and run on any checkout: `bash
+tests/run-all.sh`. A suite is only trusted once the fix it covers has been
+reverted on purpose and the assertion confirmed red — the harness once could
+not fail at all, and that is how it was found.
