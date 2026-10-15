@@ -743,8 +743,21 @@ myjarbis timeline <module> [--json --limit=N]
 myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio
 myjarbis list                       # registered projects
-myjarbis update                     # pull + rebuild MCP server
+myjarbis update [--projects] [--yes] # pull + rebuild MCP server
 myjarbis hook install git-post-commit
+
+myjarbis health                     # every project at once: schema, activity, what is cold
+myjarbis gc [--apply]               # report (and remove) the litter previous versions left
+myjarbis backfill-remotes [--apply] # record the git remote on projects predating the field
+
+myjarbis review [--module=... --threshold=N] [--apply]
+                                    # group notes that are successive versions of one topic
+myjarbis skill reseed [--all] [--apply]
+                                    # push improved baseline skills to projects that exist
+myjarbis commands sync [--all] [--apply] [--force]
+                                    # push the slash commands to projects that exist
+
+myjarbis brain export | import | status   # the DB as tracked NDJSON
 
 myjarbis module list | use <n> | current | unset | add <n> [--description=...]
 myjarbis config list | language <EN|ES|PT> | persona <concise|pair|mentor|reviewer>
@@ -791,12 +804,31 @@ myjarbis import <file.json> --target=... --kind=<kind> --mapping='items[]'
 <summary><b>Tests</b></summary>
 
 ```bash
+bash tests/run-all.sh          # 15 suites, 248 assertions, each builds its own fixture
+```
+
+```bash
 tests/bootstrap-import.sh      # 12 .md + 1 JSON bulk import idempotency
 tests/skills-lifecycle.sh      # baselines + module-level + cleanup on switch
 tests/full-session-cycle.sh    # open → work → close → reopen → resume
 tests/compact-cycle.sh         # snapshot pre/post /compact roundtrip
 tests/dx-batch-1.sh            # stale-resume + timeline + post-commit auto-observation
+tests/v03-isolation.sh         # one project never reads another's rows
+tests/v03-shared-resolution.sh # silo vs shared resolution, and settings surviving a bump
+tests/v03-migrate-merge.sh     # row counts, foreign keys and FTS after a merge
+tests/v03-org-pack.sh          # packs, overrides, workflows, providers
+tests/v03-auto-close.sh        # auto-close, and the curated handoff it must not bury
+tests/v03-maintenance.sh       # health, gc, backfill-remotes
+tests/v04-review-reseed.sh     # what review and reseed must NOT do
+tests/v04-commands-sync.sh     # a hand-edited command survives --apply
+tests/v04-close-ritual.sh      # what /jarbis-close writes, read back by a fresh session
+tests/v04-chat-triggers.sh     # the conversational surface, not the CLI one
 ```
+
+House rule: a new suite is only trusted once the fix it covers has been
+reverted on purpose and the assertion confirmed red. `myjarbis update` is
+deliberately not in here — it is a bash installer that runs `npm install` and
+a build, so it is verified by hand on a real machine instead.
 
 </details>
 
