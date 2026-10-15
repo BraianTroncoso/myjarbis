@@ -943,7 +943,7 @@ function readLegacySettings(myjarbisDir: string): LegacySettings {
  * hardcoded template and writing it over the old file. Everything the
  * function did not happen to know about was deleted, silently, during a
  * migration — and the keys it does not know about are the ones a person set
- * on purpose. On this repository's own twin project it removed
+ * on purpose. On one real project it removed
  * `language: "es"`, so the SessionStart hook started printing in English, and
  * `brain.auto_export_on_session_end`, so the NDJSON dump stopped refreshing
  * and the repo shipped a brain frozen a week earlier without saying so.

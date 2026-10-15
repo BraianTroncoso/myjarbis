@@ -124,8 +124,8 @@ const MANIFEST = 'manifest.json';
 
 /**
  * `projects.path` is an absolute filesystem path. Writing it verbatim would
- * make the dump machine-specific: laptop A commits `/home/a/dev/twin`, laptop B
- * imports, re-exports as `/home/b/dev/twin`, and `projects.ndjson` flips on
+ * make the dump machine-specific: laptop A commits `/home/a/dev/app`, laptop B
+ * imports, re-exports as `/home/b/dev/app`, and `projects.ndjson` flips on
  * every hand-off — noise in git, and a merge conflict on the one row that must
  * never conflict.
  *

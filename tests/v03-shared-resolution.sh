@@ -225,7 +225,7 @@ fi
 # `bumpSettingsToV02` took the old settings as an argument and then ignored
 # it, writing a hardcoded template over the file. Anything it did not happen
 # to know about was deleted mid-migration — and what it does not know about
-# is exactly what a person set by hand. On the twin project it removed
+# is exactly what a person set by hand. On one real project it removed
 # `language: "es"` (the SessionStart hook started printing in English) and
 # `brain.auto_export_on_session_end` (the NDJSON dump stopped refreshing, so
 # the repo shipped a brain a week stale without a word).
