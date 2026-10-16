@@ -601,7 +601,7 @@ Switch modules and they disappear; the new module's appear.
 <details>
 <summary><b>What the hooks do automatically</b></summary>
 
-`.claude-plugin/hooks/hooks.json` registers 4 events:
+`init` binds 5 events, as a `hooks` block in `.claude/settings.local.json`:
 
 - **SessionStart (startup|clear)** — if `.myjarbis/active` is set,
   auto-starts that module and prints the curated `next_session` (no menu).
@@ -610,6 +610,20 @@ Switch modules and they disappear; the new module's appear.
 - **UserPromptSubmit** — first message forces ToolSearch + detects story
   localIds. Optional save reminder via `nudges.save_reminder_minutes`.
 - **Stop** — reminds you to close an open session.
+- **SessionEnd** — auto-closes any session still open when Claude exits.
+
+The scripts live in `.claude-plugin/scripts/`, but copying that directory is
+not what attaches them: Claude Code only reads a plugin's `hooks.json` for
+plugins installed from a marketplace. `myjarbis hook install claude` writes
+the binding, `init` calls it, `myjarbis update --projects` re-asserts it, and
+`myjarbis doctor` tells you if a project has the scripts but no wiring. The
+write merges, so your own hooks and permissions in that file are untouched.
+
+If MyJarbis never greets you when Claude opens, that wiring is what to check:
+
+```bash
+myjarbis hook install claude     # then reopen Claude
+```
 
 **Optional git `post-commit` hook** (`myjarbis hook install git-post-commit`):
 on every commit while a session is open, saves a `progress` observation
@@ -744,6 +758,8 @@ myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio
 myjarbis list                       # registered projects
 myjarbis update [--projects] [--yes] # pull + rebuild MCP server
+myjarbis hook install claude [--check]
+                                    # bind the lifecycle hooks (init does this; --check only reports)
 myjarbis hook install git-post-commit
 
 myjarbis health                     # every project at once: schema, activity, what is cold

@@ -142,7 +142,7 @@ command as ours.
 
 ## The hooks
 
-Four, shipped in `global/templates/.claude-plugin/` and copied into each
+Five, shipped in `global/templates/.claude-plugin/` and copied into each
 project by `init`. Claude Code provides the attachment points; the logic is
 MyJarbis's, and each script just delegates to `cli.js hook <name>`.
 
@@ -156,6 +156,32 @@ MyJarbis's, and each script just delegates to `cli.js hook <name>`.
 
 `Stop` firing per turn rather than at exit is why "remind the agent to close
 the session" never worked, and why the real close lives in `SessionEnd`.
+
+### How they get attached
+
+Copying `.claude-plugin/` into a project does **not** attach anything. Claude
+Code reads a plugin's `hooks/hooks.json` only for plugins installed from a
+marketplace (`claude plugin install`), and never auto-discovers a
+`.claude-plugin/` directory sitting in the working tree. For a long stretch
+every project `init` touched had all five events dead — the scripts ran
+correctly by hand, and `doctor` passed green because it checked that the files
+existed, not that anything ran them.
+
+What attaches them is a `hooks` block that `init` writes into
+`.claude/settings.local.json` (`myjarbis hook install claude`, re-asserted by
+`myjarbis update --projects`). That file is chosen deliberately: `init` already
+gitignores it as per-developer state, so the wiring leaves nothing to commit in
+a user's repo — the same reason `.claude-plugin/` itself stays untracked.
+
+The write merges. Unrelated keys, and hooks the user added themselves, survive;
+only MyJarbis's own entries — recognised by their command pointing into
+`.claude-plugin/scripts/` — are replaced on a re-run. Malformed JSON is refused
+rather than overwritten, because that file also carries the permission
+allowlist. `myjarbis hook install claude --check` reports without writing, and
+is what `doctor` now calls.
+
+`hooks.json` is kept as the plugin manifest for a future marketplace install.
+It is inert today.
 
 ## Precedence
 

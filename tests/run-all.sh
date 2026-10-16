@@ -28,6 +28,7 @@ SUITES=(
   v04-commands-sync
   v04-close-ritual
   v04-chat-triggers
+  v04-hook-wiring
 )
 
 PASS=0; FAIL=0; FAILED_NAMES=()

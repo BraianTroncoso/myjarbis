@@ -133,6 +133,18 @@ migrate nothing.**
 It replaces `<project>/.claude-plugin/` wholesale. If a project has hand-edited
 hook scripts, copy them aside first.
 
+It also re-asserts the hook wiring in each project's
+`.claude/settings.local.json`. Any project initialised before that wiring
+existed has hook scripts on disk that Claude Code never ran — copying the
+scripts alone was never enough to attach them. Check a single project with:
+
+```bash
+myjarbis doctor          # warns: "scripts present but NOT wired"
+```
+
+Then reopen Claude — hooks are read at startup, so a running session keeps the
+old (absent) wiring.
+
 ---
 
 ## 4. The schema (v3 → v4)

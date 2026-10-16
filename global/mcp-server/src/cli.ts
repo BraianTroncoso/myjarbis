@@ -1195,7 +1195,7 @@ function appendToGitignore(projectPath: string, patterns: string[]): void {
 
 function runHook(argv: string[]): void {
   const [event, ...rest] = argv;
-  if (!event) fail('Usage: cli.js hook <session-start|session-stop|post-compaction|user-prompt-submit|git-post-commit|install>');
+  if (!event) fail('Usage: cli.js hook <session-start|session-stop|session-end|post-compaction|user-prompt-submit|git-post-commit|install>');
 
   switch (event) {
     case 'session-start':
@@ -1941,6 +1941,159 @@ function safeGit(cwd: string, args: string[]): string | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// hook install claude
+//
+// Binds the .claude-plugin/scripts/*.sh to Claude Code's lifecycle.
+//
+// Copying .claude-plugin/ into a project is NOT enough: Claude Code only
+// reads a plugin's hooks.json for plugins installed from a marketplace
+// (`claude plugin install`), and it never auto-discovers a .claude-plugin/
+// directory sitting in the working tree. So a project initialised by
+// `myjarbis init` had all four events dead — the greeting, the module
+// menu, the pre-compaction snapshot and the auto-close — while the
+// scripts themselves worked fine when run by hand.
+//
+// The fix is to declare the same four events in a settings file Claude
+// Code actually reads. We use .claude/settings.local.json because `init`
+// already gitignores it as per-developer state (see appendToGitignore
+// above), so wiring the hooks leaves nothing to commit in a user's repo.
+// ─────────────────────────────────────────────────────────────────────
+
+const HOOK_SCRIPT_DIR = '.claude-plugin/scripts';
+
+/** The events MyJarbis binds and the script each one runs. SessionStart
+ *  appears twice because startup and post-compaction are different
+ *  scripts behind the same event, told apart by their matcher.
+ *
+ *  `timeout` is in SECONDS — the hooks.json this replaces said 10000 and
+ *  5000, which read as ~3 hours rather than the 10s and 5s intended. */
+const CLAUDE_HOOKS: ReadonlyArray<{
+  event: string;
+  matcher?: string;
+  script: string;
+  timeout: number;
+}> = [
+  { event: 'SessionStart', matcher: 'startup|clear', script: 'session-start.sh', timeout: 10 },
+  { event: 'SessionStart', matcher: 'compact', script: 'post-compaction.sh', timeout: 10 },
+  { event: 'UserPromptSubmit', script: 'user-prompt-submit.sh', timeout: 5 },
+  { event: 'Stop', script: 'session-stop.sh', timeout: 5 },
+  { event: 'SessionEnd', script: 'session-end.sh', timeout: 10 },
+];
+
+/** Quoted so a project path containing spaces still resolves — the
+ *  hooks.json this replaces interpolated ${CLAUDE_PROJECT_DIR} bare. */
+function hookCommand(script: string): string {
+  return `"\${CLAUDE_PROJECT_DIR}/${HOOK_SCRIPT_DIR}/${script}"`;
+}
+
+/** True when a settings hook entry is one of ours, i.e. every command it
+ *  runs points into .claude-plugin/scripts/. Used to replace our own
+ *  entries on re-run while leaving the user's own hooks untouched. */
+function isMyJarbisHookEntry(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  const hooks = (entry as { hooks?: unknown }).hooks;
+  if (!Array.isArray(hooks) || hooks.length === 0) return false;
+  return hooks.every((h) => {
+    const cmd = (h as { command?: unknown }).command;
+    return typeof cmd === 'string' && cmd.includes(HOOK_SCRIPT_DIR);
+  });
+}
+
+interface WireReport {
+  file: string;
+  /** "SessionStart (startup|clear) → session-start.sh" per bound event. */
+  wired: string[];
+  /** Our own entries found and rewritten, rather than duplicated. */
+  replaced: number;
+  /** The user's own hook entries on the same events, left as they were. */
+  kept: number;
+  /** Scripts named in CLAUDE_HOOKS that are not on disk or not executable. */
+  unusable: string[];
+  /** False when the file already said exactly this — nothing was written. */
+  changed: boolean;
+}
+
+function wireClaudeHooks(projectPath: string, dryRun = false): WireReport {
+  const file = path.join(projectPath, '.claude', 'settings.local.json');
+
+  let settings: Record<string, unknown> = {};
+  let before = '';
+  if (fs.existsSync(file)) {
+    before = fs.readFileSync(file, 'utf-8');
+    try {
+      const parsed = JSON.parse(before);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        fail(`${file} is not a JSON object — refusing to overwrite it.`);
+      }
+      settings = parsed as Record<string, unknown>;
+    } catch (err) {
+      // Never clobber this file: it carries the user's permission
+      // allowlist, and malformed JSON silently disables every setting in
+      // it, so a blind rewrite would lose real configuration.
+      fail(
+        `${file} is not valid JSON (${err instanceof Error ? err.message : err}). ` +
+          'Fix it by hand, then re-run — MyJarbis will not overwrite it.'
+      );
+    }
+  }
+
+  const hooksBlock: Record<string, unknown[]> =
+    settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks)
+      ? ({ ...(settings.hooks as Record<string, unknown[]>) } as Record<string, unknown[]>)
+      : {};
+
+  const report: WireReport = {
+    file,
+    wired: [],
+    replaced: 0,
+    kept: 0,
+    unusable: [],
+    changed: false,
+  };
+
+  // Group by event first, so the two SessionStart entries land in one array.
+  const byEvent = new Map<string, unknown[]>();
+  for (const h of CLAUDE_HOOKS) {
+    const script = path.join(projectPath, HOOK_SCRIPT_DIR, h.script);
+    try {
+      fs.accessSync(script, fs.constants.X_OK);
+    } catch {
+      report.unusable.push(h.script);
+      continue;
+    }
+    const entry: Record<string, unknown> = {};
+    if (h.matcher) entry.matcher = h.matcher;
+    entry.hooks = [{ type: 'command', command: hookCommand(h.script), timeout: h.timeout }];
+
+    const list = byEvent.get(h.event) ?? [];
+    list.push(entry);
+    byEvent.set(h.event, list);
+    report.wired.push(`${h.event}${h.matcher ? ` (${h.matcher})` : ''} → ${h.script}`);
+  }
+
+  for (const [event, ours] of byEvent) {
+    const existing = Array.isArray(hooksBlock[event]) ? hooksBlock[event] : [];
+    const foreign = existing.filter((e) => !isMyJarbisHookEntry(e));
+    report.replaced += existing.length - foreign.length;
+    report.kept += foreign.length;
+    // Ours go first so the session greeting is injected before any hook
+    // the user added on the same event can write to stdout.
+    hooksBlock[event] = [...ours, ...foreign];
+  }
+
+  settings.hooks = hooksBlock;
+  const after = JSON.stringify(settings, null, 2) + '\n';
+  // `changed` means "the file on disk does not already say this", which is
+  // what --check reports on without writing anything.
+  report.changed = after !== before;
+  if (report.changed && !dryRun) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, after, 'utf-8');
+  }
+  return report;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // hook install [git-post-commit]
 //
 // Writes a per-project .git/hooks/post-commit that calls
@@ -1961,8 +2114,11 @@ command -v myjarbis >/dev/null 2>&1 || exit 0
 
 function runHookInstall(rest: string[]): void {
   const which = rest[0] ?? 'git-post-commit';
+  if (which === 'claude') {
+    return runHookInstallClaude(rest.slice(1));
+  }
   if (which !== 'git-post-commit') {
-    fail(`Unknown hook to install: ${which}. Currently only 'git-post-commit' is supported.`);
+    fail(`Unknown hook to install: ${which}. Supported: 'claude', 'git-post-commit'.`);
   }
 
   const ctx = ServerContext.initialize();
@@ -2014,6 +2170,71 @@ function runHookInstall(rest: string[]): void {
     console.log('');
   } finally {
     ctx.close();
+  }
+}
+
+/** Project root for hook wiring, resolved WITHOUT opening the brain.
+ *  `init` wires the hooks at step 6, three steps before memory.db is
+ *  seeded, so going through ServerContext here would fail on exactly the
+ *  run that needs it most. Nothing about writing a settings file needs
+ *  the DB anyway, which also lets `doctor` repair a project whose brain
+ *  is broken. */
+function hookWiringRoot(): string {
+  let dir = process.cwd();
+  for (;;) {
+    if (
+      fs.existsSync(path.join(dir, '.claude-plugin', 'scripts')) ||
+      fs.existsSync(path.join(dir, '.myjarbis')) ||
+      fs.existsSync(path.join(dir, '.git'))
+    ) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      fail(
+        'Could not find a project root from ' +
+          process.cwd() +
+          ' — run this from inside a MyJarbis project.'
+      );
+    }
+    dir = parent;
+  }
+}
+
+function runHookInstallClaude(rest: string[] = []): void {
+  const check = rest.includes('--check');
+  const report = wireClaudeHooks(hookWiringRoot(), check);
+
+  // --check is for `doctor`: report without writing, and exit non-zero
+  // when the hooks are not already bound, so a wrapper can act on it.
+  if (check) {
+    if (report.changed || report.unusable.length > 0) {
+      console.log('NOT WIRED');
+      for (const s of report.unusable) console.log(`  unusable script: ${s}`);
+      process.exit(1);
+    }
+    console.log('WIRED');
+    return;
+  }
+
+  ptySection(
+    report.changed ? 'MyJarbis · Claude Code hooks wired' : 'MyJarbis · Claude Code hooks'
+  );
+  ptyKV('File', dim(report.file));
+  if (!report.changed) ptyKV('Status', dim('already wired (no changes)'));
+  for (const line of report.wired) ptyLine('  ' + line);
+  if (report.replaced > 0) ptyKV('Rewired', `${report.replaced} previous MyJarbis entr${report.replaced === 1 ? 'y' : 'ies'}`);
+  if (report.kept > 0) ptyKV('Kept', `${report.kept} of your own hook(s) on the same events`);
+  if (report.unusable.length > 0) {
+    console.log('');
+    ptyKV('Skipped', red(report.unusable.join(', ')));
+    ptyDim('Those scripts are missing or not executable under .claude-plugin/scripts/.');
+    ptyDim('Run `myjarbis init` in this project to restore them, then re-run this.');
+  }
+  console.log('');
+  if (report.changed) {
+    ptyDim('Claude Code reads hooks at startup — reopen Claude for these to fire.');
+    console.log('');
   }
 }
 

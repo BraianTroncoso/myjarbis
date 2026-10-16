@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **None of the hooks were ever attached.** `init` copied
+  `.claude-plugin/` into the project and stopped there, but Claude Code reads
+  a plugin's `hooks/hooks.json` only for plugins installed from a marketplace
+  — it never auto-discovers a `.claude-plugin/` directory in the working tree.
+  With no marketplace to install from, all five events were dead in every
+  project MyJarbis ever initialised: no greeting, no module menu, no
+  post-compaction snapshot, no `SessionEnd` auto-close. What made it survive
+  is that the failure is invisible from the inside — each script works
+  perfectly when run by hand, and `doctor` passed green because it asserted
+  that `hooks.json` and the scripts existed, never that anything ran them.
+
+  `init` now calls `myjarbis hook install claude`, which writes the binding as
+  a `hooks` block in `.claude/settings.local.json`. That file is the right
+  home for it: `init` already gitignores it as per-developer state, so the
+  wiring leaves nothing to commit in a user's repo — the same reasoning that
+  keeps `.claude-plugin/` untracked. The write merges rather than replaces,
+  because that file also carries the permission allowlist: unrelated keys and
+  hooks the user added themselves survive, only MyJarbis's own entries are
+  rewritten on a re-run, and malformed JSON is refused instead of overwritten.
+
+  `myjarbis update --projects` re-asserts the wiring, since refreshing the
+  scripts without it would hand an old project new scripts nobody runs.
+  Existing projects need one `myjarbis update --projects` and a Claude restart
+  — hooks are read at startup.
+- **`doctor` reported on the wrong thing.** It checked that
+  `.claude-plugin/hooks/hooks.json` existed, which was true and meaningless.
+  It now runs `hook install claude --check` and warns when the scripts are
+  present but unwired, which is the state it used to pass. Its script list was
+  also one short: `session-end.sh` shipped in v0.4.x and was never added, so
+  the check that would have caught a missing auto-close hook never ran.
+- **Hook timeouts were a thousand times too long.** `hooks.json` declared
+  `10000` and `5000` for a field Claude Code reads in **seconds**, i.e. ~3
+  hours and ~1.4 hours rather than the intended 10s and 5s. The wiring writes
+  seconds. `${CLAUDE_PROJECT_DIR}` is also quoted now, so a project path
+  containing a space resolves.
+
+### Testing
+
+Sixteen suites, 273 assertions. The new `v04-hook-wiring` suite covers the
+end-to-end claim (`init` leaves the events bound and every bound command
+runs), the non-destructive merge, idempotency, the malformed-JSON refusal, and
+the `doctor` warning — validated by reverting the fix, which fails it.
+
 ## v0.4.5
 
 Three defects in `myjarbis update`, all found by running it on a real machine

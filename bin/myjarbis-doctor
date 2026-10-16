@@ -174,13 +174,8 @@ if [ -d ".myjarbis" ]; then
     else
         warn ".claude-plugin/plugin.json missing"
     fi
-    if [ -f ".claude-plugin/hooks/hooks.json" ]; then
-        pass "hooks.json"
-    else
-        warn ".claude-plugin/hooks/hooks.json missing"
-    fi
 
-    HOOK_SCRIPTS=(session-start.sh user-prompt-submit.sh post-compaction.sh session-stop.sh)
+    HOOK_SCRIPTS=(session-start.sh user-prompt-submit.sh post-compaction.sh session-stop.sh session-end.sh)
     HOOKS_OK=true
     for s in "${HOOK_SCRIPTS[@]}"; do
         if [ ! -x ".claude-plugin/scripts/$s" ]; then
@@ -189,7 +184,23 @@ if [ -d ".myjarbis" ]; then
         fi
     done
     if [ "$HOOKS_OK" = "true" ]; then
-        pass "4 hook scripts present and executable"
+        pass "${#HOOK_SCRIPTS[@]} hook scripts present and executable"
+    fi
+
+    # The scripts being on disk says nothing about whether Claude Code
+    # runs them. This check used to stop at "hooks.json exists", which
+    # passed green for months while all four events were dead: Claude
+    # Code only reads a plugin's hooks.json for marketplace-installed
+    # plugins, never for a .claude-plugin/ directory in the working tree.
+    # What binds them is the hooks block in .claude/settings.local.json,
+    # so that is what we verify.
+    if [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
+        if node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude --check >/dev/null 2>&1; then
+            pass "hooks wired into .claude/settings.local.json"
+        else
+            warn "hook scripts present but NOT wired — Claude Code will never run them"
+            note "fix: myjarbis hook install claude   (then reopen Claude)"
+        fi
     fi
 
     if [ -d ".claude/skills" ]; then

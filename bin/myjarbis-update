@@ -312,7 +312,14 @@ process.stdin.on('end', () => {
                 rm -rf "$dir/.claude-plugin"
                 cp -r "$INSTALL_DIR/templates/.claude-plugin" "$dir/.claude-plugin"
                 chmod +x "$dir"/.claude-plugin/scripts/*.sh 2>/dev/null || true
-                note "  $name — hooks refreshed"
+                # Re-assert the wiring too. Refreshing the scripts without
+                # it would leave a project that predates the wiring with
+                # new scripts nobody runs, which is the bug this fixes.
+                if ( cd "$dir" && node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude ) >/dev/null 2>&1; then
+                    note "  $name — hooks refreshed and wired"
+                else
+                    note "  $name — hooks refreshed, but wiring failed (run: myjarbis hook install claude)"
+                fi
             fi
         done <<< "$REPORT"
     elif [ "$STALE_HOOKS" -gt 0 ]; then

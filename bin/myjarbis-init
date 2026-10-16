@@ -342,7 +342,20 @@ if [ -d "$INSTALL_DIR/templates/.claude-plugin" ]; then
     rm -rf .claude-plugin
     cp -r "$INSTALL_DIR/templates/.claude-plugin" .claude-plugin
     chmod +x .claude-plugin/scripts/*.sh 2>/dev/null || true
-    ok
+
+    # Copying the scripts is only half the job. Claude Code reads a
+    # plugin's hooks.json only for plugins installed from a marketplace,
+    # and never auto-discovers a .claude-plugin/ directory in the working
+    # tree — so without this the four events stay dead and MyJarbis never
+    # greets the user. Declaring them in .claude/settings.local.json is
+    # what actually binds them. That file is already gitignored as
+    # per-developer state, so nothing lands in the user's commit.
+    if node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude >/dev/null 2>&1; then
+        ok
+    else
+        warn "hook scripts copied, but wiring them into .claude/settings.local.json failed"
+        note "run 'myjarbis hook install claude' by hand to finish"
+    fi
 else
     warn "plugin templates not found at $INSTALL_DIR/templates/.claude-plugin"
 fi

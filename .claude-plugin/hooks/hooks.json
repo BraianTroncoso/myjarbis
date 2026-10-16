@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-start.sh",
-            "timeout": 10000
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-start.sh\"",
+            "timeout": 10
           }
         ]
       },
@@ -16,8 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/post-compaction.sh",
-            "timeout": 10000
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/post-compaction.sh\"",
+            "timeout": 10
           }
         ]
       }
@@ -27,8 +27,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/user-prompt-submit.sh",
-            "timeout": 5000
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/user-prompt-submit.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -38,8 +38,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-stop.sh",
-            "timeout": 5000
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-stop.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -49,8 +49,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-end.sh",
-            "timeout": 10000
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude-plugin/scripts/session-end.sh\"",
+            "timeout": 10
           }
         ]
       }
