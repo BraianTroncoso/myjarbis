@@ -10,7 +10,34 @@
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-export MYJARBIS_INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$(dirname "$HERE")/global}"
+REPO="$(dirname "$HERE")"
+export MYJARBIS_INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$REPO/global}"
+
+# ─── refuse to run against a shadowed bin/ ────────────────────────
+#
+# MYJARBIS_INSTALL_DIR defaults to the checkout's global/, and bin/myjarbis
+# resolves subcommands by preferring $INSTALL_DIR/bin before falling back to
+# $INSTALL_DIR/../bin. global/bin/ is not in the repository, so normally the
+# fallback wins and the suites exercise bin/ — the code being edited.
+#
+# But `myjarbis update` copies the checkout's bin/ into its install dir, and
+# a dev run with MYJARBIS_INSTALL_DIR pointed at this global/ leaves a real
+# global/bin/ behind. From then on every suite silently tests that snapshot
+# instead of bin/, and keeps passing while the source is broken. There is no
+# symptom: the output is identical.
+#
+# Fatal rather than a warning, and fatal rather than deleting it: the
+# directory is someone's state, and a green suite that proved nothing is
+# worse than no suite.
+if [ -d "$REPO/global/bin" ]; then
+  echo "✗ $REPO/global/bin exists and shadows $REPO/bin" >&2
+  echo "  bin/myjarbis prefers \$MYJARBIS_INSTALL_DIR/bin, so every suite would" >&2
+  echo "  test that copy instead of the checkout, and pass regardless." >&2
+  echo "  It is a leftover from running \`myjarbis update\` with" >&2
+  echo "  MYJARBIS_INSTALL_DIR=$REPO/global. Remove it and re-run:" >&2
+  echo "      rm -rf $REPO/global/bin $REPO/global/.source" >&2
+  exit 1
+fi
 
 SUITES=(
   bootstrap-import
@@ -30,6 +57,7 @@ SUITES=(
   v04-chat-triggers
   v04-hook-wiring
   v045-session-ownership
+  v045-unwired-detection
 )
 
 PASS=0; FAIL=0; FAILED_NAMES=()

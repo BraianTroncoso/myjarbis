@@ -38,6 +38,7 @@ import { autoCloseAll, AUTO_MARKER } from './tools/autoClose.js';
 import { readPack, applyPack, PackApplyReport } from './org/pack.js';
 import { syncOrg } from './org/sync.js';
 import { readRegistry, readRegistryRaw } from './org/registry.js';
+import { CLAUDE_HOOKS, HOOK_SCRIPT_DIR, hookCommand, isMyJarbisHookEntry } from './hooks.js';
 import { syncCommands, pendingFiles, CommandStatus } from './commands.js';
 import { listContextKinds, migrateKinds } from './tools/kinds.js';
 import {
@@ -1959,45 +1960,9 @@ function safeGit(cwd: string, args: string[]): string | null {
 // above), so wiring the hooks leaves nothing to commit in a user's repo.
 // ─────────────────────────────────────────────────────────────────────
 
-const HOOK_SCRIPT_DIR = '.claude-plugin/scripts';
-
-/** The events MyJarbis binds and the script each one runs. SessionStart
- *  appears twice because startup and post-compaction are different
- *  scripts behind the same event, told apart by their matcher.
- *
- *  `timeout` is in SECONDS — the hooks.json this replaces said 10000 and
- *  5000, which read as ~3 hours rather than the 10s and 5s intended. */
-const CLAUDE_HOOKS: ReadonlyArray<{
-  event: string;
-  matcher?: string;
-  script: string;
-  timeout: number;
-}> = [
-  { event: 'SessionStart', matcher: 'startup|clear', script: 'session-start.sh', timeout: 10 },
-  { event: 'SessionStart', matcher: 'compact', script: 'post-compaction.sh', timeout: 10 },
-  { event: 'UserPromptSubmit', script: 'user-prompt-submit.sh', timeout: 5 },
-  { event: 'Stop', script: 'session-stop.sh', timeout: 5 },
-  { event: 'SessionEnd', script: 'session-end.sh', timeout: 10 },
-];
-
-/** Quoted so a project path containing spaces still resolves — the
- *  hooks.json this replaces interpolated ${CLAUDE_PROJECT_DIR} bare. */
-function hookCommand(script: string): string {
-  return `"\${CLAUDE_PROJECT_DIR}/${HOOK_SCRIPT_DIR}/${script}"`;
-}
-
-/** True when a settings hook entry is one of ours, i.e. every command it
- *  runs points into .claude-plugin/scripts/. Used to replace our own
- *  entries on re-run while leaving the user's own hooks untouched. */
-function isMyJarbisHookEntry(entry: unknown): boolean {
-  if (!entry || typeof entry !== 'object') return false;
-  const hooks = (entry as { hooks?: unknown }).hooks;
-  if (!Array.isArray(hooks) || hooks.length === 0) return false;
-  return hooks.every((h) => {
-    const cmd = (h as { command?: unknown }).command;
-    return typeof cmd === 'string' && cmd.includes(HOOK_SCRIPT_DIR);
-  });
-}
+// CLAUDE_HOOKS, hookCommand and isMyJarbisHookEntry now live in
+// ./hooks.js, shared with health.ts so that the writer of the wiring and
+// the detector of a missing wiring cannot drift apart. See that file.
 
 interface WireReport {
   file: string;
@@ -2840,6 +2805,14 @@ function runHealth(argv: string[]): void {
     if (!p.brain) flagsOut.push(red('no brain'));
     else if (!p.schemaCurrent) flagsOut.push(red(`v${p.schema}`));
     if (p.hooks === 'stale' || p.hooks === 'missing') flagsOut.push(amber(`hooks ${p.hooks}`));
+    // Flagged even when the scripts are current, which is the whole point:
+    // "scripts fine, bound to nothing" is the state that used to render as
+    // a clean row. Red rather than amber — an unwired project has no
+    // greeting, no auto-close and no pre-compaction snapshot.
+    if (p.pathExists && p.wiring === 'unwired') flagsOut.push(red('unwired'));
+    else if (p.wiring === 'partial') {
+      flagsOut.push(amber(`${p.wiringMissing.length} event(s) unbound`));
+    }
 
     // The bar shows freshness, not idleness: a full bar is a live project.
     // Filling it as it rots would put the longest bar on the most abandoned
@@ -2865,6 +2838,16 @@ function runHealth(argv: string[]): void {
   }
   if (t.cold60d) {
     ptyDim(`${t.cold60d} project(s) untouched for more than 60 days.`);
+  }
+  if (t.hooksUnwired) {
+    // Named with the command that fixes it, because the one that looks
+    // like it should (`myjarbis update --projects`) does not: it only
+    // visits projects whose scripts are stale, and these have fresh ones.
+    ptyDim(
+      `${t.hooksUnwired} project(s) have hooks that are not bound to any event — ` +
+        'their scripts never run.',
+    );
+    ptyDim('  Fix, from inside each one: myjarbis hook install claude');
   }
 
   // ── adoption ──
