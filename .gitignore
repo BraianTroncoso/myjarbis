@@ -98,3 +98,8 @@ docs/MIGRATION-v0.3.md
 docs/HOW-IT-WORKS.md
 docs/SESSION-*.md
 docs/COMPARISON-*.md
+
+# Install artifacts a dev run leaves in the checkout. global/bin shadows
+# bin/ (see the guard in tests/run-all.sh); .source records an install path.
+global/bin/
+global/.source
