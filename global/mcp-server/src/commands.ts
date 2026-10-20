@@ -17,6 +17,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { readRegistry } from './org/registry.js';
 
@@ -49,11 +51,21 @@ export const COMMAND_LANGUAGES = ['es', 'en', 'pt'];
  * `current`        — identical to the template for the project's language.
  * `other-language` — identical to another language's template, so it is
  *                    ours and only the language is wrong.
- * `diverged`       — matches nothing we ship: either hand-edited or from
- *                    an older version, and we cannot tell which.
+ * `old-shipped-version`
+ *                  — byte-identical to a template this repository shipped at
+ *                    some earlier commit. Ours, just stale, so it is updated
+ *                    without `--force`.
+ * `diverged`       — matches nothing we ship and nothing we ever shipped, so
+ *                    somebody edited it. Needs `--force`.
  * `no-template`    — the install dir has no template for this command.
  */
-export type CommandStatus = 'new' | 'current' | 'other-language' | 'diverged' | 'no-template';
+export type CommandStatus =
+  | 'new'
+  | 'current'
+  | 'other-language'
+  | 'old-shipped-version'
+  | 'diverged'
+  | 'no-template';
 
 export interface CommandFileResult {
   command: string;
@@ -109,6 +121,123 @@ function commandsDir(root: string): string {
   return path.join(root, '.claude', 'commands');
 }
 
+/**
+ * The git checkout the templates came from, or null.
+ *
+ * Two shapes: a dev checkout pointed at `<repo>/global`, where the repo root is
+ * two levels above the templates; and a real installation, where
+ * `<install>/.source` records the checkout `update` pulls from. Returns null
+ * when neither resolves to a git repository, which is the signal to fall back
+ * to the pre-history behaviour rather than to guess.
+ */
+function sourceCheckout(templates: string): string | null {
+  const candidates: string[] = [];
+
+  const twoUp = path.resolve(templates, '..', '..');
+  candidates.push(twoUp);
+
+  try {
+    const recorded = fs.readFileSync(path.resolve(templates, '..', '.source'), 'utf-8').trim();
+    if (recorded) candidates.push(recorded);
+  } catch {
+    /* installs older than v0.3 never wrote .source */
+  }
+
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+  }
+  return null;
+}
+
+/** Git's object name for a file's contents: sha1 over `blob <len>\0<bytes>`.
+ *  Computed here rather than shelling out to `git hash-object`, so comparing
+ *  one file costs nothing. */
+function blobSha(content: string): string {
+  const bytes = Buffer.from(content, 'utf-8');
+  return createHash('sha1')
+    .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`, 'utf-8'), bytes]))
+    .digest('hex');
+}
+
+/**
+ * Every version of the command templates this repository has ever shipped,
+ * as a set of blob object names.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * `diverged` meant "matches no template we currently ship", which conflates
+ * two opposite situations: a file somebody hand-edited, and a file we shipped
+ * ourselves two releases ago. The tool refused to touch either without
+ * `--force`, which is correct for the first and useless for the second.
+ *
+ * It cost something real. A commit removed three live client identifiers from
+ * the `/jarbis` template because they appeared in user-facing output of a
+ * public repo. That fixed the repository and nothing else: 23 projects on disk
+ * kept the old file, every one of them reported `diverged`, and the scrub read
+ * as done in git while being undone everywhere it mattered. Finding out took
+ * comparing all 23 copies against the template as it existed at several past
+ * commits, by hand, to establish that `--force` was safe.
+ *
+ * An exact object-name match answers that question for free: a hand-edited
+ * file cannot collide with a blob we actually shipped, so anything in this set
+ * is ours and can be updated without asking. `--force` goes back to meaning
+ * what it says — overwrite a file a human changed.
+ *
+ * Two git calls total, however many commits and languages there are:
+ * `rev-list` for the commits that touched the templates, then one
+ * `cat-file --batch-check` resolving every (commit, path) pair at once.
+ */
+function shippedHistory(templates: string): Set<string> {
+  const known = new Set<string>();
+  const repo = sourceCheckout(templates);
+  if (!repo) return known;
+
+  // Paths as the repository spells them, which is not how the install dir
+  // does: templates live under global/ in the repo and at the top in an
+  // installation.
+  const relPaths: string[] = [];
+  for (const command of SHIPPED_COMMANDS) {
+    for (const lang of COMMAND_LANGUAGES) {
+      relPaths.push(`global/templates/.claude/commands/${command}.${lang}.md`);
+    }
+  }
+
+  try {
+    const commits = execFileSync('git', ['rev-list', '--all', '--', ...relPaths], {
+      cwd: repo,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 16 * 1024 * 1024,
+    })
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (commits.length === 0) return known;
+
+    const queries = commits.flatMap((c) => relPaths.map((p) => `${c}:${p}`)).join('\n');
+    const out = execFileSync('git', ['cat-file', '--batch-check'], {
+      cwd: repo,
+      input: `${queries}\n`,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+
+    // `<sha> blob <size>` for a path that existed in that commit, and
+    // `<query> missing` for one that did not. Only the first shape matters.
+    for (const line of out.split('\n')) {
+      const m = /^([0-9a-f]{40}) blob \d+$/.exec(line.trim());
+      if (m) known.add(m[1]);
+    }
+  } catch {
+    // No git, a shallow clone, a checkout that moved. The caller degrades to
+    // reporting `diverged`, which is what it did before this existed.
+  }
+
+  return known;
+}
+
 /** Template text for one command in one language, or null if absent. */
 function readTemplate(root: string, command: string, lang: string): string | null {
   const p = path.join(commandsDir(root), `${command}.${lang}.md`);
@@ -141,6 +270,9 @@ export function syncCommands(opts: CommandSyncOptions = {}): CommandSyncReport {
   const root = templatesRoot();
   const apply = opts.apply === true;
   const force = opts.force === true;
+  // Resolved once for the whole run: the git calls are the expensive part and
+  // the answer is the same for every project.
+  const history = shippedHistory(root);
 
   const targets = opts.targets ?? (opts.all ? readRegistry().map((e) => e.path) : [process.cwd()]);
 
@@ -192,13 +324,20 @@ export function syncCommands(opts: CommandSyncOptions = {}): CommandSyncReport {
         if (hit) {
           status = 'other-language';
           matched = hit;
+        } else if (history.has(blobSha(existing))) {
+          // Ours, from an earlier release. Updating it is not overwriting
+          // someone's work, it is finishing a propagation that stalled.
+          status = 'old-shipped-version';
         } else {
           status = 'diverged';
         }
       }
 
       const shouldWrite =
-        status === 'new' || status === 'other-language' || (status === 'diverged' && force);
+        status === 'new' ||
+        status === 'other-language' ||
+        status === 'old-shipped-version' ||
+        (status === 'diverged' && force);
 
       let written = false;
       if (apply && shouldWrite) {
@@ -220,6 +359,9 @@ export function syncCommands(opts: CommandSyncOptions = {}): CommandSyncReport {
 export function pendingFiles(p: CommandSyncProject, force: boolean): CommandFileResult[] {
   return p.files.filter(
     (f) =>
-      f.status === 'new' || f.status === 'other-language' || (f.status === 'diverged' && force),
+      f.status === 'new' ||
+      f.status === 'other-language' ||
+      f.status === 'old-shipped-version' ||
+      (f.status === 'diverged' && force),
   );
 }

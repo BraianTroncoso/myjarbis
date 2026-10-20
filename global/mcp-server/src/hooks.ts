@@ -41,7 +41,22 @@ export const CLAUDE_HOOKS: ReadonlyArray<{
   script: string;
   timeout: number;
 }> = [
-  { event: 'SessionStart', matcher: 'startup|clear', script: 'session-start.sh', timeout: 10 },
+  // `resume` belongs here with `startup` and `clear`. It was missing, so
+  // `claude --continue` / `claude --resume` ran no hook at all: no greeting, no
+  // session opened or adopted, and — once sessions grew owners — no claim
+  // either. The premise is that every Claude session has a MyJarbis session
+  // behind it, and resuming is one of the ordinary ways to start one.
+  //
+  // `fork` is deliberately NOT included. A fork is a branch of a conversation
+  // rather than someone sitting down to work, and binding it would open or
+  // adopt a session for machinery the user never asked about. Add it only with
+  // evidence of what actually fires it.
+  {
+    event: 'SessionStart',
+    matcher: 'startup|resume|clear',
+    script: 'session-start.sh',
+    timeout: 10,
+  },
   { event: 'SessionStart', matcher: 'compact', script: 'post-compaction.sh', timeout: 10 },
   { event: 'UserPromptSubmit', script: 'user-prompt-submit.sh', timeout: 5 },
   { event: 'Stop', script: 'session-stop.sh', timeout: 5 },

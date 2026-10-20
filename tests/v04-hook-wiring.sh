@@ -252,6 +252,57 @@ else
   oops "the wiring dirtied the user's git status: $(git status --porcelain -- .claude/settings.local.json)"
 fi
 
+# ── [9] the two declarations of the wiring cannot drift ───────────
+#
+# The bindings are written down twice: CLAUDE_HOOKS in
+# global/mcp-server/src/hooks.ts, which is what `hook install claude`
+# actually writes into settings, and templates/.claude-plugin/hooks/hooks.json,
+# which is copied into every project and is the fingerprint `update` compares
+# to decide a project's hooks are stale.
+#
+# Claude Code never reads that hooks.json — that was the original bug — so
+# drift between them is invisible twice over: the binding keeps working, and
+# the staleness check keeps saying "current" while the two disagree about what
+# current means. Adding a matcher to one and not the other would ship a hook
+# that fires for a source no project is ever told about.
+#
+# Same guard the SHIPPED_COMMANDS list gets in v04-commands-sync, for the same
+# reason: a list maintained by hand in two files needs a test, not discipline.
+echo "[9] hooks.ts and the template hooks.json declare the same bindings"
+
+if node --input-type=module -e "
+  import { CLAUDE_HOOKS, hookCommand } from '$B/hooks.js';
+  import * as fs from 'fs';
+  const tpl = JSON.parse(fs.readFileSync(
+    '$MYJARBIS_INSTALL_DIR/templates/.claude-plugin/hooks/hooks.json', 'utf-8'));
+
+  const fromTemplate = [];
+  for (const [event, entries] of Object.entries(tpl.hooks || {})) {
+    for (const entry of entries) {
+      for (const h of entry.hooks || []) {
+        fromTemplate.push([event, entry.matcher ?? '', h.command, h.timeout].join(' · '));
+      }
+    }
+  }
+  const fromCode = CLAUDE_HOOKS.map(
+    (h) => [h.event, h.matcher ?? '', hookCommand(h.script), h.timeout].join(' · '),
+  );
+
+  const missing = fromCode.filter((x) => !fromTemplate.includes(x));
+  const extra = fromTemplate.filter((x) => !fromCode.includes(x));
+  if (missing.length || extra.length) {
+    console.error('in hooks.ts but not in the template:\n  ' + (missing.join('\n  ') || '(none)'));
+    console.error('in the template but not in hooks.ts:\n  ' + (extra.join('\n  ') || '(none)'));
+    process.exit(1);
+  }
+  console.log(fromCode.length);
+" 2>"$WORK/drift.txt" >"$WORK/drift-count.txt"; then
+  pass "all $(cat "$WORK/drift-count.txt") bindings match on event, matcher, command and timeout"
+else
+  oops "the two declarations disagree:"
+  sed 's/^/        /' "$WORK/drift.txt" >&2
+fi
+
 echo
 if [ "$FAILED" -gt 0 ]; then
   echo "✗ $FAILED assertion(s) failed"

@@ -615,9 +615,11 @@ Switch modules and they disappear; the new module's appear.
 
 `init` binds 5 events, as a `hooks` block in `.claude/settings.local.json`:
 
-- **SessionStart (startup|clear)** — if `.myjarbis/active` is set,
+- **SessionStart (startup|resume|clear)** — if `.myjarbis/active` is set,
   auto-starts that module and prints the curated `next_session` (no menu).
   Otherwise prints the localized module menu. Output is byte-stable.
+  `resume` is bound too, so `claude --continue` gets a session like any other
+  way of starting one.
 - **SessionStart (compact)** — restores the pre-compact snapshot.
 - **UserPromptSubmit** — first message forces ToolSearch + detects story
   localIds. Optional save reminder via `nudges.save_reminder_minutes`.

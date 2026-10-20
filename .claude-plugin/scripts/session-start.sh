@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MyJarbis SessionStart hook (matcher: startup|clear).
+# MyJarbis SessionStart hook (matcher: startup|resume|clear).
 #
 # Delegates to the node CLI helper which:
 #   1. Detects the project at cwd.

@@ -32,6 +32,17 @@ WORK="$(mktemp -d -t myjarbis-iso-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
 
+# ─── hermetic HOME ────────────────────────────────────────────────
+#
+# Insurance, not a behaviour change: every assertion below opens
+# $WORK/shared.db by explicit path (MyJarbisDB.openAtPath), so the brain
+# under test is not the one HOME or MYJARBIS_HOME resolve to. Pinning them
+# anyway means a future assertion that DOES go through the default
+# resolution cannot silently land in the developer's real ~/.myjarbis.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+export MYJARBIS_HOME="$WORK/brain"
+export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
+
 node --input-type=module -e "
 import { MyJarbisDB } from '$B/db/index.js';
 

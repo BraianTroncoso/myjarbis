@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ServerContext } from '../context.js';
 import { autoCloseStaleInModule, AUTO_MARKER } from './autoClose.js';
+import { claimSessionForProject } from '../sessionOwnership.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import {
   ProjectContextRow,
@@ -180,6 +181,15 @@ export function startSession(
 
   const session = ctx.db.sessions.start(module.id);
   ctx.setActiveSession(session.id, module.id);
+
+  // Attribute this session to the editor session driving us, so another
+  // Claude's SessionEnd cannot close it. The hook claims the sessions IT
+  // opens; this covers the other half — the ones the agent opens mid-session
+  // by asking for a module — which is the common case whenever the user did
+  // not run `myjarbis module use` before opening Claude. See
+  // sessionOwnership.ts for why the attribution is an inference and why being
+  // wrong about it is harmless.
+  claimSessionForProject(project.id, session.id);
 
   // Living diagram: when a module is chosen by chat (start_session) rather than
   // pre-set via the SessionStart fast-path, open its diagram here too so it

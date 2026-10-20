@@ -111,6 +111,16 @@ hand-written handoff; `start_session` and `resume` now also return
 staleness clock and the count of closes burying it. Session recency is ordered
 by `(ended_at, id)` — ids are not in close order.
 
+That net closes only sessions it can establish do not belong to another running
+editor. Claude Code starts the new process's `SessionStart` before the exiting
+one's `SessionEnd`, so closing every open session in the project meant a restart
+closed the session the user had just been given — and stamped a synthetic
+"nothing was recorded" over it, which then buried the real handoff one level
+deeper. Each hook receives Claude's own `session_id`, `SessionStart` writes a
+claim for the sessions it opens under `~/.myjarbis/run/`, and `SessionEnd`
+leaves claimed sessions to their owner. Unclaimed sessions are still closed,
+which is the case the net was built for.
+
 ## Skills, commands, and how they reach a project
 
 Two different artifacts with two different propagation paths. This is the
@@ -133,8 +143,12 @@ one, or improving it silently helps nobody who already uses the tool.
 Two guards worth knowing. `skill reseed` refuses `interaction-style`, which is
 composed per project from the user's language and persona, so every project
 legitimately differs from the baseline. `commands sync` refuses a command file
-that matches no shipped template (`diverged`) — nothing distinguishes a
-hand-edit from an old version, so it asks for `--force` instead of guessing.
+a human edited (`diverged`) and asks for `--force` instead of guessing — but it
+no longer confuses that with a stale copy of its own template: a file matching
+any version the repo has ever shipped is recognised by git object name
+(`old-shipped-version`) and updated without asking. Conflating the two is how a
+template fix once stayed unpropagated across 23 projects while reading as done
+in git.
 
 Every slash command starts with `jarbis`: the slash menu is a flat namespace
 shared with every other plugin, and the prefix is the only thing marking a
@@ -152,7 +166,7 @@ MyJarbis's, and each script just delegates to `cli.js hook <name>`.
 | `SessionStart` | after `/compact` | re-surfaces the pre-compaction snapshot |
 | `UserPromptSubmit` | every prompt | the memory-preference reminder, optional nudges |
 | `Stop` | after **every** agent turn | nudges for a real summary; optional module-skill cleanup |
-| `SessionEnd` | Claude actually closes | auto-closes any open session |
+| `SessionEnd` | Claude actually closes | auto-closes any open session it does not find claimed by another running editor |
 
 `Stop` firing per turn rather than at exit is why "remind the agent to close
 the session" never worked, and why the real close lives in `SessionEnd`.

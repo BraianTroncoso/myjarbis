@@ -59,7 +59,58 @@ SUITES=(
   v045-session-ownership
   v045-unwired-detection
   v045-update-self-overwrite
+  v045-sessionend-ownership
+  v045-close-ordering
+  v045-commands-history
+  v045-update-observation-files
 )
+
+# ─── what to print when a suite fails ─────────────────────────────
+#
+# This used to be `tail -15`, selecting by POSITION. Position is the one
+# thing that does not correlate with a failure: an assertion that fails in
+# section [1] of a suite that goes on to pass sections [2]..[8] scrolls out
+# of the window, and the suite's own epilogue ("✗ 3 assertion(s) failed")
+# arrives with the count but not the names. That is how three real failures
+# in v03-auto-close were seen but never identified.
+#
+# So select by MARKER instead. Every suite prints "✗ <what failed>" per
+# failed assertion and announces its sections as "[n] ..." or "→ [n] ...",
+# which is enough to reconstruct what broke: each ✗ line, under the section
+# header it belongs to, wherever in the output it happens to be.
+#
+# The tail stays as well, because a suite can fail with no ✗ at all — a
+# crash under `set -e`, a missing build, a non-zero exit from the epilogue —
+# and then the last lines are the only evidence there is.
+#
+# And the whole output is written to a file, because a cap on how much is
+# printed should never be a cap on what was recorded.
+FAIL_LOGS=""
+report_failure() {
+  local name="$1" out="$2" marks
+  marks=$(printf '%s\n' "$out" | grep -c '✗')
+
+  if [ "${marks:-0}" -gt 0 ]; then
+    printf '%s\n' "$out" | awk '
+      /^[[:space:]]*(→[[:space:]]*)?\[/ { section = $0; next }
+      /✗/ {
+        if (section != "" && section != shown) { print section; shown = section }
+        sub(/^[[:space:]]+/, "")
+        print "  " $0
+        if (++n >= 40) { print "  … and more; see the full log below"; exit }
+      }' | sed 's/^/      /'
+  else
+    echo "      (no ✗ line in the output — the suite exited non-zero without" \
+         "reaching an assertion)"
+  fi
+
+  echo "      ── last 15 lines ──"
+  printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
+
+  [ -n "$FAIL_LOGS" ] || FAIL_LOGS="$(mktemp -d -t myjarbis-run-all-logs-XXXXXX)"
+  printf '%s\n' "$out" > "$FAIL_LOGS/$name.log"
+  echo "      full output: $FAIL_LOGS/$name.log"
+}
 
 PASS=0; FAIL=0; FAILED_NAMES=()
 for t in "${SUITES[@]}"; do
@@ -69,7 +120,7 @@ for t in "${SUITES[@]}"; do
     PASS=$((PASS + 1))
   else
     echo "FAIL"
-    echo "$out" | tail -15 | sed 's/^/      /'
+    report_failure "$t" "$out"
     FAIL=$((FAIL + 1)); FAILED_NAMES+=("$t")
   fi
 done
@@ -77,6 +128,7 @@ done
 echo
 echo "suites: $PASS passed, $FAIL failed"
 [ "$FAIL" -gt 0 ] && echo "failed: ${FAILED_NAMES[*]}"
+[ -n "$FAIL_LOGS" ] && echo "full output of each failing suite: $FAIL_LOGS/"
 
 if [ "${1:-}" = "--bench" ]; then
   echo

@@ -1013,13 +1013,50 @@ export class MyJarbisDB {
       return this.sessions.findById(Number(info.lastInsertRowid))!;
     },
 
+    /**
+     * Close a session, with an `ended_at` that cannot go backwards.
+     *
+     * `ended_at` is the sole ordering key for "which close is newest" (see
+     * findLastClosedByModule), and `datetime('now')` is a wall clock. A wall
+     * clock is not monotonic: on the WSL2/Hyper-V machine this was found on,
+     * CLOCK_REALTIME steps BACKWARD about 0.8s every 32s as the guest
+     * re-anchors to the host, measured directly:
+     *
+     *   1792508437074 -> 1792508436270   -804ms
+     *   1792508468768 -> 1792508467967   -801ms
+     *
+     * When such a step lands between two closes, the one that happened LATER
+     * gets the EARLIER timestamp, and every "newest close" lookup then
+     * correctly returns the wrong session. The id tie-break below covers
+     * timestamps that are EQUAL, not ones that are inverted.
+     *
+     * It is not hypothetical and it is not only a test problem: an auto-close
+     * written a second "after" a curated close outranks it, which hands the
+     * next session a machine-written "[auto] nothing was recorded" instead of
+     * the handoff a person wrote. That is the one failure this part of the
+     * system exists to prevent.
+     *
+     * So the close is clamped to be at least one second after the newest close
+     * already in this module. The cost is a timestamp up to a few seconds
+     * ahead of the wall clock after a backward step, bounded by the number of
+     * closes; the gain is that close order is a fact rather than a hope. The
+     * clamp is per module because that is the scope every recency lookup uses.
+     */
     end: (id: number, summary: string, nextSession: string): SessionRow => {
-      this.sessions.findById(id); // scope check
+      const row = this.sessions.findById(id); // scope check
       this.prep(
         `UPDATE sessions
-            SET ended_at = datetime('now'), summary = ?, next_session = ?
+            SET ended_at = MAX(
+                  datetime('now'),
+                  COALESCE(
+                    (SELECT datetime(MAX(ended_at), '+1 second') FROM sessions
+                      WHERE module_id = ? AND ended_at IS NOT NULL AND id != ?),
+                    datetime('now')
+                  )
+                ),
+                summary = ?, next_session = ?
           WHERE id = ?`,
-      ).run(summary, nextSession, id);
+      ).run(row?.module_id ?? -1, id, summary, nextSession, id);
       return this.sessions.findById(id)!;
     },
 
@@ -1230,9 +1267,26 @@ export class MyJarbisDB {
       };
     },
 
+    /**
+     * Patch a note in place. An absent key means "leave this column alone",
+     * which is why every field is read back off `row` as its own default
+     * rather than defaulting to NULL — a partial patch must never blank the
+     * columns it did not mention.
+     *
+     * `files` is nullable on purpose: `undefined` preserves, an explicit
+     * `null` clears. Without the explicit-null channel a wrong `files` value
+     * could only ever be replaced by another wrong one.
+     */
     update: (
       id: number,
-      patch: { title?: string; content?: string; tags?: string | null; kind?: ObservationKind },
+      patch: {
+        title?: string;
+        content?: string;
+        tags?: string | null;
+        kind?: ObservationKind;
+        files?: string | null;
+        story_local_id?: string | null;
+      },
     ): ObservationRow => {
       const row = this.observations.findById(id);
       if (!row) {
@@ -1240,13 +1294,16 @@ export class MyJarbisDB {
       }
       this.prep(
         `UPDATE observations
-            SET title = ?, content = ?, tags = ?, kind = ?, updated_at = datetime('now')
+            SET title = ?, content = ?, tags = ?, kind = ?, files = ?,
+                story_local_id = ?, updated_at = datetime('now')
           WHERE id = ?`,
       ).run(
         patch.title ?? row.title,
         patch.content ?? row.content,
         patch.tags === undefined ? row.tags : patch.tags,
         patch.kind ?? row.kind,
+        patch.files === undefined ? row.files : patch.files,
+        patch.story_local_id === undefined ? row.story_local_id : patch.story_local_id,
         id,
       );
       return this.observations.findById(id)!;

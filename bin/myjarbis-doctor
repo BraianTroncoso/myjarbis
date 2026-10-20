@@ -194,13 +194,29 @@ if [ -d ".myjarbis" ]; then
     # plugins, never for a .claude-plugin/ directory in the working tree.
     # What binds them is the hooks block in .claude/settings.local.json,
     # so that is what we verify.
+    #
+    # Three outcomes, not two. `--check` exits 2 when the hooks ARE bound but
+    # with an older shape than this version writes — a matcher added since,
+    # a renamed script. Reporting that as "NOT wired — Claude Code will never
+    # run them" was false and the wrong size of alarm: the hooks fire, they are
+    # simply a release behind. The repair is the same command; what differs is
+    # whether anything is broken right now.
     if [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
-        if node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude --check >/dev/null 2>&1; then
-            pass "hooks wired into .claude/settings.local.json"
-        else
-            warn "hook scripts present but NOT wired — Claude Code will never run them"
-            note "fix: myjarbis hook install claude   (then reopen Claude)"
-        fi
+        node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude --check >/dev/null 2>&1
+        case "$?" in
+            0)
+                pass "hooks wired into .claude/settings.local.json"
+                ;;
+            2)
+                warn "hooks wired, but not the way this version writes them"
+                note "they do fire; re-wire to pick up the current bindings"
+                note "fix: myjarbis hook install claude   (then reopen Claude)"
+                ;;
+            *)
+                warn "hook scripts present but NOT wired — Claude Code will never run them"
+                note "fix: myjarbis hook install claude   (then reopen Claude)"
+                ;;
+        esac
     fi
 
     if [ -d ".claude/skills" ]; then

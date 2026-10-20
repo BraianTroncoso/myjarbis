@@ -37,6 +37,17 @@ WORK="$(mktemp -d -t myjarbis-selfoverwrite-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
 
+# ─── hermetic HOME ────────────────────────────────────────────────
+#
+# This suite already keeps MYJARBIS_INSTALL_DIR and MYJARBIS_REGISTRY inside
+# $WORK, so it writes nothing outside it today. HOME is pinned anyway because
+# it runs the REAL bin/myjarbis-update, whose own default install dir is
+# $HOME/.myjarbis-global: if a future edit dropped the MYJARBIS_INSTALL_DIR
+# export below, an unpinned HOME would point the installer at the developer's
+# live installation. npm runs below are dependency-free, so a cold npm cache
+# in the fresh HOME costs nothing and needs no network.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+
 FAILED=0
 pass() { echo "    ✓ $1"; }
 oops() { echo "    ✗ $1" >&2; FAILED=$((FAILED + 1)); }

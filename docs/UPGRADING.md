@@ -296,10 +296,20 @@ The report classifies every file, and the classification is the point:
 | `current` | identical to the template for the project's language | no, nothing to do |
 | `new` | the project never got this command | yes |
 | `other-language` | matches another language's template, so it is ours and only the language is stale | yes |
-| `diverged` | matches nothing shipped: hand-edited, or from an older version | **no** — needs `--force` |
+| `old-shipped-version` | byte-identical to a template MyJarbis shipped at some earlier commit: ours, just stale | yes |
+| `diverged` | matches nothing MyJarbis has ever shipped, so a human edited it | **no** — needs `--force` |
 
-Nothing distinguishes a hand-edit from an old version, so `diverged` stops and
-asks rather than guessing. Diff one before reaching for `--force`:
+`old-shipped-version` is matched by git object name against the history of the
+source checkout, so a hand-edited file cannot be mistaken for one — it would
+have to collide byte-for-byte with a version that was actually released. That
+is what keeps `--force` meaning "overwrite something a person wrote" rather
+than "I could not tell, please decide".
+
+If the source checkout is gone, there is no history to ask and those files
+report `diverged` instead. Pass `--from=<checkout>` to `update` once to record
+it again (§2).
+
+Diff a `diverged` file before reaching for `--force`:
 
 ```bash
 diff <project>/.claude/commands/jarbis.md \

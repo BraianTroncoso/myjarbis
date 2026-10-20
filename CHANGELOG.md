@@ -4,6 +4,152 @@
 
 ### Fixed
 
+- **A close could be stamped before the close that preceded it.** `ended_at`
+  is the only key ordering closes (`ORDER BY ended_at DESC, id DESC`), and it
+  came from `datetime('now')` — a wall clock, which is not monotonic. On the
+  WSL2/Hyper-V machine this was found on, `CLOCK_REALTIME` steps backward
+  about 0.8s every 32s as the guest re-anchors to the host. When such a step
+  lands between two closes, the later one carries the earlier timestamp and
+  every "newest close" lookup returns the wrong session. The id tie-break
+  covers timestamps that are equal, not inverted.
+
+  The consequence was specific: an auto-close stamped a second "after" a
+  curated close outranks it, so the next session opens on
+  `[auto] nothing was recorded` instead of the handoff a person wrote — the
+  exact burial `curatedResume` exists to undo. Each close is now clamped to at
+  least one second after the newest close in its module, per module so one
+  module's skew cannot drag another's. Close order became a fact instead of a
+  hope, at the cost of a timestamp a few seconds ahead of the wall clock after
+  a backward step.
+
+  Found while hunting an intermittent test failure that had been attributed to
+  local midnight. That hypothesis was wrong: the suite has no local-time
+  arithmetic at all, and passes at every offset from UTC−11 to UTC+14. The
+  flake reproduced on run 22 of 150 and is now 0 of 150.
+
+- **The test suite wrote into the developer's real home — and real brain.**
+  Twelve suites never isolated `$HOME`, and `myjarbis init` follows it: they
+  registered their throwaway `/tmp` projects in `~/.claude.json` and left
+  directories in `~/.claude/projects/`. 519 dead registrations and 130 orphan
+  directories had accumulated. Worse, three of them (`compact-cycle`,
+  `dx-batch-1`, `full-session-cycle`) ran `init` without `--skip-memory` or
+  `MYJARBIS_HOME`, so they were writing into the real shared brain —
+  `~/.myjarbis/memory.db` was modified by a test run.
+
+  Every suite now pins `HOME`, `MYJARBIS_HOME` and `MYJARBIS_REGISTRY` inside
+  its own work directory. A full run leaves all four counters and the brain's
+  bytes unchanged, and `myjarbis gc` reports nothing new afterwards.
+
+- **A Claude restart closed the session it had just opened.** Claude Code runs
+  the new process's `SessionStart` before the exiting process's `SessionEnd`,
+  and `SessionEnd` closed *every* open session in the project. Measured:
+  session #477 was created at 13:56:02 by the new editor and closed at
+  13:56:12 by the old one, stamped `[auto]` with "0m open, 0 observations
+  saved, nothing was recorded and nothing was committed" — a description of the
+  session the user was sitting in. The next `save_observation` failed with
+  `SESSION_NOT_ACTIVE`, and because a generated close is the module's newest
+  close, it also pushed the handoff a person had written one level down into
+  `curatedResume`. Once per restart, silently.
+
+  Sessions now carry an owner. Claude Code hands every hook its own
+  `session_id` on stdin; `SessionStart` writes a claim naming the brain
+  sessions it opened, and `SessionEnd` skips any session another live claim is
+  holding. A session nobody has claimed is still closed, so the reason the
+  feature exists — an agent that never called `end_session` — is untouched.
+  Claims live beside the brain, not in it, and need no migration; stale ones
+  from a killed editor are pruned after a week, and `start_session`'s
+  retroactive close is still the backstop it always was.
+
+- **`claude --continue` / `claude --resume` ran no MyJarbis hook at all.**
+  `SessionStart` was bound for `startup|clear` and `compact`, and Claude Code's
+  fifth source, `resume`, matched neither — so resuming a conversation got no
+  greeting, no "resume here", no session opened or adopted, and nothing in the
+  brain to show the session had happened. The premise is that every Claude
+  session has a MyJarbis session behind it; one of the ordinary ways to start
+  one was not covered. The matcher is now `startup|resume|clear`.
+
+  `fork` is still deliberately unbound: a fork is a branch of a conversation
+  rather than somebody sitting down to work, and binding it would open sessions
+  for machinery nobody asked about.
+
+  Existing projects pick this up with `myjarbis update --projects`, which sees
+  the changed template and re-runs the wiring.
+
+- **A failing suite hid which assertion failed.** The runner printed
+  `tail -15` of the output, selecting by position — the one thing uncorrelated
+  with a failure. An assertion failing in section [1] of a suite that goes on
+  through section [8] scrolled out of the window, and the epilogue arrived
+  with the count but not the names. That is why three real failures were seen
+  and never identified. It now selects by marker: every `✗` line, under the
+  section header it belongs to, wherever it is — plus the last 15 lines as a
+  fallback for a suite that dies before reaching an assertion, and the full
+  output written to a file whose path is printed. A passing run prints exactly
+  what it did before, one line per suite.
+
+- **`doctor` said "NOT wired — Claude Code will never run them" about hooks
+  that were wired and firing.** `hook install claude --check` reported on
+  whether the block it would write differs from the one on disk, which is true
+  both when nothing is bound and when everything is bound in an older shape —
+  a matcher added since, a renamed script. One word for two answers, and the
+  alarming one was the default: a project whose hooks work perfectly was told
+  the integration was dead.
+
+  `--check` now exits 0 when current, 1 when nothing is bound, and 2 when
+  bound but out of date, and `doctor` says which. The repair is the same
+  command either way; what differs is whether anything is broken right now.
+
+- **Nothing stopped the two declarations of the hook wiring from drifting.**
+  The bindings are written down twice — `CLAUDE_HOOKS` in `hooks.ts`, which is
+  what gets written into `settings.local.json`, and the template's
+  `hooks.json`, which is copied into every project and is the fingerprint
+  `update` uses to call a project's hooks stale. Claude Code never reads that
+  second file (that was the original unwired-hooks bug), so a disagreement
+  between them is invisible twice: the binding keeps working while the
+  staleness check keeps saying "current". The suite now asserts both declare
+  the same event, matcher, command and timeout — the same guard
+  `SHIPPED_COMMANDS` already had, for the same reason.
+
+- **The session banner said "resumed" for every session, including new ones.**
+  It decided by testing `started_at === ended_at`, and a session that has just
+  started has `ended_at` NULL, so the comparison was false in both cases. Not
+  cosmetic: that line is what the next session reads to decide whether there is
+  prior context to pick up, and it was wrong every single time.
+
+- **`commands sync` could not tell a stale copy of its own template from a
+  hand-edited one.** Both reported `diverged` and both needed `--force`, so a
+  template fix stalled on every project that had an older copy. It cost
+  something real: a commit removed three live client identifiers from the
+  `/jarbis` template because they appeared in user-facing output of a public
+  repo, and 23 projects on disk kept the old file while the scrub read as done
+  in git. Establishing that `--force` was safe meant diffing all 23 copies
+  against the template as it existed at several past commits, by hand.
+
+  A file byte-identical to any template this repository has ever shipped is now
+  classified `old-shipped-version` and updated without `--force`, matched by git
+  object name — a hand-edited file cannot collide with a blob we actually
+  shipped. `diverged` goes back to meaning "a human changed this", which is the
+  only case where `--force` was ever the right question. With no git checkout
+  reachable, classification degrades to the previous behaviour rather than
+  guessing.
+
+- **`update_observation` could not correct the `files` or `story_local_id`
+  columns.** An observation saved with the wrong paths stayed wrong — the right
+  ones had to be buried in its prose instead, which is where observation 1517's
+  paths still are — and one filed against the wrong story stayed misfiled. Both
+  are invisible until something reads the row directly or queries by story,
+  which is how they came to be wrong for a whole project's lifetime.
+
+  Both are now accepted, with the same two channels: omitting a field preserves
+  what is stored (every other field behaves that way, and silently dropping
+  paths while fixing a typo would be the worse bug), and an empty string clears
+  it to NULL — the same NULL `save_observation` writes for "nothing here".
+
+  `topic_key` deliberately stays read-only. It is UNIQUE per project and
+  `save_observation` already treats an existing `topic_key` as "update that
+  note", so re-keying onto a key that exists has two defensible meanings —
+  merge, or refuse — and choosing one silently is how two notes quietly become
+  one. Re-keying remains a `save_observation` with the target key.
+
 - **`update` overwrote the script it was running.** Step 3 copies `bin/` into
   the install directory, and the script being executed *is*
   `~/.myjarbis-global/bin/myjarbis-update`. `cp` over an existing file rewrites
