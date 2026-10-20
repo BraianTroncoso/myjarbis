@@ -95,12 +95,27 @@ description: Choose or create a module at session start; switch when the working
 
 # Module orchestration
 
-When a Claude session starts in a MyJarbis project:
+## At session start, the work is already done — do not redo it
 
-1. Call \`list_modules\` to see the verticals.
-2. If exactly one module exists, select it.
-3. If several exist, ask the user which one.
-4. If none exist, ask the user to create one with \`create_module\`.
+The SessionStart hook ran before you. It detected the project, read
+\`.myjarbis/active\`, and printed EITHER a started session (with its
+"Retomar aquí") OR the full module menu with every module, its last-worked
+date and a short description. That text is already in your context.
+
+So at session start:
+
+- **Do NOT call \`list_modules\`, \`current_project\` or \`resume\`,** and do
+  not shell out to \`myjarbis module list\`. Re-querying what you were handed
+  is the single most expensive mistake available here: it costs tool calls
+  and a minute of deliberation to arrive at text you already have.
+- A session is open already → continue from its \`nextSession\` in 1-2 lines.
+  Do NOT call \`start_session\`.
+- A menu was printed → answer with ONE short line and wait. When the user
+  picks, \`start_session(<name>)\`; several names → \`start_session(<first>,
+  with_modules=[<rest>])\`, where the first is the primary and the rest come
+  along read-only.
+- The hook said no project / no modules → offer \`myjarbis init\` or
+  \`create_module\`.
 
 When the user pivots to a different vertical mid-session:
 
