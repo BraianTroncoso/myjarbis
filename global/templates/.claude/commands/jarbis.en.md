@@ -7,10 +7,16 @@ decisions as they happen, and close every session with a "Resume here"
 note so the next session opens where this one stopped.
 
 After `/jarbis`, the user talks to you in natural language and you call
-the right MCP tools. The one other slash command is `/jarbis-close`, which
-runs the full closing ritual (observations + `set_project_state` +
-`end_session`) without the user having to type the sentence. Everything
-`/jarbis-close` does, you still do when they ask for it in words.
+the right MCP tools. Two other slash commands exist, and both are rituals
+with a fixed call sequence rather than new capabilities:
+
+- **`/jarbis-save`** — write the session down and keep working:
+  observations + `update_progress` + `set_project_state`, **no**
+  `end_session`. Also the pre-compaction protocol.
+- **`/jarbis-close`** — the full closing ritual: the same, plus
+  `end_session`.
+
+Everything they do, you still do when the user asks for it in words.
 
 ---
 
@@ -181,11 +187,12 @@ already the confirmation).
 | When the user says…                              | You do                                                                      |
 |--------------------------------------------------|-----------------------------------------------------------------------------|
 | "I decided X" / "we decided Y"                   | `save_observation(kind=decision)` with file paths.                          |
+| "save this" / "update your memory" / "write this down" | Run the `/jarbis-save` ritual: pending observations + `update_progress` + `set_project_state`. Do NOT call `end_session` — the session keeps going. |
 | "I found that / it fails / weird bug stuck"      | `save_observation(kind=gotcha)`.                                            |
 | "where was I?" / "what were we doing?"           | `resume()` and read out its `nextSession`.                                  |
 | "let's work on X" / "switch to Y" / "move to Z"  | Confirm. If OK: `end_session` current + `start_session(target)`. Hooks re-materialize. |
 | "let's create a new module X"                    | `create_module(name, description?)`. Ask if starting a session there now.   |
-| "before compacting" / before native `/compact`   | `save_observation(kind=discovery, tags=pre-compact, content=<structured snapshot>)`. Then OK the user to run `/compact`. |
+| "before compacting" / before native `/compact`   | Run the `/jarbis-save` ritual, including its pre-compact note (`kind=discovery`, `tags=pre-compact`, structured snapshot). Then OK the user to run `/compact`. |
 | A bare `localId` (e.g. `SHOP-S1.4`)                | Assume they want to start that story → phase 2 (Analysis).                  |
 | "update the docs" / "mark X as done" / "log the smokes" | For each story touched in the session: `update_progress(local_id, progress)` with structured markdown: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · date · smoke notes. Direct equivalent of editing the Smoke/Commit column of a PROGRESS.md. Do NOT use `save_observation` for this — `progress` is row-relational state, observations are session lessons. |
 | "settings" / "change style" / "change language" / "change persona" | Show the available options: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. If you can infer the current values from the loaded `interaction-style` skill, surface them first. When the user picks, call `set_interaction_style({language?, persona?})` with only the changed field (the other is preserved). Tell the user the change applies from your next response; for materialized-skill refresh on disk, they should reopen Claude. |
@@ -249,8 +256,8 @@ across `module_context` + `project_context` first; propose after.
 
 ## What you do NOT do
 
-- Do NOT invent slash commands. The only two are `/jarbis` and
-  `/jarbis-close`; everything else is conversational.
+- Do NOT invent slash commands. The only three are `/jarbis`,
+  `/jarbis-save` and `/jarbis-close`; everything else is conversational.
 - Do NOT keep a "plan" in your head if the user hasn't approved phase 2.
 - Do NOT close session if tests are red or there are uncommitted edits.
 - Do NOT touch modules other than the active one without confirmation.

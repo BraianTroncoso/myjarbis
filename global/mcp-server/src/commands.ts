@@ -36,7 +36,7 @@ import { readRegistry } from './org/registry.js';
  * asserts the two lists name the same commands, so adding one here and
  * forgetting there is caught too.
  */
-export const SHIPPED_COMMANDS = ['jarbis', 'jarbis-close'];
+export const SHIPPED_COMMANDS = ['jarbis', 'jarbis-close', 'jarbis-save'];
 
 /** The prefix every shipped command must carry. See SHIPPED_COMMANDS. */
 export const COMMAND_PREFIX = 'jarbis';

@@ -7,10 +7,16 @@ que acontecem, e fecha cada sessão com um "Retomar aqui" para que a
 próxima abra onde parou.
 
 Após `/jarbis`, o usuário fala em linguagem natural e você chama os MCP
-tools certos. O único outro slash command é `/jarbis-close`, que roda o
-ritual de fechamento completo (observações + `set_project_state` +
-`end_session`) sem o usuário precisar escrever a frase. Tudo o que
-`/jarbis-close` faz, você também faz quando ele pede falando.
+tools certos. Existem outros dois slash commands, e ambos são rituais com
+uma sequência de chamadas fixa, não capacidades novas:
+
+- **`/jarbis-save`** — deixar a sessão escrita e continuar trabalhando:
+  observações + `update_progress` + `set_project_state`, **sem**
+  `end_session`. Também é o protocolo de pré-compactação.
+- **`/jarbis-close`** — o ritual de fechamento completo: o mesmo, mais
+  `end_session`.
+
+Tudo o que eles fazem, você também faz quando ele pede falando.
 
 ---
 
@@ -181,11 +187,12 @@ ritual sem ambiguidade de trigger (e sem perguntar, porque escrevê-lo já
 | Quando o usuário diz…                            | Você faz                                                                    |
 |--------------------------------------------------|-----------------------------------------------------------------------------|
 | "decidi X" / "decidimos Y"                       | `save_observation(kind=decision)` com file paths.                           |
+| "salva isso" / "atualiza tua memória" / "anota isso" | Rode o ritual `/jarbis-save`: observações pendentes + `update_progress` + `set_project_state`. NÃO chame `end_session` — a sessão continua. |
 | "encontrei que / falha / bug estranho"           | `save_observation(kind=gotcha)`.                                            |
 | "onde estava?" / "o que fazíamos?"               | `resume()` e leia em voz alta o `nextSession`.                              |
 | "vamos mexer em X" / "mudamos para Y" / "passar a Z" | Confirme. Se OK: `end_session` atual + `start_session(target)`. Hooks re-materialize. |
 | "criar um módulo novo X"                         | `create_module(name, description?)`. Pergunte se começar sessão lá agora.   |
-| "antes de compactar" / antes de `/compact` nativo | `save_observation(kind=discovery, tags=pre-compact, content=<snapshot estruturado>)`. Depois OK ao usuário para `/compact`. |
+| "antes de compactar" / antes de `/compact` nativo | Rode o ritual `/jarbis-save`, incluindo sua nota de pré-compact (`kind=discovery`, `tags=pre-compact`, snapshot estruturado). Depois OK ao usuário para `/compact`. |
 | Um `localId` isolado (ex. `SHOP-S1.4`)             | Assuma que quer começar essa story → fase 2 (Análise).                      |
 | "atualize a doc" / "marca X como pronto" / "registre os smokes" | Para cada story tocada na sessão: `update_progress(local_id, progress)` com markdown estruturado: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · data · notas de smoke. Equivalente direto a editar a coluna Smoke/Commit de um PROGRESS.md. NÃO use `save_observation` para isso — `progress` é estado relacional ao row, observations são lições da sessão. |
 | "configurações" / "mudar estilo" / "mudar idioma" / "mudar persona" | Mostre as opções disponíveis: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. Se você pode inferir os valores atuais do skill `interaction-style` carregado, mostre-os primeiro. Quando o usuário escolher, chame `set_interaction_style({language?, persona?})` com apenas o campo que muda (o outro é preservado). Diga ao usuário que a mudança aplica a partir da sua próxima resposta; para refresh de skills materializadas no disco, ele deve reabrir Claude. |
@@ -249,8 +256,8 @@ um passo do processo parece pedir isso, diga e pare.
 
 ## O que você NÃO faz
 
-- NÃO invente slash commands. Os únicos dois são `/jarbis` e
-  `/jarbis-close`; o resto é conversacional.
+- NÃO invente slash commands. Os únicos três são `/jarbis`,
+  `/jarbis-save` e `/jarbis-close`; o resto é conversacional.
 - NÃO mantenha um "plano" na cabeça se o usuário não aprovou FASE 2.
 - NÃO feche sessão se tests estão vermelhos ou há edits sem commit.
 - NÃO toque módulos que não são o ativo sem confirmação.
