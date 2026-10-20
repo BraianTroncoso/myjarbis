@@ -106,21 +106,35 @@ wrote it). Same fix: pass `--from=<checkout>` once.
 Not an error. The updater installs the working tree as-is instead of pulling.
 That is usually what you want. If you wanted the remote, commit or stash first.
 
-### Case: step 3 dies with a bash error on a line that looks fine
+### Case: `myjarbis-update` dies with a bash error on a line that looks fine
 
-Something like `myjarbis-update: line 196: f: command not found`. Run
-`myjarbis update` again — the second run completes.
+**Run `myjarbis update` again. The second run completes.**
+
+The message is different every time, because it depends on where the read
+offset happened to land. Both of these are the same bug:
+
+```
+myjarbis-update: line 196: f: command not found
+myjarbis-update: line 335: syntax error near unexpected token `('
+```
+
+What identifies it is not the text but the shape: a bash error pointing at a
+line where nothing is wrong, after step 3 or later, during an upgrade.
 
 This happens at most once per machine, while upgrading *past* the version that
 fixed it. Until that fix, step 3 copied `bin/` over the install directory while
-the running script WAS `~/.myjarbis-global/bin/myjarbis-update`, so it
-overwrote itself in place and bash — which reads a script incrementally, by
-byte offset — resumed inside a different file. The first run installs the fixed
-script before it dies, which is why running it again is all it takes.
+the running script WAS `~/.myjarbis-global/bin/myjarbis-update`. `cp` rewrites
+a file in place, and bash reads a script incrementally, by byte offset, so the
+next read returned the new bytes at the old offset and execution continued
+inside a different file. The run that dies has already installed the fixed
+script, which is why running it again is all it takes — and why it cannot
+happen a third time.
 
 Nothing is left half-applied: the update re-copies and rebuilds from scratch
-every time, and sweeps anything a dead run left behind. If you want to check
-rather than trust, `myjarbis update --no-pull` and look at step 5.
+every time, preserves the registry explicitly, and sweeps any staging file a
+dead run left behind. If you want to check rather than trust,
+`myjarbis update --no-pull` and read step 5 — every live project should say
+`up to date`.
 
 ### Do NOT run `install.sh` to upgrade
 
