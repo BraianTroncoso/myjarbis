@@ -48,21 +48,30 @@ SYNC_PROJECTS=""
 SOURCE_OVERRIDE=""
 SKIP_PULL=""
 ASSUME_YES=""
+PROJECTS_ONLY=""
 
 for arg in "$@"; do
     case "$arg" in
         --projects)   SYNC_PROJECTS=1 ;;
+        # Repairing a project's hooks needs nothing from the checkout: the
+        # templates and the build are already in the install dir. Reinstalling
+        # both just to re-copy five shell scripts also swaps the MCP build out
+        # from under a running Claude session for no reason.
+        --projects-only) SYNC_PROJECTS=1; PROJECTS_ONLY=1 ;;
         --no-pull)    SKIP_PULL=1 ;;
         --yes|-y)     ASSUME_YES=1 ;;
         --from=*)     SOURCE_OVERRIDE="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: myjarbis update [--projects] [--no-pull] [--yes] [--from=<path>]"
+            echo "Usage: myjarbis update [--projects|--projects-only] [--no-pull] [--yes] [--from=<path>]"
             echo
-            echo "  --projects      Also refresh hook scripts in every registered"
-            echo "                  project (never touches memory.db)."
-            echo "  --no-pull       Re-sync from the local checkout without pulling."
-            echo "  --yes, -y       Do not ask anything, even with Claude Code running."
-            echo "  --from=<path>   Use this checkout as the source and remember it."
+            echo "  --projects       Also refresh hook scripts in every registered"
+            echo "                   project (never touches memory.db)."
+            echo "  --projects-only  Only do that. Skips the pull, the re-sync and"
+            echo "                   the rebuild, so a running Claude session keeps"
+            echo "                   working. Use this to fix unwired projects."
+            echo "  --no-pull        Re-sync from the local checkout without pulling."
+            echo "  --yes, -y        Do not ask anything, even with Claude Code running."
+            echo "  --from=<path>    Use this checkout as the source and remember it."
             exit 0
             ;;
         *) echo "Unknown option: $arg (try --help)" >&2; exit 1 ;;
@@ -97,7 +106,11 @@ fi
 # matching the shell running the update, or the grep itself. Absent pgrep
 # (unlikely on Linux/macOS, possible in a bare container), the check is
 # skipped rather than guessed at.
-if command -v pgrep >/dev/null 2>&1; then
+#
+# Skipped entirely for --projects-only: that path never rebuilds, so the
+# running session keeps the build it is attached to. Warning anyway would
+# train people to ignore the warning on the run that does matter.
+if [ -z "$PROJECTS_ONLY" ] && command -v pgrep >/dev/null 2>&1; then
     CLAUDE_PIDS="$(pgrep -x claude 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" || CLAUDE_PIDS=""
     if [ -n "$CLAUDE_PIDS" ]; then
         # The warning prints even with --yes. That flag says "do not ask me",
@@ -142,20 +155,50 @@ elif [ -f "$INSTALL_DIR/.source" ]; then
 fi
 
 if [ -z "$SOURCE" ] || [ ! -d "$SOURCE" ]; then
-    fail "no usable source checkout"
-    note "this installation predates update support, or the checkout moved."
-    note "re-point it once and it will be remembered:"
-    note "  myjarbis update --from=/path/to/myjarbis"
-    exit 1
+    # --projects-only reads nothing from the checkout, so a missing one is
+    # not an error there. It is still worth resolving when available: step 5
+    # uses it to refuse to overwrite the checkout with its own copy.
+    if [ -n "$PROJECTS_ONLY" ]; then
+        SOURCE=""
+        note "no source checkout recorded — not needed for --projects-only"
+        ok
+    else
+        fail "no usable source checkout"
+        note "this installation predates update support, or the checkout moved."
+        note "re-point it once and it will be remembered:"
+        note "  myjarbis update --from=/path/to/myjarbis"
+        exit 1
+    fi
+else
+    SOURCE="$(cd "$SOURCE" && pwd)"
+    if [ ! -d "$SOURCE/global" ] || [ ! -f "$SOURCE/install.sh" ]; then
+        fail "$SOURCE does not look like a MyJarbis checkout (no global/ or install.sh)"
+        exit 1
+    fi
+    # Only remembered on a run that actually syncs from it. --projects-only
+    # may have been handed a --from purely to name the checkout to protect.
+    [ -z "$PROJECTS_ONLY" ] && printf '%s\n' "$SOURCE" > "$INSTALL_DIR/.source"
+    note "$SOURCE"
+    ok
 fi
-SOURCE="$(cd "$SOURCE" && pwd)"
-if [ ! -d "$SOURCE/global" ] || [ ! -f "$SOURCE/install.sh" ]; then
-    fail "$SOURCE does not look like a MyJarbis checkout (no global/ or install.sh)"
-    exit 1
-fi
-printf '%s\n' "$SOURCE" > "$INSTALL_DIR/.source"
-note "$SOURCE"
+
+# Steps 2-4 are what makes `update` an installation-level operation, and
+# the whole point of --projects-only is to reach step 5 without them. They
+# are announced as skipped rather than silently absent: the step numbers
+# are how this output gets read.
+if [ -n "$PROJECTS_ONLY" ]; then
+
+step 2 "Pull latest changes"
+note "skipped — --projects-only"
 ok
+step 3 "Sync code, templates and CLI"
+note "skipped — --projects-only"
+ok
+step 4 "Install dependencies and rebuild"
+note "skipped — --projects-only (the running build is left alone)"
+ok
+
+else
 
 # ─── [2/5] pull ───────────────────────────────────────────────────
 step 2 "Pull latest changes"
@@ -237,6 +280,8 @@ SCHEMA=$(node --input-type=module -e "
 " 2>/dev/null || echo '?')
 note "mcp-server $VERSION · schema v$SCHEMA"
 
+fi  # end of the steps 2-4 block skipped by --projects-only
+
 # ─── [5/5] report (and optionally refresh) registered projects ────
 step 5 "Check registered projects"
 if [ ! -f "$REGISTRY_FILE" ]; then
@@ -270,14 +315,20 @@ process.stdin.on('end', () => {
     // schema === null now genuinely means 'this project has no brain',
     // rather than 'no brain file sits next to it'.
     const schema = p.schema === null ? 'none' : p.schemaCurrent ? 'current' : 'v' + p.schema;
-    console.log(['OK', p.name, p.path, p.hooks, schema, p.isolation || '?'].join('\t'));
+    // p.wiring is the field that makes an unwired project visible. Scripts
+    // can be byte-identical to the template and still be bound to nothing,
+    // and that combination used to print as 'up to date'.
+    console.log(
+      ['OK', p.name, p.path, p.hooks, schema, p.isolation || '?', p.wiring || 'unknown'].join('\t'),
+    );
   }
 });
 " 2>/dev/null || true)
 
     STALE_HOOKS=0
+    UNWIRED_HOOKS=0
     OLD_SCHEMA=0
-    while IFS=$'\t' read -r status name dir hooks schema isolation; do
+    while IFS=$'\t' read -r status name dir hooks schema isolation wiring; do
         [ -z "${status:-}" ] && continue
         if [ "$status" = "GONE" ]; then
             note "$name — path is gone, skipping ($dir)"
@@ -289,44 +340,80 @@ process.stdin.on('end', () => {
         # absence hid the bug: everything read "no brain yet" and looked fine.
         [ -n "${isolation:-}" ] && [ "$isolation" != "?" ] && LINE="$LINE · $isolation"
         [ "$hooks" != "current" ] && { LINE="$LINE · hooks $hooks"; STALE_HOOKS=$((STALE_HOOKS+1)); }
+        # Separate from staleness on purpose: 'stale' is repaired by copying
+        # the template, 'unwired' by `hook install claude`. A project can need
+        # one, the other, or both.
+        case "${wiring:-unknown}" in
+            wired|unknown) ;;
+            *) LINE="$LINE · $wiring"; UNWIRED_HOOKS=$((UNWIRED_HOOKS+1)) ;;
+        esac
         [ "$schema" != "current" ] && [ "$schema" != "none" ] && { LINE="$LINE · schema $schema"; OLD_SCHEMA=$((OLD_SCHEMA+1)); }
         # "none" means the project has no brain at all, which is not staleness.
-        if [ "$hooks" = "current" ] && { [ "$schema" = "current" ] || [ "$schema" = "none" ]; }; then
+        if [ "$hooks" = "current" ] && [ "${wiring:-unknown}" != "unwired" ] \
+           && [ "${wiring:-unknown}" != "partial" ] \
+           && { [ "$schema" = "current" ] || [ "$schema" = "none" ]; }; then
             LINE="$LINE · up to date"
             [ "$schema" = "none" ] && LINE="$LINE (no brain yet)"
         fi
         note "$LINE"
     done <<< "$REPORT"
 
-    if [ -n "$SYNC_PROJECTS" ] && [ "$STALE_HOOKS" -gt 0 ]; then
+    NEEDS_HOOKS=$((STALE_HOOKS + UNWIRED_HOOKS))
+    if [ -n "$SYNC_PROJECTS" ] && [ "$NEEDS_HOOKS" -gt 0 ]; then
         echo
         # Hooks only. This used to say "hooks + commands", which was never
         # true: the loop below copies .claude-plugin/ and nothing else.
         # Commands are files in .claude/commands/ and have their own
         # propagation path, `myjarbis commands sync`.
-        note "refreshing hooks in $STALE_HOOKS project(s)..."
-        while IFS=$'\t' read -r status name dir hooks schema isolation; do
+        note "refreshing hooks in $NEEDS_HOOKS project(s)..."
+        while IFS=$'\t' read -r status name dir hooks schema isolation wiring; do
             [ "${status:-}" != "OK" ] && continue
-            [ "$hooks" = "current" ] && continue
-            if [ -d "$INSTALL_DIR/templates/.claude-plugin" ]; then
+            # The skip condition used to be `hooks = current` alone, which
+            # excluded every project whose scripts were fresh but bound to
+            # nothing — i.e. all the ones that most needed this loop. Only
+            # skip when BOTH questions come back clean.
+            WANT_COPY=1; WANT_WIRE=1
+            [ "$hooks" = "current" ] && WANT_COPY=
+            case "${wiring:-unknown}" in wired) WANT_WIRE= ;; esac
+            [ -z "$WANT_COPY" ] && [ -z "$WANT_WIRE" ] && continue
+
+            # Never overwrite the source checkout with the installed copy.
+            # This repo tracks templates/.claude-plugin as the original; the
+            # template we copy FROM is a snapshot of it. When they differ it
+            # is normally because the checkout is ahead, so refreshing here
+            # would silently revert work in progress.
+            if [ -n "$SOURCE" ] && [ "$(cd "$dir" 2>/dev/null && pwd)" = "$SOURCE" ]; then
+                note "  $name — source checkout, not refreshing from its own copy"
+                continue
+            fi
+
+            if [ -n "$WANT_COPY" ] && [ -d "$INSTALL_DIR/templates/.claude-plugin" ]; then
                 rm -rf "$dir/.claude-plugin"
                 cp -r "$INSTALL_DIR/templates/.claude-plugin" "$dir/.claude-plugin"
                 chmod +x "$dir"/.claude-plugin/scripts/*.sh 2>/dev/null || true
-                # Re-assert the wiring too. Refreshing the scripts without
-                # it would leave a project that predates the wiring with
-                # new scripts nobody runs, which is the bug this fixes.
-                if ( cd "$dir" && node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude ) >/dev/null 2>&1; then
+            fi
+            # Re-assert the wiring whether or not we copied. Refreshing the
+            # scripts without it would leave a project that predates the
+            # wiring with new scripts nobody runs, and a project with fresh
+            # scripts and no wiring needs only this half.
+            if ( cd "$dir" && node "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude ) >/dev/null 2>&1; then
+                if [ -n "$WANT_COPY" ]; then
                     note "  $name — hooks refreshed and wired"
                 else
-                    note "  $name — hooks refreshed, but wiring failed (run: myjarbis hook install claude)"
+                    note "  $name — hooks wired (scripts were already current)"
                 fi
+            else
+                note "  $name — wiring failed (run, from inside it: myjarbis hook install claude)"
             fi
         done <<< "$REPORT"
-    elif [ "$STALE_HOOKS" -gt 0 ]; then
+    elif [ "$NEEDS_HOOKS" -gt 0 ]; then
         echo
-        warn "$STALE_HOOKS project(s) have out-of-date hooks"
-        note "refresh them with: myjarbis update --projects"
-        note "(it only replaces .claude-plugin/ — memory.db is never touched)"
+        [ "$STALE_HOOKS" -gt 0 ] && warn "$STALE_HOOKS project(s) have out-of-date hook scripts"
+        # Worth its own line: the scripts are fine, so nothing looks wrong
+        # until you notice the session greeting never appears.
+        [ "$UNWIRED_HOOKS" -gt 0 ] && warn "$UNWIRED_HOOKS project(s) have hooks bound to no event — they never run"
+        note "fix them with: myjarbis update --projects"
+        note "(it replaces .claude-plugin/ and rewrites .claude/settings.local.json — memory.db is never touched)"
     fi
 
     note "slash commands are not part of this: myjarbis commands sync --all"

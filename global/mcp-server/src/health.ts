@@ -22,6 +22,7 @@ import { MyJarbisDB } from './db/index.js';
 import { SCHEMA_VERSION } from './db/schema.js';
 import { globalDbPath, siloDbPath } from './resolve.js';
 import { readRegistryRaw } from './org/registry.js';
+import { wiringState, WiringState } from './hooks.js';
 
 export interface ProjectHealth {
   name: string;
@@ -40,7 +41,16 @@ export interface ProjectHealth {
   sessionsTotal: number;
   hasState: boolean;
   hasRemote: boolean;
+  /** Are the hook SCRIPTS the same as the template's? A file copy fixes this. */
   hooks: 'current' | 'stale' | 'missing' | 'unknown';
+  /** Are those scripts BOUND to Claude Code's events? Reported separately
+   *  from `hooks` because the repair is different — this one needs
+   *  `myjarbis hook install claude`, not a copy — and because the two
+   *  states are independent: fresh scripts nobody runs is the common case
+   *  and used to report as entirely healthy. */
+  wiring: WiringState;
+  /** Events in CLAUDE_HOOKS with no entry of ours, when wiring != 'wired'. */
+  wiringMissing: string[];
 }
 
 export interface HealthReport {
@@ -57,6 +67,8 @@ export interface HealthReport {
     sessionsOpen: number;
     cold60d: number;
     hooksStale: number;
+    /** Projects whose scripts may be fine but are bound to nothing. */
+    hooksUnwired: number;
   };
   /** Shipped features and how many projects actually use them. */
   adoption: Array<{ feature: string; used: number; of: number; hint: string }>;
@@ -84,6 +96,17 @@ function hooksState(projectPath: string): ProjectHealth['hooks'] {
   } catch {
     return 'unknown';
   }
+}
+
+/** The three hook fields for one project, so the two places that build a
+ *  ProjectHealth row cannot disagree about what "healthy hooks" means. */
+function hookFields(
+  projectPath: string,
+  pathExists: boolean,
+): Pick<ProjectHealth, 'hooks' | 'wiring' | 'wiringMissing'> {
+  if (!pathExists) return { hooks: 'unknown', wiring: 'unknown', wiringMissing: [] };
+  const w = wiringState(projectPath);
+  return { hooks: hooksState(projectPath), wiring: w.state, wiringMissing: w.missing };
 }
 
 /** One row per project, from whichever brain actually holds it. */
@@ -144,7 +167,7 @@ function readFromBrain(db: MyJarbisDB, brainPath: string, onlyPath?: string): Pr
       sessionsTotal: sess.total,
       hasState,
       hasRemote: Boolean(p.git_remote),
-      hooks: fs.existsSync(p.path) ? hooksState(p.path) : 'unknown',
+      ...hookFields(p.path, fs.existsSync(p.path)),
     });
   }
   return out;
@@ -237,7 +260,7 @@ export function collectHealth(): HealthReport {
         sessionsTotal: 0,
         hasState: false,
         hasRemote: false,
-        hooks: fs.existsSync(entry.path) ? hooksState(entry.path) : 'unknown',
+        ...hookFields(entry.path, fs.existsSync(entry.path)),
       });
       seen.add(entry.path);
       continue;
@@ -266,6 +289,12 @@ export function collectHealth(): HealthReport {
     sessionsOpen: projects.reduce((a, p) => a + p.sessionsOpen, 0),
     cold60d: projects.filter((p) => p.daysIdle !== null && p.daysIdle > 60).length,
     hooksStale: projects.filter((p) => p.hooks === 'stale' || p.hooks === 'missing').length,
+    // Counted only where the path still exists: a registry entry pointing
+    // at a deleted directory is a cleanup job, not an unwired project, and
+    // folding it in here would inflate the number the repair command acts on.
+    hooksUnwired: projects.filter(
+      (p) => p.pathExists && (p.wiring === 'unwired' || p.wiring === 'partial'),
+    ).length,
   };
 
   const adoption = [

@@ -30,6 +30,7 @@ SUITES=(
   v04-chat-triggers
   v04-hook-wiring
   v045-session-ownership
+  v045-unwired-detection
 )
 
 PASS=0; FAIL=0; FAILED_NAMES=()
