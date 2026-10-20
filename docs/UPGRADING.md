@@ -25,9 +25,13 @@ Three numbers that are often different and all matter:
 | schema version | the shape of each `memory.db` | `myjarbis migrate` |
 | skill content | rows inside each brain, not files | `myjarbis skill reseed` |
 | slash commands | files in each project's `.claude/commands/` | `myjarbis commands sync` |
+| hook wiring | a block in each project's `.claude/settings.local.json` | `myjarbis update --projects-only` |
 
 Updating the code does **not** update the schema, and neither of them updates
-the skills or the slash commands. Four separate steps, deliberately.
+the skills, the slash commands or the hook wiring. Five separate steps,
+deliberately.
+
+The last row is the one that bites, because it fails silently — see §3.
 
 ---
 
@@ -123,27 +127,58 @@ are dead registry rows — see §6.
 ## 3. Refresh the hooks
 
 ```bash
-myjarbis update --projects
+myjarbis update --projects-only      # hooks only, nothing else touched
 ```
 
-File copy only; it never opens a database. This installs the `SessionEnd` hook,
-which is what makes sessions close themselves. **Worth doing even if you
-migrate nothing.**
+**Worth doing even if you migrate nothing.** This is what installs the
+`SessionEnd` hook, which is what makes sessions close themselves.
 
-It replaces `<project>/.claude-plugin/` wholesale. If a project has hand-edited
-hook scripts, copy them aside first.
+`--projects-only` skips the pull, the re-sync and the rebuild, so it does not
+replace the MCP server build a running Claude session is attached to. Use it
+when the code is already current and only the projects are behind. Plain
+`--projects` does the same repair at the end of a full update.
 
-It also re-asserts the hook wiring in each project's
-`.claude/settings.local.json`. Any project initialised before that wiring
-existed has hook scripts on disk that Claude Code never ran — copying the
-scripts alone was never enough to attach them. Check a single project with:
+Neither opens a database.
+
+### Two different ways a project's hooks can be wrong
+
+They have different repairs, which is why they are reported separately:
+
+| state | what it means | repaired by |
+|---|---|---|
+| `hooks stale` / `missing` | the scripts in `<project>/.claude-plugin/` differ from the template | a file copy |
+| `unwired` | the scripts are fine, but nothing in `.claude/settings.local.json` binds them to an event | `myjarbis hook install claude` |
+| `partial` | some events are bound and some are not | same as `unwired` |
+
+**`unwired` is the one that hides.** Claude Code reads a plugin's `hooks.json`
+only for plugins installed from a marketplace — it never auto-discovers a
+`.claude-plugin/` directory in the working tree. So a project can hold a
+byte-identical copy of every script and have all five events dead. Nothing
+looks wrong: the scripts run perfectly by hand, and until the fix for this the
+fleet report called it `up to date` while `update --projects` skipped it for
+being "current". Any project initialised before the wiring existed is in this
+state.
+
+`update --projects-only` now repairs both, and wires a project whose scripts
+were already current without copying anything over.
+
+### Check before and after
 
 ```bash
-myjarbis doctor          # warns: "scripts present but NOT wired"
+myjarbis health          # whole machine: look for `unwired` in the flags column
+myjarbis doctor          # one project: warns "scripts present but NOT wired"
 ```
 
 Then reopen Claude — hooks are read at startup, so a running session keeps the
-old (absent) wiring.
+old (absent) wiring. **The repair is not visible until you restart.**
+
+### It replaces `.claude-plugin/` wholesale
+
+If a project has hand-edited hook scripts, copy them aside first. The wiring
+half is gentler: it rewrites only hook entries whose commands point into
+`.claude-plugin/scripts/`, leaves any hook you added yourself in place, and
+refuses outright to touch a `settings.local.json` it cannot parse rather than
+overwriting your permission allowlist.
 
 ---
 
@@ -336,7 +371,11 @@ myjarbis health
 
 One view of every project: brain, schema, activity, modules nobody opened, and
 how many projects actually use each shipped feature. After a clean upgrade
-expect all projects on the current schema and no `hooks stale`.
+expect all projects on the current schema, no `hooks stale`, and no `unwired`.
+
+If `unwired` is still there, the usual cause is an install that predates the
+detector — **do §2 before §3**, since the repair ships with the code. An older
+`update --projects` will report those projects as "up to date" and skip them.
 
 A feature sitting at `0/N` adoption is worth a look — on the machine this was
 written from, three of them were at zero because they were unreachable from the
@@ -350,7 +389,7 @@ CLI, not because nobody wanted them.
 # 1 back up (see §1, include -wal)
 cd <checkout> && git pull
 myjarbis update              # or: bash <checkout>/bin/myjarbis-update --from=<checkout>
-myjarbis update --projects
+myjarbis update --projects-only     # hooks + wiring, in that order for a reason
 myjarbis migrate --all --dry-run    # read it
 myjarbis migrate --all
 myjarbis skill reseed --all --apply

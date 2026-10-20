@@ -39,13 +39,65 @@
   hours and ~1.4 hours rather than the intended 10s and 5s. The wiring writes
   seconds. `${CLAUDE_PROJECT_DIR}` is also quoted now, so a project path
   containing a space resolves.
+- **The first MyJarbis call of a session failed with `SESSION_NOT_ACTIVE`.**
+  The `SessionStart` hook opened a session in its own process and printed the
+  banner, but the MCP server — a separate process — held the active session in
+  process memory and so believed nothing was open. The agent either errored on
+  its first `save_observation` or quietly opened a second session, splitting
+  one session's work across two rows. The active session is now resolved from
+  the brain, so every process that looks sees the same answer. `search` with
+  `scope=module` also reports the module it scoped to; that field was absent,
+  which meant a search had silently widened to the whole project.
+- **A project whose hooks were copied but bound to nothing reported as
+  healthy.** This is the detector for the bug at the top of this list, and it
+  could not see it. The hook state came from diffing
+  `.claude-plugin/hooks/hooks.json` against the template and never read the
+  settings file that makes those scripts run — so a byte-identical copy with
+  no wiring reported `current`, rendered as "up to date". That false reading
+  then switched off the repair: `update --projects` gated its refresh loop on
+  `hooks != current` and skipped exactly the broken shape. On the machine this
+  was found on, 6 of 23 registered projects were unwired and the command would
+  have visited none of them.
+
+  `wiring` is now its own field — `wired` / `partial` / `unwired` / `unknown`
+  — reported beside `hooks` rather than folded into it, because the repairs
+  differ: a file copy fixes stale scripts, only `hook install claude` fixes a
+  missing binding. `health` counts them in `totals.hooksUnwired` and flags
+  them in the fleet table.
+- **`update --projects` could overwrite the source checkout with the install
+  dir's copy of its own templates.** The installed `templates/` is a snapshot
+  of the checkout, so when the two differ it is normally because the checkout
+  is ahead. Refreshing it from the snapshot is a revert, not a sync. It now
+  refuses and says why.
+
+### Added
+
+- **`myjarbis update --projects-only`** — repair every project's hooks without
+  the pull, the re-sync or the rebuild. Reaching that step previously meant
+  replacing the MCP server build a running Claude session is attached to, for
+  the sake of five shell scripts. The skipped steps still announce themselves,
+  since the step numbering is how the output gets read.
 
 ### Testing
 
-Sixteen suites, 273 assertions. The new `v04-hook-wiring` suite covers the
-end-to-end claim (`init` leaves the events bound and every bound command
-runs), the non-destructive merge, idempotency, the malformed-JSON refusal, and
-the `doctor` warning — validated by reverting the fix, which fails it.
+Eighteen suites, 300 assertions.
+
+`v04-hook-wiring` covers the end-to-end claim (`init` leaves the events bound
+and every bound command runs), the non-destructive merge, idempotency, the
+malformed-JSON refusal, and the `doctor` warning. `v045-session-ownership`
+covers the cross-process session. `v045-unwired-detection` covers the fleet
+view the other two leave open: scripts-current-but-unwired, a settings file
+with no hooks block, partial wiring, a foreign hook not counted as ours,
+malformed JSON as `unknown` rather than `unwired`, and the repair acting on a
+project it used to skip. All validated by reverting the fix, per
+`docs/CONVENTIONS.md` — 16 of the last suite's 18 checks fail without it.
+
+`run-all.sh` now refuses to start when `global/bin/` exists in the checkout.
+`bin/myjarbis` prefers `$MYJARBIS_INSTALL_DIR/bin` over its sibling fallback,
+so one dev run of `update` pointed at the checkout's own `global/` leaves a
+snapshot that every suite then tests instead of `bin/` — passing regardless of
+the source, with identical output. This was hit for real while writing the
+suite above.
 
 ## v0.4.5
 
