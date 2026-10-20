@@ -375,38 +375,6 @@ otherwise rewrite the schema of files you never named.
 
 ---
 
-## Living diagrams
-
-Documentation that **draws itself while you work.** Every module can get a
-draw.io diagram that is a *view* of its memory — you never draw it by
-hand. You code, you tell MyJarbis what you did (the `save_observation` you
-already do), and the diagram redraws itself.
-
-It reads top-to-bottom as a **narrative of the work**: one card per
-observation — title, a kind tag, the "why", and the files it touched —
-chained with arrows in the order things happened.
-
-<p align="center">
-  <img src="docs/media/05-living-diagram.png" width="440" alt="Living diagram — observations chained as a narrative, with kind tags and the files touched">
-</p>
-
-Each card is one observation — its `kind` becomes the tag, the title and
-"why" come straight from what you saved, and the files it touched nest
-inside. Cards chain with arrows in the order things happened.
-
-```bash
-myjarbis diagram                # (re)generate + open the active module's diagram
-myjarbis config diagram on      # opt in to auto-generate/open (default off)
-```
-
-It's **opt-in**: by default it only runs when you ask. Turn `diagram.auto`
-on and session hooks + `save_observation` + `update_progress` keep it live
-and pop it open in VS Code (install the
-[Draw.io Integration](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio)
-extension to render `.drawio` inside the editor).
-
----
-
 ## Deep dive
 
 <details>
@@ -615,15 +583,28 @@ Switch modules and they disappear; the new module's appear.
 The scripts live in `.claude-plugin/scripts/`, but copying that directory is
 not what attaches them: Claude Code only reads a plugin's `hooks.json` for
 plugins installed from a marketplace. `myjarbis hook install claude` writes
-the binding, `init` calls it, `myjarbis update --projects` re-asserts it, and
-`myjarbis doctor` tells you if a project has the scripts but no wiring. The
-write merges, so your own hooks and permissions in that file are untouched.
+the binding and `init` calls it. The write merges, so your own hooks and
+permissions in that file are untouched.
 
-If MyJarbis never greets you when Claude opens, that wiring is what to check:
+**Copied is not installed, and that distinction is the whole trap.** A project
+can hold a byte-identical copy of every script and have all five events dead
+— nothing looks wrong, because each script runs perfectly by hand. Two states,
+two repairs:
+
+| flag in `myjarbis health` | what is wrong | fix |
+|---|---|---|
+| `hooks stale` | the scripts differ from the template | `myjarbis update --projects-only` |
+| `unwired` / `N event(s) unbound` | the scripts are fine, nothing binds them | same command, or `myjarbis hook install claude` in that project |
+
+If MyJarbis never greets you when Claude opens, that is what to check:
 
 ```bash
-myjarbis hook install claude     # then reopen Claude
+myjarbis health                  # whole machine
+myjarbis doctor                  # this project
+myjarbis hook install claude     # fix it, then reopen Claude
 ```
+
+Hooks are read at startup, so **the repair is invisible until you restart.**
 
 **Optional git `post-commit` hook** (`myjarbis hook install git-post-commit`):
 on every commit while a session is open, saves a `progress` observation
@@ -632,6 +613,35 @@ with the hash, message, files, and detected story id. Idempotent.
 **Stale-resume warning** — when the "Resume here" is older than 7 days
 (`session.stale_after_days`), the hook surfaces a warning to confirm the
 context still applies before the agent proceeds.
+
+</details>
+
+<details>
+<summary><b>Living diagrams — documentation that draws itself</b></summary>
+
+Every module can get a draw.io diagram that is a *view* of its memory — you
+never draw it by hand. You code, you tell MyJarbis what you did (the
+`save_observation` you already do), and the diagram redraws itself.
+
+It reads top-to-bottom as a **narrative of the work**: one card per
+observation, its `kind` as the tag, the title and "why" straight from what you
+saved, and the files it touched nested inside. Cards chain with arrows in the
+order things happened.
+
+<p align="center">
+  <img src="docs/media/05-living-diagram.png" width="440" alt="Living diagram — observations chained as a narrative, with kind tags and the files touched">
+</p>
+
+```bash
+myjarbis diagram                # (re)generate + open the active module's diagram
+myjarbis config diagram on      # opt in to auto-generate/open (default off)
+```
+
+It's **opt-in**: by default it only runs when you ask. Turn `diagram.auto` on
+and session hooks + `save_observation` + `update_progress` keep it live and pop
+it open in VS Code (install the
+[Draw.io Integration](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio)
+extension to render `.drawio` inside the editor).
 
 </details>
 
@@ -758,6 +768,7 @@ myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio
 myjarbis list                       # registered projects
 myjarbis update [--projects] [--yes] # pull + rebuild MCP server
+myjarbis update --projects-only     # only repair project hooks + wiring (no rebuild)
 myjarbis hook install claude [--check]
                                     # bind the lifecycle hooks (init does this; --check only reports)
 myjarbis hook install git-post-commit
@@ -820,7 +831,7 @@ myjarbis import <file.json> --target=... --kind=<kind> --mapping='items[]'
 <summary><b>Tests</b></summary>
 
 ```bash
-bash tests/run-all.sh          # 15 suites, 248 assertions, each builds its own fixture
+bash tests/run-all.sh          # 18 suites, 300 assertions, each builds its own fixture
 ```
 
 ```bash
@@ -839,12 +850,26 @@ tests/v04-review-reseed.sh     # what review and reseed must NOT do
 tests/v04-commands-sync.sh     # a hand-edited command survives --apply
 tests/v04-close-ritual.sh      # what /jarbis-close writes, read back by a fresh session
 tests/v04-chat-triggers.sh     # the conversational surface, not the CLI one
+tests/v04-hook-wiring.sh       # the events end up bound, and your own hooks survive it
+tests/v045-session-ownership.sh # the hook's session is the one the MCP server sees
+tests/v045-unwired-detection.sh # copied-but-unwired is detected, and repaired
 ```
 
 House rule: a new suite is only trusted once the fix it covers has been
-reverted on purpose and the assertion confirmed red. `myjarbis update` is
-deliberately not in here — it is a bash installer that runs `npm install` and
-a build, so it is verified by hand on a real machine instead.
+reverted on purpose and the assertion confirmed red.
+
+Most of `myjarbis update` is still verified by hand on a real machine — it is a
+bash installer that runs `npm install` and a build, which a suite has no
+business doing. Its repair half is covered, through `--projects-only`: that
+path exists precisely because fixing a project's hooks needs none of the
+install machinery, which makes it both safe to run mid-session and cheap to
+assert.
+
+`run-all.sh` refuses to start if `global/bin/` exists in the checkout. That
+directory is not in the repository, but one dev run of `update` pointed at the
+checkout's own `global/` creates it — and `bin/myjarbis` prefers
+`$MYJARBIS_INSTALL_DIR/bin`, so from then on every suite tests that frozen
+snapshot instead of `bin/` and passes regardless of the source.
 
 </details>
 
