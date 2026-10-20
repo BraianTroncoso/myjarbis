@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### Added
+
+- **Several modules open at once, with one of them primary.** Work does not
+  respect module boundaries — touching the CLI usually means reading what the
+  server does — and the old shape forced a choice between carrying the wrong
+  context and switching modules mid-thought, which closes one session and
+  opens another for what is one piece of work.
+
+  `myjarbis module use cli,server` (or `cli server`, or inside Claude a
+  checkbox prompt) opens them together. The first is the **primary**: the
+  session belongs to it, and so do observations, progress and the handoff. The
+  rest are **read-only**.
+
+  That asymmetry is the whole design rather than a limitation. Everything that
+  writes needs exactly one home — `sessions.module_id` is a single column, and
+  a handoff in three copies is three handoffs to reconcile — so companions
+  are for reading:
+
+  - they arrive at **index depth**: a row count and when each was last worked
+    in, never bodies, so opening three modules does not spend the context
+    window before any work starts;
+  - `search` with the default `scope="module"` spans the open set and reports
+    in `scopeContext.companions` which modules it searched. An explicit
+    `module=` is never widened;
+  - `load_module(module=..., row_ids=[...])` reaches a companion's detail when
+    it is actually needed;
+  - `end_session` is unchanged: one handoff, on the primary.
+
+  `save_observation` takes an optional `module` to file one note under a
+  companion. Since a note reaches its module only through `session_id` and
+  there is no module_id column, that opens a sidecar session in the target,
+  writes, and closes it with no `next_session` — so it cannot become that
+  module's "resume here", and it cannot join the pile of open sessions
+  auto-close exists to clean up. The result says where the note went.
+
+  `.myjarbis/active` now holds a list with the primary on line one, which is
+  exactly where the single-module reader already looked — a file format change
+  rather than a schema migration. A file written by an older version still
+  reads correctly, and an unknown name rejects the whole selection instead of
+  half-applying it.
+
+  Setting the single active module is still an explicit `myjarbis module use`:
+  picking a module in chat does not silently make it the auto-start module for
+  every future open.
+
 ### Fixed
 
 - **A close could be stamped before the close that preceded it.** `ended_at`

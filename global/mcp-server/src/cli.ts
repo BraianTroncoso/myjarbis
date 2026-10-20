@@ -24,7 +24,7 @@ import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
 import { startSession, readStaleThreshold, computeStaleness } from './tools/session.js';
 import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
-import { SCHEMA_VERSION } from './db/schema.js';
+import { ModuleRow, SCHEMA_VERSION } from './db/schema.js';
 import {
   composeInteractionStyle,
   parseLanguage,
@@ -42,6 +42,14 @@ import {
   releaseClaim,
   sessionsClaimedByOthers,
 } from './sessionOwnership.js';
+import {
+  clearActiveModules,
+  parseModuleList,
+  readActiveModules,
+  readCompanionModules,
+  readPrimaryModule,
+  writeActiveModules,
+} from './activeModules.js';
 import { readPack, applyPack, PackApplyReport } from './org/pack.js';
 import { syncOrg } from './org/sync.js';
 import { readRegistry, readRegistryRaw } from './org/registry.js';
@@ -227,30 +235,19 @@ function runImport(argv: string[]): void {
 /** Path to the per-project active-module marker file. Like git's HEAD,
  *  but a single line with the module name. Always git-ignored — even
  *  in shared:true projects, this is per-user state. */
-function activeModulePath(projectPath: string): string {
-  return path.join(projectPath, '.myjarbis', 'active');
-}
-
+// The file now holds a list, primary first — see activeModules.ts for why.
+// These wrappers keep the single-module reading that most call sites want:
+// "the active module" is the primary, and always was.
 function readActiveModule(projectPath: string): string | null {
-  try {
-    const p = activeModulePath(projectPath);
-    if (!fs.existsSync(p)) return null;
-    const v = fs.readFileSync(p, 'utf-8').trim();
-    return v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
+  return readPrimaryModule(projectPath);
 }
 
 function writeActiveModule(projectPath: string, name: string): void {
-  const p = activeModulePath(projectPath);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, name + '\n', 'utf-8');
+  writeActiveModules(projectPath, [name]);
 }
 
 function clearActiveModule(projectPath: string): void {
-  const p = activeModulePath(projectPath);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+  clearActiveModules(projectPath);
 }
 
 function runModule(argv: string[]): void {
@@ -302,42 +299,95 @@ function runModule(argv: string[]): void {
       if (active) {
         ptyDim(`Active: ${active}  ·  /jarbis will resume this module.`);
       } else {
-        ptyDim('No active module set. Use `myjarbis module use <name>` to pick one.');
+        ptyDim('No active module set. Use `myjarbis module use <name>` to pick one, or name several — `myjarbis module use cli,server` — to open them together (first = primary).');
       }
       console.log('');
       return;
     }
     if (sub === 'use') {
       const { positional, flags } = parseFlags(rest);
-      const name = positional[0];
-      if (!name) fail('Usage: myjarbis module use <name>');
+      // Several names, because work does not respect module boundaries. The
+      // FIRST one is the primary: the session belongs to it and so does
+      // everything that gets written. The rest come along read-only.
+      const names = parseModuleList(positional);
+      if (names.length === 0) fail('Usage: myjarbis module use <name> [<name>...]');
       const project = ctx.requireProject();
-      const m = ctx.db.modules.findByName(project.id, name);
-      if (!m) {
-        fail(`Module "${name}" does not exist. Use \`myjarbis module list\` to see available modules, or \`myjarbis module create ${name}\` to create it.`);
+
+      // Resolve them all before writing anything. A half-applied selection is
+      // worse than a rejected one: the hook would open on a primary the user
+      // did not mean.
+      const resolved: ModuleRow[] = [];
+      const unknown: string[] = [];
+      for (const name of names) {
+        const m = ctx.db.modules.findByName(project.id, name);
+        if (m) resolved.push(m);
+        else unknown.push(name);
       }
-      writeActiveModule(ctx.projectPath, m.name);
+      if (unknown.length > 0) {
+        const which =
+          unknown.length === 1
+            ? `Module "${unknown[0]}" does not exist`
+            : `These modules do not exist: ${unknown.join(', ')}`;
+        fail(
+          `${which}. Use \`myjarbis module list\` to see available modules, ` +
+            `or \`myjarbis module create ${unknown[0]}\` to create one.`,
+        );
+      }
+
+      writeActiveModules(
+        ctx.projectPath,
+        resolved.map((m) => m.name),
+      );
+      const [primary, ...companions] = resolved;
+
       if (wantsJson(flags)) {
-        printJson({ active: m.name, description: m.description, status: m.status });
+        printJson({
+          active: primary.name,
+          description: primary.description,
+          status: primary.status,
+          primary: primary.name,
+          companions: companions.map((m) => ({
+            name: m.name,
+            description: m.description,
+            status: m.status,
+          })),
+        });
         return;
       }
       ptySection('MyJarbis · active module set');
-      ptyKV('Active', red(bold(m.name)));
-      if (m.description) ptyKV('Description', m.description);
-      ptyKV('Status', m.status);
+      ptyKV('Primary', red(bold(primary.name)));
+      if (primary.description) ptyKV('Description', primary.description);
+      ptyKV('Status', primary.status);
+      if (companions.length > 0) {
+        console.log('');
+        ptyKV('Also open', companions.map((m) => m.name).join(', '));
+        ptyDim('read-only: their context loads and is searchable, nothing is');
+        ptyDim(`written to them. Observations and the handoff go to ${primary.name}.`);
+      }
       console.log('');
-      ptyDim('Open Claude in this directory — /jarbis will resume this module automatically.');
+      ptyDim(
+        companions.length > 0
+          ? 'Open Claude in this directory — /jarbis will resume all of these.'
+          : 'Open Claude in this directory — /jarbis will resume this module automatically.',
+      );
       console.log('');
       return;
     }
     if (sub === 'current') {
       const { flags } = parseFlags(rest);
-      const active = readActiveModule(ctx.projectPath);
-      if (wantsJson(flags)) { printJson({ active }); return; }
+      const open = readActiveModules(ctx.projectPath);
+      const [active, ...companions] = open;
+      if (wantsJson(flags)) {
+        // `active` stays the primary so anything reading this field keeps
+        // working; `open` is the whole selection in order.
+        printJson({ active: active ?? null, primary: active ?? null, companions, open });
+        return;
+      }
       if (active) {
-        console.log(`${red('★')} ${bold(active)}`);
+        console.log(`${red('★')} ${bold(active)}${companions.length > 0 ? dim('  (primary)') : ''}`);
+        for (const name of companions) console.log(`  ${dim('·')} ${name}${dim('  (read-only)')}`);
       } else {
-        ptyDim('(no active module — run `myjarbis module use <name>`)');
+        ptyDim('(no active module — run `myjarbis module use <name> [<name>...]`)');
       }
       return;
     }
@@ -611,7 +661,7 @@ function runStatus(argv: string[]): void {
         ptyKV('Last close', dim('no closed sessions yet'));
       }
     } else {
-      ptyDim('(no active module — `myjarbis module use <name>` to set one)');
+      ptyDim('(no active module — `myjarbis module use <name> [<name>...]` to set one)');
     }
 
     ptySection('Counts');
@@ -1399,10 +1449,27 @@ function runHookSessionStart(): void {
     // The agent's /jarbis prompt then only needs to acknowledge and
     // continue — no tool calls, no menu rendering, no 42s/1000-token
     // overhead.
-    const activeName = readActiveModule(ctx.projectPath);
+    const activeName = readPrimaryModule(ctx.projectPath);
     if (activeName) {
       const target = active.find((m) => m.name === activeName);
       if (target) {
+        // Companions, resolved against the modules table. A name that no
+        // longer names a module is dropped with a warning rather than
+        // aborting the greeting: the primary still works, and a selection
+        // that silently fails is worse than one that says what it skipped.
+        const companionRows: ModuleRow[] = [];
+        for (const name of readCompanionModules(ctx.projectPath)) {
+          const found = active.find((m) => m.name === name);
+          if (found) companionRows.push(found);
+          else
+            console.error(
+              `[MyJarbis] WARN: .myjarbis/active lists "${name}", which is not an ` +
+                `active module. Skipping it. Fix with: myjarbis module use ${[
+                  activeName,
+                  ...readCompanionModules(ctx.projectPath).filter((n) => n !== name),
+                ].join(',')}`,
+            );
+        }
         // Reuse an open session for this module if one exists, to avoid
         // accumulating zombie sessions when the user opens Claude
         // multiple times in a row.
@@ -1438,10 +1505,38 @@ function runHookSessionStart(): void {
         const blocks: string[] = [
           header,
           '',
-          `Module: ${target.name}${target.description ? ` — ${target.description}` : ''}`,
+          `Module: ${target.name}${target.description ? ` — ${target.description}` : ''}` +
+            (companionRows.length > 0 ? '  (primary)' : ''),
           `Session #${openSession.id} ${sessionWasCreated ? 'started' : 'resumed'}.`,
           `Skills materialized: ${mat.written.length + mat.unchanged.length} (${mat.written.length} written, ${mat.removed.length} stale removed).`,
         ];
+
+        // Companions: index depth only. The primary's context is what the
+        // session is for; a companion is here so its decisions are visible and
+        // searchable, and loading its bodies would spend the window before any
+        // work starts. Each line carries the one fact that decides whether to
+        // go deeper — when it was last worked in — and its handoff is offered
+        // as a pointer rather than inlined, for the same reason.
+        if (companionRows.length > 0) {
+          blocks.push('', `Also open (read-only, index only): ${companionRows.length}`);
+          for (const c of companionRows) {
+            const total = ctx.db.moduleContext.countByModule(c.id);
+            const lastClosed = ctx.db.sessions.findLastClosedByModule(c.id);
+            const when = lastClosed?.ended_at
+              ? `last worked ${stableDateLabel(lastClosed.ended_at)}`
+              : 'no closed session yet';
+            blocks.push(
+              `  · ${c.name}${c.description ? ` — ${c.description}` : ''}` +
+                `  [${total} row(s), ${when}]`,
+            );
+          }
+          blocks.push(
+            `  Nothing is written to them: observations, progress and the handoff` +
+              ` go to ${target.name}.`,
+            `  For a companion's detail: search(query, module="<name>") then` +
+              ` load_module(module="<name>", row_ids=[...]).`,
+          );
+        }
         if (last?.next_session) {
           const staleAfter = readStaleThreshold(ctx.projectPath);
           // When the newest close is machine-written, the handoff a person

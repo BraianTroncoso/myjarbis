@@ -99,6 +99,22 @@ drowns the context.
 `start_session` opens a session in a module and returns the project index, the
 module context, and the previous session's `next_session` — the "resume here".
 
+A session can have **companion modules**: `start_session(module,
+with_modules=[...])`, or `myjarbis module use cli,server` before opening
+Claude. `.myjarbis/active` holds the list, primary on line one, which is where
+the single-module reader already looked — so this is a file format change and
+not a migration.
+
+The asymmetry is the design. Everything that WRITES needs exactly one home:
+`sessions.module_id` is a single column, and a handoff that exists in three
+copies is three handoffs to reconcile. So companions are read-only — their
+rows are searchable (`scope="module"` spans the open set and reports which
+modules it searched) and they arrive at index depth, a row count and a last-
+activity date rather than bodies. `save_observation` takes a `module` to file
+one note under a companion; because a note reaches its module only through
+`session_id`, that opens a sidecar session in the target, writes, and closes it
+with no `next_session` — so it can never become that module's "resume here".
+
 `end_session` closes it with a summary and the next handoff. The agent is
 supposed to write both, which is what `/jarbis-close` exists to make reflexive.
 

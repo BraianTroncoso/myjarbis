@@ -63,6 +63,7 @@ SUITES=(
   v045-close-ordering
   v045-commands-history
   v045-update-observation-files
+  v046-multi-module
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

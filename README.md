@@ -239,7 +239,8 @@ continues with what's set. The CLI handles setup and switching, like
 
 ```bash
 myjarbis module use backend       # set active module (like git checkout)
-myjarbis module current           # print active
+myjarbis module use cli,server    # open several — the FIRST one is primary
+myjarbis module current           # print the open set, primary marked
 myjarbis module unset             # clear → next /jarbis shows the menu
 
 myjarbis status                   # git-like overview (project, module, counts)
@@ -250,6 +251,19 @@ myjarbis config persona mentor    # change how the agent talks back
 With an active module set, opening `claude` auto-resumes it and prints
 the curated "Resume here" — `/jarbis` then only acknowledges and
 continues (no tool calls, no menu render).
+
+**More than one module at a time.** Work rarely respects module
+boundaries: touching the CLI usually means reading what the server does,
+and a module the session cannot see is a module whose decisions get
+re-made. Name several and the first is the **primary** — the session
+belongs to it, and so do observations, progress and the handoff. The
+rest come along **read-only**: their context is searchable and their
+last activity is shown, but nothing is written to them. One session, one
+handoff, no migration.
+
+If you'd rather pick inside Claude, say so and `/jarbis` offers the
+modules as checkboxes, with the last-used one pre-selected as primary.
+Either way the choice is remembered for the next session.
 
 > `search` is an **MCP tool**, not a CLI verb — the agent calls it; there
 > is no `myjarbis search`. Use `myjarbis status` and `myjarbis timeline`
@@ -750,7 +764,9 @@ observations may carry tokens/paths). `shared: false` (default) is
 Five levers keep token use low:
 
 1. **Per-module loading** — only the active module + project core ride the
-   system prompt.
+   system prompt. Opening several modules keeps this: the primary loads as
+   usual, companions arrive as an index (a row count and when they were last
+   worked in), never bodies.
 2. **Index by default** — `start_session` / `load_module` return excerpts;
    full bodies arrive only via `load_module(row_ids=[...])` after a search.
 3. **Cache-stable hooks** — byte-deterministic output so the prompt cache
@@ -775,7 +791,9 @@ something is emitting variable content and busting it.
 `search` is FTS5 over project_context, module_context, skills, and
 observations. Scopes:
 
-- `module` (default) — active module + project_core. **Token-saving.**
+- `module` (default) — the open modules (primary + any companions) +
+  project_core. **Token-saving.** The response names which ones it
+  searched; an explicit `module=` is never widened.
 - `project` — every module of this project + project_core
 - `module_only` — only the active or named module
 - `observations` — only the session log

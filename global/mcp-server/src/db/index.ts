@@ -845,6 +845,17 @@ export class MyJarbisDB {
       ).all(moduleId) as ModuleContextRow[];
     },
 
+    /** How many rows a module holds, without reading their bodies. Used to
+     *  describe a companion module at session start: the whole point there is
+     *  not to load what we are only counting. */
+    countByModule: (moduleId: number): number => {
+      this.assertInScope(this.projectIdOfModule(moduleId), 'module_context count');
+      const row = this.prep(
+        'SELECT COUNT(*) AS n FROM module_context WHERE module_id = ?',
+      ).get(moduleId) as { n: number };
+      return row.n;
+    },
+
     setKind: (id: number, kind: ContextKind): void => {
       this.prep(
         `UPDATE module_context SET kind = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -1042,7 +1053,7 @@ export class MyJarbisDB {
      * closes; the gain is that close order is a fact rather than a hope. The
      * clamp is per module because that is the scope every recency lookup uses.
      */
-    end: (id: number, summary: string, nextSession: string): SessionRow => {
+    end: (id: number, summary: string, nextSession: string | null): SessionRow => {
       const row = this.sessions.findById(id); // scope check
       this.prep(
         `UPDATE sessions
@@ -1770,6 +1781,10 @@ export class MyJarbisDB {
     opts: {
       scope?: SearchScope;
       moduleId?: number;
+      /** Several modules, when a session has companions open beside its
+       *  primary. Supersedes `moduleId` when both are given; `moduleId`
+       *  remains for the single-module callers, which are most of them. */
+      moduleIds?: number[];
       limit?: number;
     } = {},
   ): SearchHit[] {
@@ -1822,12 +1837,21 @@ export class MyJarbisDB {
     }
 
     if (wantMC) {
-      const filterByModule = scope === 'module_only' || (scope === 'module' && opts.moduleId);
+      // One list, however the caller expressed it, so the filter below has a
+      // single shape to reason about.
+      const targetModules =
+        opts.moduleIds && opts.moduleIds.length > 0
+          ? [...new Set(opts.moduleIds)]
+          : opts.moduleId
+            ? [opts.moduleId]
+            : [];
+      const filterByModule =
+        scope === 'module_only' || (scope === 'module' && targetModules.length > 0);
       const params: unknown[] = [ftsQuery];
       let where = 'WHERE module_context_fts MATCH ?';
-      if (filterByModule && opts.moduleId) {
-        where += ' AND mc.module_id = ?';
-        params.push(opts.moduleId);
+      if (filterByModule && targetModules.length > 0) {
+        where += ` AND mc.module_id IN (${targetModules.map(() => '?').join(',')})`;
+        params.push(...targetModules);
       }
       // Always pin to the tenant, module filter or not.
       if (scopedProjectId !== null) {
@@ -1867,11 +1891,17 @@ export class MyJarbisDB {
     }
 
     if (wantObs) {
+      const obsModules =
+        opts.moduleIds && opts.moduleIds.length > 0
+          ? [...new Set(opts.moduleIds)]
+          : opts.moduleId
+            ? [opts.moduleId]
+            : [];
       const params: unknown[] = [ftsQuery];
       let where = 'WHERE observations_fts MATCH ?';
-      if (opts.moduleId) {
-        where += ' AND s.module_id = ?';
-        params.push(opts.moduleId);
+      if (obsModules.length > 0) {
+        where += ` AND s.module_id IN (${obsModules.map(() => '?').join(',')})`;
+        params.push(...obsModules);
       }
       // Filter on the denormalised column; it is why that column exists.
       if (scopedProjectId !== null) {
