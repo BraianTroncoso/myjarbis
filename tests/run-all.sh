@@ -58,6 +58,7 @@ SUITES=(
   v04-hook-wiring
   v045-session-ownership
   v045-unwired-detection
+  v045-update-self-overwrite
 )
 
 PASS=0; FAIL=0; FAILED_NAMES=()

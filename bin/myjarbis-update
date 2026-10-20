@@ -44,6 +44,64 @@ note() { echo -e "       ${DIM}$1${NC}"; }
 warn() { echo -e "       ${RED}WARN${NC}  $1"; }
 fail() { echo -e "       ${RED}${BOLD}FAIL${NC}  $1"; }
 
+# ── Never rewrite a file that something might be reading ──────────────────
+#
+# `cp` over an existing file rewrites it IN PLACE: same inode, new bytes. Any
+# process reading that file keeps its handle and silently starts reading the
+# new content. For a shell script that is fatal, because bash reads a script
+# incrementally, by byte offset, rather than loading it whole — the next read
+# returns the NEW bytes at the OLD offset and execution resumes mid-token.
+#
+# That is what crashed a real update on 2026-10-20. Step 3 copies $SOURCE/bin
+# over $INSTALL_DIR/bin, and the script being executed IS
+# $INSTALL_DIR/bin/myjarbis-update: it overwrote itself and died with
+# `line 196: f: command not found` on a line where nothing was wrong. The bug
+# had been latent through every release where the file length barely moved,
+# because bash resumed close enough to a statement boundary to keep going.
+# Steps 4 (rebuild) and 5 (report) never ran.
+#
+# `mv` is a rename: it swaps the directory entry and leaves the old inode
+# alive for anyone still holding it open, so a running script reads the version
+# it started with, all the way to the end. Copy beside the target, then rename
+# over it.
+#
+# This is a property of the writer, not of the victim: the fix lives here, in
+# the one place that does the replacing, so a script added to bin/ tomorrow is
+# covered without its author knowing any of the above.
+#
+# Deliberately NOT used for the global/* trees, and the reason is the same
+# mechanism rather than an exception to it: those are mcp-server/ (node_modules
+# and symlinks included, ~1600 files), core/ and templates/, and nothing in
+# them is executed incrementally by bash. Node reads a module file whole, so a
+# replaced build/*.js either loads or fails loudly at import. The project hook
+# refresh at step 5 is safe for the same reason this helper is: it `rm -rf`s
+# before copying, and unlinking leaves the running process on the old inode.
+sync_executables() {
+    local src_dir="$1" dest_dir="$2" f base dest staged
+    mkdir -p "$dest_dir"
+
+    # A run that died mid-copy can leave a staging file behind. Sweeping them
+    # first is what makes re-running the update a repair rather than a pile-up,
+    # and keeps a half-written file from ever sitting next to the real commands.
+    rm -f "$dest_dir"/.myjarbis-incoming.* 2>/dev/null || true
+
+    for f in "$src_dir"/*; do
+        base="$(basename "$f")"
+        if [ ! -f "$f" ]; then
+            # bin/ has only ever held plain scripts. Say so out loud rather
+            # than skipping in silence, so the day that changes is the day
+            # someone reads this instead of debugging a missing command.
+            warn "$base is not a plain file — not synced into $dest_dir"
+            continue
+        fi
+        dest="$dest_dir/$base"
+        staged="$dest_dir/.myjarbis-incoming.$$-$base"
+        cp "$f" "$staged"
+        chmod +x "$staged"
+        mv -f "$staged" "$dest"
+    done
+}
+
 SYNC_PROJECTS=""
 SOURCE_OVERRIDE=""
 SKIP_PULL=""
@@ -235,7 +293,9 @@ for item in "$SOURCE"/global/*; do
     rm -rf "$INSTALL_DIR/$base.old" 2>/dev/null || true
     cp -r "$item" "$INSTALL_DIR/"
 done
-cp -r "$SOURCE/bin" "$INSTALL_DIR/"
+# By rename, not in place: this is the copy that used to kill the running
+# update. See sync_executables at the top for why.
+sync_executables "$SOURCE/bin" "$INSTALL_DIR/bin"
 # Stray brains a checkout may have accumulated are not part of the product.
 # backups/ is excluded: like the registry, it is state owned by this
 # installation, not code coming from the checkout. The snapshots under it

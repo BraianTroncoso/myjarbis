@@ -4,6 +4,33 @@
 
 ### Fixed
 
+- **`update` overwrote the script it was running.** Step 3 copies `bin/` into
+  the install directory, and the script being executed *is*
+  `~/.myjarbis-global/bin/myjarbis-update`. `cp` over an existing file rewrites
+  it in place — same inode, new bytes — and bash reads a script incrementally,
+  by byte offset, rather than loading it whole. So the next read returned the
+  new bytes at the old offset and execution resumed mid-token, as
+  `line 196: f: command not found` on a line where nothing was wrong. Steps 4
+  (rebuild) and 5 (report) never ran.
+
+  It had been latent through every release where the file length barely moved,
+  because bash resumed close enough to a statement boundary to keep going. One
+  commit that added ~90 lines shifted every offset after step 1 and made it
+  deterministic.
+
+  The sync now replaces each file in `bin/` by renaming a copy over it. A
+  rename swaps the directory entry and leaves the old inode alive for anyone
+  still reading it, so a running script finishes the version it started with.
+  The fix sits in the writer rather than in the script being replaced, which
+  means anything added to `bin/` later is covered without its author needing to
+  know this ever happened. Staging files from a run that died are swept on the
+  next one, so re-running is a repair.
+
+  Upgrading *past* this version still hits the old bug once, because the script
+  doing the copying is the installed one. Run `myjarbis update` again and it
+  completes — the first run installed the fix before dying. See
+  `docs/UPGRADING.md` §2.
+
 - **None of the hooks were ever attached.** `init` copied
   `.claude-plugin/` into the project and stopped there, but Claude Code reads
   a plugin's `hooks/hooks.json` only for plugins installed from a marketplace

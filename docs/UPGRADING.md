@@ -106,6 +106,22 @@ wrote it). Same fix: pass `--from=<checkout>` once.
 Not an error. The updater installs the working tree as-is instead of pulling.
 That is usually what you want. If you wanted the remote, commit or stash first.
 
+### Case: step 3 dies with a bash error on a line that looks fine
+
+Something like `myjarbis-update: line 196: f: command not found`. Run
+`myjarbis update` again — the second run completes.
+
+This happens at most once per machine, while upgrading *past* the version that
+fixed it. Until that fix, step 3 copied `bin/` over the install directory while
+the running script WAS `~/.myjarbis-global/bin/myjarbis-update`, so it
+overwrote itself in place and bash — which reads a script incrementally, by
+byte offset — resumed inside a different file. The first run installs the fixed
+script before it dies, which is why running it again is all it takes.
+
+Nothing is left half-applied: the update re-copies and rebuilds from scratch
+every time, and sweeps anything a dead run left behind. If you want to check
+rather than trust, `myjarbis update --no-pull` and look at step 5.
+
 ### Do NOT run `install.sh` to upgrade
 
 It is for first installs. On older versions re-running it un-registered every
