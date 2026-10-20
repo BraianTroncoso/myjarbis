@@ -134,6 +134,7 @@ MCP tool to call:
 | "mark AUTH-12 done with commit abc"                | `update_progress` (row-level state)              |
 | "commit this"                                      | git commit with a WHY / FOR-WHAT body, no signature |
 | "let's switch to frontend"                         | confirm + `end_session` + `start_session(frontend)` |
+| "open backend and frontend together"               | one session on backend (primary), frontend read-only |
 | "where was I?"                                     | `resume()` — reads back the "Resume here"        |
 | "done, close it"                                   | summary + `next_session` + `end_session`         |
 
@@ -153,7 +154,7 @@ One line each. Expand the ones you care about; skip the rest.
 
 | | What it gives you |
 |---|---|
-| **Per-project, per-module** | memory scoped to the vertical you are in, not the whole repo |
+| **Per-project, per-module** | memory scoped to the vertical you are in — open one, or several with one primary |
 | **`myjarbis start`** | launch any project from anywhere, with Claude and `/jarbis` already running |
 | **CLI workflow** | git-like verbs that cost zero LLM tokens |
 | **Org packs** | load how your team works instead of teaching it to each project |
@@ -192,6 +193,13 @@ org (optional — owns the pack: skills, workflows, taxonomy)
 When you open Claude, the SessionStart hook asks which vertical you want.
 **Only that module + the project core get loaded.** The other modules stay
 out of context — that's the core token-saving move.
+
+You can open **several at once** when a job spans them (`myjarbis module use
+cli,server`). The first is the **primary**: it owns the session, the notes
+and the handoff. The rest come along read-only, as an index — a row count
+and when they were last touched, never their bodies — so the token-saving
+move survives having them open. Details in
+[CLI workflow](#the-features).
 
 </details>
 
@@ -516,6 +524,11 @@ You say *"let's work on backend"* → the agent calls
 previous `next_session`. Only the 10 baselines + backend's module-level
 skills are materialized to `.claude/skills/`. Frontend's are not on disk.
 
+Name two and you get both: *"backend and frontend"* →
+`start_session("backend", with_modules=["frontend"])`. Backend is the
+primary and frontend rides along read-only, so the banner reads
+`Module: backend (primary)` with the companions listed underneath.
+
 </details>
 
 <details>
@@ -633,7 +646,8 @@ Switch modules and they disappear; the new module's appear.
   auto-starts that module and prints the curated `next_session` (no menu).
   Otherwise prints the localized module menu. Output is byte-stable.
   `resume` is bound too, so `claude --continue` gets a session like any other
-  way of starting one.
+  way of starting one. `.myjarbis/active` holds one module per line, primary
+  first, so a file written by an older version still reads correctly.
 - **SessionStart (compact)** — restores the pre-compact snapshot.
 - **UserPromptSubmit** — first message forces ToolSearch + detects story
   localIds. Optional save reminder via `nudges.save_reminder_minutes`.
@@ -850,7 +864,7 @@ myjarbis commands sync [--all] [--apply] [--force]
 
 myjarbis brain export | import | status   # the DB as tracked NDJSON
 
-myjarbis module list | use <n> | current | unset | add <n> [--description=...]
+myjarbis module list | use <n>[,<n>…] | current | unset | add <n> [--description=...]
 myjarbis config list | language <EN|ES|PT> | persona <concise|pair|mentor|reviewer>
 myjarbis config diagram <on|off>
 
