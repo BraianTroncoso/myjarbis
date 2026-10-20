@@ -66,9 +66,28 @@ también aplica acá. **Igual no llames `start_session`.**
 Si en tu contexto hay un menú con módulos numerados y opciones
 ("nuevo módulo X", "settings"), el user todavía no eligió.
 
-Tu primer output: 1 línea breve esperando elección.
+**El user NO ve ese menú.** La salida del hook entra en TU contexto, no
+en su terminal. Preguntarle "¿cuál módulo?" sin listarlos le pide elegir
+de una lista que no tiene adelante.
 
-> Listo, ¿cuál módulo?
+Así que tu primer output es: el bloque de módulos **copiado tal cual**,
+y después una línea pidiendo la elección. Ejemplo:
+
+> ```
+> Módulos (18) · ▸ = último trabajado
+>   1. _general                 2026-10-14  Migrated from v0.1; cross-cutting context
+>  ▸14. post-design             2026-10-16  Sistema de diseño VISUAL de las piezas sociales…
+> ```
+> ¿Cuál? (varios con coma: el primero manda)
+
+**Copiar, no re-formatear.** El hook ya lo renderizó en el servidor
+justo para que vos no gastes razonamiento armándolo: no reordenes, no
+reescribas descripciones, no agregues columnas. Pegás el bloque y
+preguntás. Re-armarlo desde cero es el costo que ese render existe para
+evitar.
+
+No copies el resto de la salida del hook — ni el contrato de memoria ni
+el "Retomar aquí", que es del módulo que el user todavía no eligió.
 
 Cuando responda, parseá:
 - nombre/número de módulo → `start_session(<name>)` y mostrá greeting

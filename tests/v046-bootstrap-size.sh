@@ -261,6 +261,34 @@ else
   oops "module-orchestration was not materialized at $SKILL"
 fi
 
+# ── [7] the command tells the agent to SHOW the menu ────────────────────
+echo '[7] the /jarbis templates relay the menu instead of hiding it'
+# This failure is silent and total: the hook renders a perfect menu, the
+# agent obeys the command and replies "which module?", and the user is
+# asked to pick from a list that was never on their screen. Hook stdout
+# lands in the model's context, not the terminal — the command used to
+# say "the user already saw it", which was never true.
+TPL_DIR="$REPO_ROOT/global/templates/.claude/commands"
+for L in es en pt; do
+  F="$TPL_DIR/jarbis.$L.md"
+  if [ ! -f "$F" ]; then
+    oops "missing template: jarbis.$L.md"
+    continue
+  fi
+  # Matched on the instruction, not on prose that could be reworded: the
+  # template must say the user does not see it, and must say copy verbatim.
+  if grep -qiE "NO ve ese menú|does NOT see that menu|NÃO vê esse menu" "$F"; then
+    pass "jarbis.$L.md warns that the user cannot see the hook output"
+  else
+    oops "jarbis.$L.md does not warn that the menu is invisible to the user"
+  fi
+  if grep -qiE "copiado tal cual|copied verbatim|copiado tal e qual" "$F"; then
+    pass "jarbis.$L.md says to copy it rather than re-format it"
+  else
+    oops "jarbis.$L.md does not tell the agent to copy the block verbatim"
+  fi
+done
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "✓ v046-bootstrap-size: all assertions passed"

@@ -66,9 +66,28 @@ applies here too. **Still do not call `start_session`.**
 If your context contains a numbered module menu with options ("new
 module X", "settings"), the user hasn't picked yet.
 
-Your first output: 1 short line awaiting choice.
+**The user does NOT see that menu.** Hook output goes into YOUR context,
+not their terminal. Asking "which module?" without listing them asks
+them to pick from a list they cannot see.
 
-> Ready, which module?
+So your first output is: the module block **copied verbatim**, then one
+line asking for the choice. For example:
+
+> ```
+> Modules (18) · ▸ = last worked in
+>   1. _general                 2026-10-14  Migrated from v0.1; cross-cutting context
+>  ▸14. post-design             2026-10-16  Visual design system for the social pieces…
+> ```
+> Which one? (several comma-separated: the first is primary)
+
+**Copy, do not re-format.** The hook already rendered it server-side
+precisely so you do not spend reasoning rebuilding it: do not reorder,
+do not rewrite descriptions, do not add columns. Paste the block and
+ask. Rebuilding it from scratch is the cost that render exists to avoid.
+
+Do not copy the rest of the hook output — not the memory contract, and
+not the "Resume here", which belongs to a module the user has not
+chosen yet.
 
 When they reply, parse:
 - module name/number → `start_session(<name>)` and show a compact
