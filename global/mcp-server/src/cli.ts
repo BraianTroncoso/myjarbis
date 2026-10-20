@@ -24,7 +24,7 @@ import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
 import { startSession, readStaleThreshold, computeStaleness } from './tools/session.js';
 import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
-import { ModuleRow, SCHEMA_VERSION } from './db/schema.js';
+import { ModuleRow, SessionRow, SCHEMA_VERSION } from './db/schema.js';
 import {
   composeInteractionStyle,
   parseLanguage,
@@ -34,7 +34,7 @@ import {
 import { computeCost, formatTable } from './tools/cost.js';
 import { generateModuleDiagram, isDiagramAuto } from './diagram/generate.js';
 import { exportBrain, importBrain, brainStatus } from './tools/brain.js';
-import { autoCloseAll, AUTO_MARKER } from './tools/autoClose.js';
+import { autoCloseAll, AUTO_MARKER, truncate } from './tools/autoClose.js';
 import {
   claimSession,
   hasOwnClaim,
@@ -1302,6 +1302,17 @@ function stableDateLabel(iso: string | null): string {
   return parsed.toISOString().slice(0, 16).replace('T', ' ');
 }
 
+/**
+ * How much of a module's description the menu shows.
+ *
+ * The menu exists to pick a module, not to read about one. At 19 modules
+ * averaging 376 characters, printing the whole field cost 7.1 KB of the
+ * 11.2 KB menu — and the agent's documented response to being handed that
+ * much was to go re-query the database for what it already had. 100 chars
+ * is enough to tell two verticals apart; `load_module` has the rest.
+ */
+const MENU_DESC_LEN = 100;
+
 /** Localized strings for the SessionStart menu — rendered server-side
  *  so the agent doesn't have to re-format from a markdown spec each
  *  session (saves ~28s of reasoning + the output tokens). */
@@ -1312,15 +1323,11 @@ const HOOK_I18N = {
       `No hay proyecto MyJarbis en ${cwd}.\nCorré \`myjarbis init\` desde este directorio para habilitar memoria persistente.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNo hay módulos registrados todavía.\nCreá uno con: \`myjarbis module add <name>\`\n(Los módulos son verticales: ej. checkout, catalog, Translations.)`,
-    modules_label: 'Módulos:',
+    modules_label: (n: number) => `Módulos (${n}) · ▸ = último trabajado`,
     paused_tag: ' (en pausa)',
-    last_session_tag: (ts: string) => `last session ${ts} UTC`,
-    no_sessions_tag: 'sin sesiones todavía',
-    what_to_do: '¿Qué hacemos?',
-    pick_option: (name: string, num: number) =>
-      `· "${name}" o "${num}" → arrancar sesión en ese módulo`,
-    create_option: '· "nuevo módulo <name>" → create_module + start_session',
-    settings_option: '· "settings" → cambiar language / persona',
+    no_sessions_tag: 'sin sesiones',
+    menu_actions:
+      'nombre o número → arrancar · varios con coma → multi-módulo (el primero manda) · "nuevo módulo <name>" · "settings"',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── "Retomar aquí" REAL, escrita a mano (${mod}, ${ts} UTC) — estaba tapada por ${buried} cierre(s) automático(s) ──`,
@@ -1336,15 +1343,11 @@ const HOOK_I18N = {
       `No MyJarbis project at ${cwd}.\nRun \`myjarbis init\` from this directory to enable persistent memory.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNo modules registered yet.\nCreate one with: \`myjarbis module add <name>\`\n(Modules are verticals: e.g., checkout, catalog, Translations.)`,
-    modules_label: 'Modules:',
+    modules_label: (n: number) => `Modules (${n}) · ▸ = last worked in`,
     paused_tag: ' (paused)',
-    last_session_tag: (ts: string) => `last session ${ts} UTC`,
-    no_sessions_tag: 'no sessions yet',
-    what_to_do: 'What are we doing?',
-    pick_option: (name: string, num: number) =>
-      `· "${name}" or "${num}" → start a session on that module`,
-    create_option: '· "new module <name>" → create_module + start_session',
-    settings_option: '· "settings" → change language / persona',
+    no_sessions_tag: 'no sessions',
+    menu_actions:
+      'name or number → start · several comma-separated → multi-module (first one is primary) · "new module <name>" · "settings"',
     resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── The REAL "Resume here", human-written (${mod}, ${ts} UTC) — it was buried under ${buried} automatic close(s) ──`,
@@ -1360,15 +1363,11 @@ const HOOK_I18N = {
       `Sem projeto MyJarbis em ${cwd}.\nRode \`myjarbis init\` deste diretório para habilitar memória persistente.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNenhum módulo registrado ainda.\nCrie um com: \`myjarbis module add <name>\`\n(Módulos são verticais: ex. checkout, catalog, Translations.)`,
-    modules_label: 'Módulos:',
+    modules_label: (n: number) => `Módulos (${n}) · ▸ = último trabalhado`,
     paused_tag: ' (em pausa)',
-    last_session_tag: (ts: string) => `last session ${ts} UTC`,
-    no_sessions_tag: 'sem sessões ainda',
-    what_to_do: 'O que vamos fazer?',
-    pick_option: (name: string, num: number) =>
-      `· "${name}" ou "${num}" → começar sessão nesse módulo`,
-    create_option: '· "novo módulo <name>" → create_module + start_session',
-    settings_option: '· "settings" → mudar language / persona',
+    no_sessions_tag: 'sem sessões',
+    menu_actions:
+      'nome ou número → começar · vários com vírgula → multi-módulo (o primeiro manda) · "novo módulo <name>" · "settings"',
     resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── "Retomar aqui" REAL, escrita à mão (${mod}, ${ts} UTC) — estava coberta por ${buried} fechamento(s) automático(s) ──`,
@@ -1582,28 +1581,11 @@ function runHookSessionStart(): void {
 
     // Render the FULL menu server-side. The agent must not re-format —
     // jarbis.md instructs it to wait for user input, not echo this.
-    const lines: string[] = [header, '', t.modules_label];
-    active.forEach((m, idx) => {
-      const last = ctx.db.sessions.findLastClosedByModule(m.id);
-      const pausedTag = m.status === 'paused' ? t.paused_tag : '';
-      const sessionTag = last?.ended_at
-        ? t.last_session_tag(stableDateLabel(last.ended_at))
-        : t.no_sessions_tag;
-      lines.push(`  ${idx + 1}. ${m.name}${pausedTag} — ${sessionTag}`);
-      if (m.description) {
-        lines.push(`     └ ${m.description}`);
-      }
-    });
-
-    lines.push('', t.what_to_do);
-    active.forEach((m, idx) => {
-      lines.push(`  ${t.pick_option(m.name, idx + 1)}`);
-    });
-    lines.push(`  ${t.create_option}`);
-    lines.push(`  ${t.settings_option}`);
-
-    // Surface the most recent next_session, if any (helps remember what
-    // was being worked on last).
+    //
+    // ONE pass over the modules, not two. The last close of each module is
+    // needed twice — for its date tag and to decide which module was worked
+    // in most recently — and querying it twice was the shape that let the
+    // menu grow without anyone noticing the cost.
     //
     // The module is still picked by the most recent CLOSE, which is the
     // signal for "what was being worked on last" — an automatic close counts
@@ -1613,6 +1595,7 @@ function runHookSessionStart(): void {
     let mostRecent:
       | { mod: string; moduleId: number; ended_at: string; sessionId: number }
       | null = null;
+    const rows: { module: (typeof active)[number]; last: SessionRow | null }[] = [];
     for (const m of active) {
       const last = ctx.db.sessions.findLastClosedByModule(m.id);
       if (last?.ended_at && last.next_session) {
@@ -1625,7 +1608,34 @@ function runHookSessionStart(): void {
           };
         }
       }
+      rows.push({ module: m, last });
     }
+    const highlight: string | null = mostRecent ? mostRecent.mod : null;
+
+    // The description is CLIPPED. A project with twenty modules carrying a
+    // paragraph each turned this menu into 11 KB the model had to read before
+    // it could ask a one-word question — and what it does with that is
+    // deliberate: it goes and re-queries what it was already handed. One line
+    // per module is what picking one actually requires; the full text is a
+    // `load_module` away.
+    const lines: string[] = [header, '', t.modules_label(active.length)];
+    const width = Math.max(...active.map((m) => m.name.length));
+    rows.forEach(({ module: m, last }, idx) => {
+      // The most recently worked module is marked rather than reordered:
+      // alphabetical order is what makes a 19-item list scannable, and
+      // hoisting one entry costs that for everyone else.
+      const mark = highlight === m.name ? '▸' : ' ';
+      const num = `${idx + 1}.`.padStart(3);
+      const pausedTag = m.status === 'paused' ? t.paused_tag : '';
+      const sessionTag = last?.ended_at
+        ? stableDateLabel(last.ended_at).slice(0, 10)
+        : t.no_sessions_tag;
+      const head = `${mark}${num} ${m.name.padEnd(width)}${pausedTag}  ${sessionTag}`;
+      const desc = m.description ? `  ${truncate(m.description, MENU_DESC_LEN)}` : '';
+      lines.push(`${head}${desc}`);
+    });
+
+    lines.push('', t.menu_actions);
     if (mostRecent) {
       const last = ctx.db.sessions.findById(mostRecent.sessionId)!;
       const curated = last.next_session!.startsWith(AUTO_MARKER)
@@ -2162,6 +2172,7 @@ interface WireReport {
   /** False when the file already said exactly this — nothing was written. */
   changed: boolean;
 }
+
 
 function wireClaudeHooks(projectPath: string, dryRun = false): WireReport {
   const file = path.join(projectPath, '.claude', 'settings.local.json');

@@ -85,7 +85,16 @@ function commitsSince(projectPath: string, sqlTimestamp: string): string[] {
   }
 }
 
-function truncate(s: string, n: number): string {
+/**
+ * Collapse to one line, then clip to `n` visible characters.
+ *
+ * Exported because the SessionStart menu needs the same shape, and the
+ * near-duplicates that already exist disagree on a detail that matters:
+ * collapsing AFTER slicing (as `context.ts` does) spends part of the budget
+ * on whitespace that is then removed, so the result comes back shorter than
+ * asked for. Collapse first, measure second.
+ */
+export function truncate(s: string, n: number): string {
   const one = s.replace(/\s+/g, ' ').trim();
   return one.length <= n ? one : `${one.slice(0, n - 1)}…`;
 }

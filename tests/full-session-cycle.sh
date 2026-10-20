@@ -65,7 +65,7 @@ echo "→ [2] module add checkout"
 echo "→ [3] SessionStart hook output"
 HOOK_OUT=$(node "$CLI" hook session-start)
 echo "$HOOK_OUT" | head -3
-echo "$HOOK_OUT" | grep -q "Modules:" || { echo "✗ hook should list modules"; exit 1; }
+echo "$HOOK_OUT" | grep -q "Modules (" || { echo "✗ hook should list modules"; exit 1; }
 
 # 4. start_session for checkout (manually via DB; the agent would do this)
 echo "→ [4] start_session via direct call → assert context payload"
