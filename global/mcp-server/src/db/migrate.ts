@@ -104,7 +104,7 @@ When a Claude session starts in a MyJarbis project:
 
 When the user pivots to a different vertical mid-session:
 
-1. Confirm before switching ("vamos a tocar PageBuilder, ¿paso de módulo?").
+1. Confirm before switching ("vamos a tocar catalog, ¿paso de módulo?").
 2. \`end_session\` on the current module with a summary + next_session line.
 3. \`start_session\` on the target module so its skills are materialized.
 
@@ -151,7 +151,7 @@ user signals end of work. Format:
 
 Example next_session:
 
-> Story MM-S1.3 lista para auditoría. Próxima sesión: correr \`sail artisan test --filter=MediaManager\`, abrir PR a \`MediaManager\`, y empezar MM-S1.4 (migración \`asset_translations\`).
+> Story SHOP-S1.3 lista para auditoría. Próxima sesión: correr \`sail artisan test --filter=Checkout\`, abrir PR a \`Checkout\`, y empezar SHOP-S1.4 (migración \`order_items\`).
 
 ## Triggers conversacionales para \`end_session\`
 
@@ -210,7 +210,7 @@ Saltá al \`save_observation\` correcto cuando oigas:
 |--------------------------------------------------|-------------|
 | "decidí X" / "decidimos Y" / "vamos con Z"       | decision    |
 | "encontré que / falla / quedó este bug raro / ojo con" | gotcha      |
-| "ya cerré la story / fase" / "MM-S1.4 listo"     | progress (+ sugerí end_session) |
+| "ya cerré la story / fase" / "SHOP-S1.4 listo"     | progress (+ sugerí end_session) |
 | "esto está roto y no lo arreglo ahora"           | error       |
 | "descubrí que el codebase tiene X interesante"   | discovery   |
 
@@ -222,7 +222,7 @@ una línea.
   {
     name: 'story-driven',
     description: 'Pipeline detect → audit → execute → close for projects with stories',
-    triggerPattern: 'localId pattern (MM-S1.2, PROL-1234), /plan, /implement',
+    triggerPattern: 'localId pattern (SHOP-S1.2, CORE-1234), /plan, /implement',
     content: `---
 name: story-driven
 description: Pipeline for projects whose modules have stories (Jira-like)
@@ -230,7 +230,7 @@ description: Pipeline for projects whose modules have stories (Jira-like)
 
 # Story-driven pipeline
 
-When the user mentions a localId (e.g. MM-S1.2):
+When the user mentions a localId (e.g. SHOP-S1.2):
 
 1. **Detect**: \`search\` in module_context kind=story. Confirm match before acting.
 2. **Audit**: read the story's AC and grep the codebase. Build a gaps table:
@@ -253,7 +253,7 @@ If audit returns "all present", mark the story Done without touching code.
 | "hacelo / dale / implementemos / arrancá / empezá"          | Implementación (auto-save decisions per commit) |
 | "ya está / listo / cerralo / terminé"                      | Registro (save_observation progress + end_session) |
 
-Si el user menciona un localId sin verbo (ej. solo "MM-S1.4"), asumí que
+Si el user menciona un localId sin verbo (ej. solo "SHOP-S1.4"), asumí que
 quiere arrancar esa story → fase Análisis. Confirmá antes de auditar.
 
 NUNCA pases de Análisis a Implementación sin aprobación explícita

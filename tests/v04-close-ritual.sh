@@ -189,9 +189,10 @@ fi
 
 # ── [6] the hook prints the handoff — the only part the user sees ──
 echo "[6] the SessionStart hook surfaces it"
-# Opened and closed in ONE process on purpose: endSession resolves the
-# session through ctx.requireActiveSession(), which is per-process memory,
-# not a lookup for whatever is open in the DB.
+# Opened and closed in ONE process, which is now belt and braces rather than
+# a requirement: requireActiveSession() adopts whatever this project has left
+# open in the brain (see v045-session-ownership), so a second process could
+# close it too. Keeping it in one process pins the straightforward path.
 node --input-type=module -e "
   process.chdir('$WORK/proj');
   import { ServerContext } from '$B/context.js';

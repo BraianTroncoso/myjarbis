@@ -6,7 +6,7 @@
 # which:
 #   1. On the first message of a project session, suggests ToolSearch
 #      to load MyJarbis tools (one-shot per project, tracked in a tmp flag).
-#   2. Detects the configured story_pattern (e.g., MM-S1.2) and suggests
+#   2. Detects the configured story_pattern (e.g., SHOP-S1.2) and suggests
 #      `search` for the corresponding story.
 #   3. After 15 minutes without a save_observation, injects a reminder.
 #

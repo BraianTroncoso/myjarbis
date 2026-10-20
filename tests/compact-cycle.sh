@@ -32,13 +32,13 @@ cd "$WORK"
 
 # ─── 1. Setup project + module + open session ───
 "$MJ" init <<< 'y' >/dev/null
-"$MJ" module add MM --description="Media Manager" >/dev/null
+"$MJ" module add checkout --description="Checkout flow" >/dev/null
 node --input-type=module -e "
   process.chdir('$WORK');
   import { ServerContext } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/context.js';
   import { startSession } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/session.js';
   const ctx = ServerContext.initialize();
-  startSession(ctx, { module: 'MM' });
+  startSession(ctx, { module: 'checkout' });
   ctx.close();
 "
 
@@ -56,15 +56,15 @@ echo "  ✓ recovery only, as expected"
 
 # ─── 3. Save a structured snapshot, re-fire hook → should appear ───
 echo "→ [2] save snapshot then re-fire hook"
-SNAPSHOT_CONTENT="STORY/PHASE: MM-S1.4
-MODULE: MM
-BRANCH: feature/mm-e1-s1.4-asset-translations
+SNAPSHOT_CONTENT="STORY/PHASE: SHOP-S1.4
+MODULE: checkout
+BRANCH: feature/checkout-e1-s1.4-order-items
 
 LATEST DECISIONS:
-  • Picked Pest for testing — files: tests/Feature/MediaManager/AssetTranslations.php
-  • JSON column requires MySQL 8 — files: database/migrations/asset_translations.php
+  • Picked Pest for testing — files: tests/Feature/Checkout/OrderItems.php
+  • JSON column requires MySQL 8 — files: database/migrations/order_items.php
 
-NEXT INTENDED STEP: run sail artisan test --filter=MediaManager and open PR."
+NEXT INTENDED STEP: run sail artisan test --filter=Checkout and open PR."
 
 node --input-type=module -e "
   process.chdir('$WORK');
@@ -73,7 +73,7 @@ node --input-type=module -e "
   const proj = db.projects.findByPath('$WORK');
   // Writes need a bound tenant scope; there is no implicit 'current project'.
   db.bindScope({ kind: 'project', id: proj.id });
-  const m = db.modules.findByName(proj.id, 'MM');
+  const m = db.modules.findByName(proj.id, 'checkout');
   const session = db.sessions.findActiveByModule(m.id) || db.sessions.findLastByModule(m.id);
   db.observations.add({
     sessionId: session.id,
@@ -90,7 +90,7 @@ echo "$OUT2" | head -10
 if ! echo "$OUT2" | grep -q "Pre-compact snapshot"; then
   echo "✗ snapshot header missing"; exit 1
 fi
-if ! echo "$OUT2" | grep -q "STORY/PHASE: MM-S1.4"; then
+if ! echo "$OUT2" | grep -q "STORY/PHASE: SHOP-S1.4"; then
   echo "✗ snapshot content not surfaced"; exit 1
 fi
 if ! echo "$OUT2" | grep -q "post-compaction recovery"; then
@@ -113,7 +113,7 @@ node --input-type=module -e "
   const proj = db.projects.findByPath('$WORK');
   // Writes need a bound tenant scope; there is no implicit 'current project'.
   db.bindScope({ kind: 'project', id: proj.id });
-  const m = db.modules.findByName(proj.id, 'MM');
+  const m = db.modules.findByName(proj.id, 'checkout');
   const session = db.sessions.findLastByModule(m.id);
   db.observations.add({
     sessionId: session.id,

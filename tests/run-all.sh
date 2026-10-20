@@ -29,6 +29,7 @@ SUITES=(
   v04-close-ritual
   v04-chat-triggers
   v04-hook-wiring
+  v045-session-ownership
 )
 
 PASS=0; FAIL=0; FAILED_NAMES=()
