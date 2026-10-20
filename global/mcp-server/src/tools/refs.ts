@@ -189,6 +189,18 @@ export const updateObservationInputSchema = {
     title: { type: 'string' as const, description: 'Replacement title.' },
     content: { type: 'string' as const, description: 'Replacement body.' },
     tags: { type: 'string' as const, description: 'Replacement comma-separated tags.' },
+    files: {
+      type: 'string' as const,
+      description:
+        'Replacement comma-separated list of file paths touched. Omit to keep ' +
+        'the paths already stored; pass an empty string to clear them.',
+    },
+    story_local_id: {
+      type: 'string' as const,
+      description:
+        'Re-file the note under a different story (e.g. SHOP-S1.4). Omit to ' +
+        'keep the current one; pass an empty string to unfile it.',
+    },
     kind: {
       type: 'string' as const,
       enum: ['decision', 'gotcha', 'progress', 'error', 'discovery'],
@@ -204,6 +216,15 @@ const updateObservationArgsZ = z
     title: z.string().min(1).max(200).optional(),
     content: z.string().min(1).optional(),
     tags: z.string().optional(),
+    // `save_observation` takes files as `z.string().min(1)`: there, an empty
+    // value and an absent one mean the same thing, so min(1) costs nothing.
+    // Here they must differ — see the `files` handling below — so the floor is
+    // dropped and the empty string is given a meaning instead of rejected.
+    files: z.string().optional(),
+    // Same empty-means-clear channel as `files`: a note filed against the
+    // wrong story is as wrong as one with the wrong paths, and both were
+    // uncorrectable for the same reason.
+    story_local_id: z.string().optional(),
     kind: z.enum(['decision', 'gotcha', 'progress', 'error', 'discovery']).optional(),
   })
   .strict()
@@ -215,6 +236,8 @@ const updateObservationArgsZ = z
       a.title !== undefined ||
       a.content !== undefined ||
       a.tags !== undefined ||
+      a.files !== undefined ||
+      a.story_local_id !== undefined ||
       a.kind !== undefined,
     { message: 'nothing to update' },
   );
@@ -222,6 +245,13 @@ const updateObservationArgsZ = z
 export interface UpdateObservationResult {
   observationId: number;
   title: string;
+  /** Echoed back because nothing else in the tool surface shows it: a wrong
+   *  `files` value is invisible until something reads the row directly, which
+   *  is how one came to be wrong for a whole project's lifetime. */
+  files: string | null;
+  /** Echoed for the same reason as `files`: a note filed against the wrong
+   *  story is invisible until something queries by story. */
+  storyLocalId: string | null;
   updatedAt: string | null;
   hint: string;
 }
@@ -234,6 +264,11 @@ export interface UpdateObservationResult {
  * "DEFINITIVE — supersedes 80 and 81", "RESUME HERE — replaces all previous
  * ones". Six of those were found in one brain. Each one leaves a competing
  * version in place and pushes the reconciliation onto whoever reads next.
+ *
+ * `files` was missing from this tool for a release, so a note saved with the
+ * wrong paths stayed wrong: the only remedy was to spell the right paths out
+ * in the prose and leave the column lying. A column nobody can correct is
+ * worse than no column — it reads as authoritative.
  */
 export function updateObservation(
   ctx: ServerContext,
@@ -257,16 +292,48 @@ export function updateObservation(
     );
   }
 
+  // Omitted vs. empty, decided here rather than left to the DB layer:
+  //
+  //   omitted      → preserve. Every other field of this tool works that way,
+  //                  and `files` is the one correcting a title should never
+  //                  touch. Treating absence as "clear" would turn the routine
+  //                  fix of a typo into silent path loss.
+  //   empty string → clear, stored as NULL. `save_observation` writes NULL for
+  //                  "no paths", so clearing must land on NULL too or the
+  //                  column ends up with two different kinds of nothing; the
+  //                  precedent is update_progress, which clears the same way.
+  //
+  // Paths are stored verbatim, exactly as `save_observation` stores them — the
+  // readers that care (diagram generation) split on "," and trim themselves,
+  // and normalising on only one of the two write paths would make the same
+  // input produce two different rows.
+  //
+  // `topic_key` stays read-only, and that is a decision rather than an
+  // omission: it is UNIQUE per project, and `save_observation` already treats
+  // writing an existing topic_key as "update that note". So "re-key this note
+  // to a topic that exists" has two defensible meanings — merge into the other
+  // note, or refuse — and picking one silently is how two notes become one
+  // without anybody asking. Until that is designed, re-keying is a
+  // `save_observation` with the target key.
   const row = ctx.db.observations.update(existing.id, {
     title: args.title,
     content: args.content,
     tags: args.tags,
     kind: args.kind,
+    files: args.files === undefined ? undefined : args.files.length === 0 ? null : args.files,
+    story_local_id:
+      args.story_local_id === undefined
+        ? undefined
+        : args.story_local_id.length === 0
+          ? null
+          : args.story_local_id,
   });
 
   return {
     observationId: row.id,
     title: row.title,
+    files: row.files,
+    storyLocalId: row.story_local_id,
     updatedAt: row.updated_at,
     hint:
       'Corrected in place. No second note was created, so there is nothing for ' +

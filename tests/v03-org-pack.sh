@@ -39,6 +39,10 @@ fi
 WORK="$(mktemp -d -t myjarbis-pack-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
+# Hermetic HOME: `myjarbis init` registers the project in $HOME/.claude.json
+# and writes $HOME/.claude/projects/<slug>/memory/. Unisolated, that lands in
+# the developer's real home and stays there.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
 export MYJARBIS_HOME="$WORK/home"
 # Own registry, so `org sync` sees only the projects this run created and not
 # leftovers from previous runs.

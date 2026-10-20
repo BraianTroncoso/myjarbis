@@ -39,6 +39,18 @@ WORK="$(mktemp -d -t myjarbis-import-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
 
+# ─── hermetic HOME ────────────────────────────────────────────────
+#
+# Without this the suite writes into the developer's real home: `myjarbis
+# init` registers the project in $HOME/.claude.json and drops a memory
+# pointer under $HOME/.claude/projects/<slug>/, and an un-pinned
+# MYJARBIS_HOME resolves to $HOME/.myjarbis — the real shared brain. A
+# year of runs left 469 dead registrations in the file Claude Code itself
+# reads. Everything now lands under $WORK, which the EXIT trap removes.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+export MYJARBIS_HOME="$WORK/brain"
+export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
+
 DOCS="$WORK/agents/example-project"
 mkdir -p "$DOCS/Catalog"
 

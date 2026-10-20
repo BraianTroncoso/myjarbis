@@ -24,7 +24,7 @@ import { listSkills, addSkill, materializeSkills } from './tools/skills.js';
 import { startSession, readStaleThreshold, computeStaleness } from './tools/session.js';
 import { applyInteractionStyle, inferCurrent } from './tools/interactionStyle.js';
 import { seedNewProject } from './db/migrate.js';
-import { SCHEMA_VERSION } from './db/schema.js';
+import { ModuleRow, SCHEMA_VERSION } from './db/schema.js';
 import {
   composeInteractionStyle,
   parseLanguage,
@@ -35,10 +35,31 @@ import { computeCost, formatTable } from './tools/cost.js';
 import { generateModuleDiagram, isDiagramAuto } from './diagram/generate.js';
 import { exportBrain, importBrain, brainStatus } from './tools/brain.js';
 import { autoCloseAll, AUTO_MARKER } from './tools/autoClose.js';
+import {
+  claimSession,
+  hasOwnClaim,
+  pruneStaleClaims,
+  releaseClaim,
+  sessionsClaimedByOthers,
+} from './sessionOwnership.js';
+import {
+  clearActiveModules,
+  parseModuleList,
+  readActiveModules,
+  readCompanionModules,
+  readPrimaryModule,
+  writeActiveModules,
+} from './activeModules.js';
 import { readPack, applyPack, PackApplyReport } from './org/pack.js';
 import { syncOrg } from './org/sync.js';
 import { readRegistry, readRegistryRaw } from './org/registry.js';
-import { CLAUDE_HOOKS, HOOK_SCRIPT_DIR, hookCommand, isMyJarbisHookEntry } from './hooks.js';
+import {
+  CLAUDE_HOOKS,
+  HOOK_SCRIPT_DIR,
+  hookCommand,
+  isMyJarbisHookEntry,
+  wiringState,
+} from './hooks.js';
 import { syncCommands, pendingFiles, CommandStatus } from './commands.js';
 import { listContextKinds, migrateKinds } from './tools/kinds.js';
 import {
@@ -214,30 +235,19 @@ function runImport(argv: string[]): void {
 /** Path to the per-project active-module marker file. Like git's HEAD,
  *  but a single line with the module name. Always git-ignored — even
  *  in shared:true projects, this is per-user state. */
-function activeModulePath(projectPath: string): string {
-  return path.join(projectPath, '.myjarbis', 'active');
-}
-
+// The file now holds a list, primary first — see activeModules.ts for why.
+// These wrappers keep the single-module reading that most call sites want:
+// "the active module" is the primary, and always was.
 function readActiveModule(projectPath: string): string | null {
-  try {
-    const p = activeModulePath(projectPath);
-    if (!fs.existsSync(p)) return null;
-    const v = fs.readFileSync(p, 'utf-8').trim();
-    return v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
+  return readPrimaryModule(projectPath);
 }
 
 function writeActiveModule(projectPath: string, name: string): void {
-  const p = activeModulePath(projectPath);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, name + '\n', 'utf-8');
+  writeActiveModules(projectPath, [name]);
 }
 
 function clearActiveModule(projectPath: string): void {
-  const p = activeModulePath(projectPath);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+  clearActiveModules(projectPath);
 }
 
 function runModule(argv: string[]): void {
@@ -289,42 +299,95 @@ function runModule(argv: string[]): void {
       if (active) {
         ptyDim(`Active: ${active}  ·  /jarbis will resume this module.`);
       } else {
-        ptyDim('No active module set. Use `myjarbis module use <name>` to pick one.');
+        ptyDim('No active module set. Use `myjarbis module use <name>` to pick one, or name several — `myjarbis module use cli,server` — to open them together (first = primary).');
       }
       console.log('');
       return;
     }
     if (sub === 'use') {
       const { positional, flags } = parseFlags(rest);
-      const name = positional[0];
-      if (!name) fail('Usage: myjarbis module use <name>');
+      // Several names, because work does not respect module boundaries. The
+      // FIRST one is the primary: the session belongs to it and so does
+      // everything that gets written. The rest come along read-only.
+      const names = parseModuleList(positional);
+      if (names.length === 0) fail('Usage: myjarbis module use <name> [<name>...]');
       const project = ctx.requireProject();
-      const m = ctx.db.modules.findByName(project.id, name);
-      if (!m) {
-        fail(`Module "${name}" does not exist. Use \`myjarbis module list\` to see available modules, or \`myjarbis module create ${name}\` to create it.`);
+
+      // Resolve them all before writing anything. A half-applied selection is
+      // worse than a rejected one: the hook would open on a primary the user
+      // did not mean.
+      const resolved: ModuleRow[] = [];
+      const unknown: string[] = [];
+      for (const name of names) {
+        const m = ctx.db.modules.findByName(project.id, name);
+        if (m) resolved.push(m);
+        else unknown.push(name);
       }
-      writeActiveModule(ctx.projectPath, m.name);
+      if (unknown.length > 0) {
+        const which =
+          unknown.length === 1
+            ? `Module "${unknown[0]}" does not exist`
+            : `These modules do not exist: ${unknown.join(', ')}`;
+        fail(
+          `${which}. Use \`myjarbis module list\` to see available modules, ` +
+            `or \`myjarbis module create ${unknown[0]}\` to create one.`,
+        );
+      }
+
+      writeActiveModules(
+        ctx.projectPath,
+        resolved.map((m) => m.name),
+      );
+      const [primary, ...companions] = resolved;
+
       if (wantsJson(flags)) {
-        printJson({ active: m.name, description: m.description, status: m.status });
+        printJson({
+          active: primary.name,
+          description: primary.description,
+          status: primary.status,
+          primary: primary.name,
+          companions: companions.map((m) => ({
+            name: m.name,
+            description: m.description,
+            status: m.status,
+          })),
+        });
         return;
       }
       ptySection('MyJarbis · active module set');
-      ptyKV('Active', red(bold(m.name)));
-      if (m.description) ptyKV('Description', m.description);
-      ptyKV('Status', m.status);
+      ptyKV('Primary', red(bold(primary.name)));
+      if (primary.description) ptyKV('Description', primary.description);
+      ptyKV('Status', primary.status);
+      if (companions.length > 0) {
+        console.log('');
+        ptyKV('Also open', companions.map((m) => m.name).join(', '));
+        ptyDim('read-only: their context loads and is searchable, nothing is');
+        ptyDim(`written to them. Observations and the handoff go to ${primary.name}.`);
+      }
       console.log('');
-      ptyDim('Open Claude in this directory — /jarbis will resume this module automatically.');
+      ptyDim(
+        companions.length > 0
+          ? 'Open Claude in this directory — /jarbis will resume all of these.'
+          : 'Open Claude in this directory — /jarbis will resume this module automatically.',
+      );
       console.log('');
       return;
     }
     if (sub === 'current') {
       const { flags } = parseFlags(rest);
-      const active = readActiveModule(ctx.projectPath);
-      if (wantsJson(flags)) { printJson({ active }); return; }
+      const open = readActiveModules(ctx.projectPath);
+      const [active, ...companions] = open;
+      if (wantsJson(flags)) {
+        // `active` stays the primary so anything reading this field keeps
+        // working; `open` is the whole selection in order.
+        printJson({ active: active ?? null, primary: active ?? null, companions, open });
+        return;
+      }
       if (active) {
-        console.log(`${red('★')} ${bold(active)}`);
+        console.log(`${red('★')} ${bold(active)}${companions.length > 0 ? dim('  (primary)') : ''}`);
+        for (const name of companions) console.log(`  ${dim('·')} ${name}${dim('  (read-only)')}`);
       } else {
-        ptyDim('(no active module — run `myjarbis module use <name>`)');
+        ptyDim('(no active module — run `myjarbis module use <name> [<name>...]`)');
       }
       return;
     }
@@ -598,7 +661,7 @@ function runStatus(argv: string[]): void {
         ptyKV('Last close', dim('no closed sessions yet'));
       }
     } else {
-      ptyDim('(no active module — `myjarbis module use <name>` to set one)');
+      ptyDim('(no active module — `myjarbis module use <name> [<name>...]` to set one)');
     }
 
     ptySection('Counts');
@@ -1325,7 +1388,37 @@ function resolveHookLanguage(settings: ProjectSettings): HookLang {
   return 'en';
 }
 
+/**
+ * Claude Code's hook payload, read from stdin.
+ *
+ * Every hook event gets a JSON object on stdin; the field that matters here is
+ * `session_id`, the editor's own identifier for this Claude session. It is the
+ * only thing that tells one Claude process from another, which is what
+ * sessionOwnership.ts needs to stop an exiting process from closing a session
+ * a newly started one just opened.
+ *
+ * Same guard as runHookUserPromptSubmit: only read when stdin is not a TTY, so
+ * a hook invoked by hand does not hang waiting for input. Anything unparseable
+ * yields no id, and the callers treat that as "ownership unknown".
+ */
+function readHookPayload(): { sessionId: string | null } {
+  if (process.stdin.isTTY) return { sessionId: null };
+  try {
+    const raw = fs.readFileSync(0, 'utf-8');
+    if (!raw.trim()) return { sessionId: null };
+    const parsed = JSON.parse(raw);
+    const id = parsed?.session_id;
+    return { sessionId: typeof id === 'string' && id ? id : null };
+  } catch {
+    return { sessionId: null };
+  }
+}
+
 function runHookSessionStart(): void {
+  // Before the context is opened: stdin is only readable once, and the claim
+  // written at the end of this function needs the id.
+  const { sessionId: claudeSessionId } = readHookPayload();
+
   const init = safeContext();
   if (!init) return;
   const { ctx } = init;
@@ -1356,18 +1449,48 @@ function runHookSessionStart(): void {
     // The agent's /jarbis prompt then only needs to acknowledge and
     // continue — no tool calls, no menu rendering, no 42s/1000-token
     // overhead.
-    const activeName = readActiveModule(ctx.projectPath);
+    const activeName = readPrimaryModule(ctx.projectPath);
     if (activeName) {
       const target = active.find((m) => m.name === activeName);
       if (target) {
+        // Companions, resolved against the modules table. A name that no
+        // longer names a module is dropped with a warning rather than
+        // aborting the greeting: the primary still works, and a selection
+        // that silently fails is worse than one that says what it skipped.
+        const companionRows: ModuleRow[] = [];
+        for (const name of readCompanionModules(ctx.projectPath)) {
+          const found = active.find((m) => m.name === name);
+          if (found) companionRows.push(found);
+          else
+            console.error(
+              `[MyJarbis] WARN: .myjarbis/active lists "${name}", which is not an ` +
+                `active module. Skipping it. Fix with: myjarbis module use ${[
+                  activeName,
+                  ...readCompanionModules(ctx.projectPath).filter((n) => n !== name),
+                ].join(',')}`,
+            );
+        }
         // Reuse an open session for this module if one exists, to avoid
         // accumulating zombie sessions when the user opens Claude
         // multiple times in a row.
         let openSession = ctx.db.sessions.findActiveByModule(target.id);
+        // Whether we opened it or adopted one already open. Taken here rather
+        // than inferred later from the row: a freshly started session has
+        // `ended_at` NULL, so the `started_at === ended_at` test this used to
+        // do was false for BOTH cases and the banner announced every session as
+        // "resumed" — including the one it had just created. That is not
+        // cosmetic. It is the line a session reads to decide whether there is
+        // prior context to pick up, and it was wrong every single time.
+        const sessionWasCreated = !openSession;
         if (!openSession) {
           openSession = ctx.db.sessions.start(target.id);
         }
         ctx.setActiveSession(openSession.id, target.id);
+        // Say out loud that this editor session is using this brain session,
+        // so the SessionEnd of a Claude that is still shutting down cannot
+        // close it underneath us. See sessionOwnership.ts.
+        claimSession(claudeSessionId, project.id, openSession.id);
+        pruneStaleClaims();
         // Living diagram: regenerate for this module and pop it open in VS Code.
         if (isDiagramAuto(ctx.projectPath)) {
           try {
@@ -1382,10 +1505,38 @@ function runHookSessionStart(): void {
         const blocks: string[] = [
           header,
           '',
-          `Module: ${target.name}${target.description ? ` — ${target.description}` : ''}`,
-          `Session #${openSession.id} ${openSession.started_at === openSession.ended_at ? 'started' : 'resumed'}.`,
+          `Module: ${target.name}${target.description ? ` — ${target.description}` : ''}` +
+            (companionRows.length > 0 ? '  (primary)' : ''),
+          `Session #${openSession.id} ${sessionWasCreated ? 'started' : 'resumed'}.`,
           `Skills materialized: ${mat.written.length + mat.unchanged.length} (${mat.written.length} written, ${mat.removed.length} stale removed).`,
         ];
+
+        // Companions: index depth only. The primary's context is what the
+        // session is for; a companion is here so its decisions are visible and
+        // searchable, and loading its bodies would spend the window before any
+        // work starts. Each line carries the one fact that decides whether to
+        // go deeper — when it was last worked in — and its handoff is offered
+        // as a pointer rather than inlined, for the same reason.
+        if (companionRows.length > 0) {
+          blocks.push('', `Also open (read-only, index only): ${companionRows.length}`);
+          for (const c of companionRows) {
+            const total = ctx.db.moduleContext.countByModule(c.id);
+            const lastClosed = ctx.db.sessions.findLastClosedByModule(c.id);
+            const when = lastClosed?.ended_at
+              ? `last worked ${stableDateLabel(lastClosed.ended_at)}`
+              : 'no closed session yet';
+            blocks.push(
+              `  · ${c.name}${c.description ? ` — ${c.description}` : ''}` +
+                `  [${total} row(s), ${when}]`,
+            );
+          }
+          blocks.push(
+            `  Nothing is written to them: observations, progress and the handoff` +
+              ` go to ${target.name}.`,
+            `  For a companion's detail: search(query, module="<name>") then` +
+              ` load_module(module="<name>", row_ids=[...]).`,
+          );
+        }
         if (last?.next_session) {
           const staleAfter = readStaleThreshold(ctx.projectPath);
           // When the newest close is machine-written, the handoff a person
@@ -1592,6 +1743,9 @@ function runHookPostCompaction(): void {
  * nothing and module listings lose their ordering signal) is silent.
  */
 function runHookSessionEnd(): void {
+  // Read before opening the context, same as SessionStart: stdin yields once.
+  const { sessionId: claudeSessionId } = readHookPayload();
+
   const init = safeContext();
   if (!init) return;
   const { ctx } = init;
@@ -1603,7 +1757,12 @@ function runHookSessionEnd(): void {
     const enabled = settings.session?.auto_close_on_exit !== false;
 
     if (enabled) {
-      const closed = autoCloseAll(ctx);
+      // Sessions another Claude process has claimed are off limits. Without
+      // this, the restart sequence — new SessionStart, then old SessionEnd —
+      // closed the session the new process had just opened, and stamped it
+      // "0m open, 0 observations" over the top of the user's live session.
+      const protectedIds = sessionsClaimedByOthers(claudeSessionId, project.id);
+      const closed = autoCloseAll(ctx, { skip: protectedIds });
       for (const c of closed) {
         console.error(
           `[MyJarbis hook] auto-closed session #${c.sessionId} in "${c.module}" ` +
@@ -1611,10 +1770,36 @@ function runHookSessionEnd(): void {
             `resume point from ${c.nextSessionSource}).`,
         );
       }
-      if (closed.length === 0) {
+      if (protectedIds.size > 0) {
+        // Logged rather than silent: "nothing to close" and "left someone
+        // else's session alone" are different events, and the second one is
+        // the one worth seeing when a close seems to be missing.
+        console.error(
+          `[MyJarbis hook] left ${protectedIds.size} session(s) open — in use by ` +
+            `another Claude session (#${[...protectedIds].join(', #')}).`,
+        );
+        // The one way this fix can misbehave, surfaced instead of hidden: we
+        // were given an id, we skipped sessions on the strength of it, and yet
+        // no claim carries that id. Either SessionStart opened nothing (normal
+        // — the module menu path), or the id is not stable across a session's
+        // two hooks, which Claude Code's docs do not actually promise. If this
+        // line shows up next to sessions that should have closed, that is the
+        // answer. sessionOwnership.ts explains the fallback.
+        if (claudeSessionId && !hasOwnClaim(claudeSessionId)) {
+          console.error(
+            `[MyJarbis hook] no claim of our own (session_id ${claudeSessionId}) — ` +
+              `only unclaimed sessions were closed. start_session will close ours later.`,
+          );
+        }
+      }
+      if (closed.length === 0 && protectedIds.size === 0) {
         console.error('[MyJarbis hook] no open session to close.');
       }
     }
+
+    // Our claim dies with the editor session that made it, whether or not
+    // anything was closed above.
+    releaseClaim(claudeSessionId);
 
     // The dump has to be refreshed AFTER the close, or it ships a brain
     // whose newest session still looks open.
@@ -1966,7 +2151,7 @@ function safeGit(cwd: string, args: string[]): string | null {
 
 interface WireReport {
   file: string;
-  /** "SessionStart (startup|clear) → session-start.sh" per bound event. */
+  /** "SessionStart (startup|resume|clear) → session-start.sh" per bound event. */
   wired: string[];
   /** Our own entries found and rewritten, rather than duplicated. */
   replaced: number;
@@ -2171,15 +2356,47 @@ function runHookInstallClaude(rest: string[] = []): void {
   const report = wireClaudeHooks(hookWiringRoot(), check);
 
   // --check is for `doctor`: report without writing, and exit non-zero
-  // when the hooks are not already bound, so a wrapper can act on it.
+  // when something needs doing, so a wrapper can act on it.
+  //
+  // Two different answers used to share one word. `report.changed` means "the
+  // block we would write differs from the one on disk", which is true both
+  // when NOTHING is bound and when everything is bound with an older shape —
+  // a matcher we have since added, a renamed script. Both printed "NOT WIRED",
+  // so a project whose hooks fire perfectly well was told "Claude Code will
+  // never run them". That is false, and the alarm is the wrong size: one case
+  // means the whole integration is dead, the other means it is a release
+  // behind.
+  //
+  // `wiringState` answers the first question and only the first — it is
+  // deliberately lenient about HOW an event is bound (see hooks.ts), which is
+  // exactly what makes it the right instrument for "is anything bound at all".
+  // Exit codes: 0 current, 1 nothing bound, 2 bound but out of date.
   if (check) {
-    if (report.changed || report.unusable.length > 0) {
+    for (const s of report.unusable) console.log(`  unusable script: ${s}`);
+    if (report.unusable.length > 0) {
       console.log('NOT WIRED');
-      for (const s of report.unusable) console.log(`  unusable script: ${s}`);
       process.exit(1);
     }
-    console.log('WIRED');
-    return;
+    if (!report.changed) {
+      console.log('WIRED');
+      return;
+    }
+    // `anyBound`, not `state === 'wired'`: since wiringState started checking
+    // matchers, a project bound entirely with an older matcher is `partial`
+    // rather than `wired` — correctly, because that binding really does not
+    // fire for the source we added. But it is still "bound in an older shape",
+    // which is the distinction this message exists to make.
+    const { bound, missing, anyBound } = wiringState(hookWiringRoot());
+    if (anyBound) {
+      console.log('STALE WIRING');
+      console.log('  bound, but not the way this version writes it');
+      if (missing.length > 0) console.log(`  out of date: ${missing.join(', ')}`);
+      process.exit(2);
+    }
+    console.log('NOT WIRED');
+    if (bound.length > 0) console.log(`  bound: ${bound.join(', ')}`);
+    if (missing.length > 0) console.log(`  missing: ${missing.join(', ')}`);
+    process.exit(1);
   }
 
   ptySection(
@@ -3178,6 +3395,9 @@ function runSkillReseed(argv: string[]): void {
 const COMMAND_STATUS_LABEL: Record<CommandStatus, (s: string) => string> = {
   new: green,
   'other-language': amber,
+  // Amber, not red: it is updated without asking, like `other-language`. Red
+  // is reserved for the files that need a decision.
+  'old-shipped-version': amber,
   diverged: red,
   current: dim,
   'no-template': red,
@@ -3203,6 +3423,7 @@ function runCommands(argv: string[]): void {
 
   let touched = 0;
   let diverged = 0;
+  let stale = 0;
   for (const p of report.projects) {
     if (p.error) {
       console.log('  ' + bold(clip(p.project, 26)) + red(p.error));
@@ -3211,6 +3432,7 @@ function runCommands(argv: string[]): void {
     const pending = pendingFiles(p, force);
     const blocked = p.files.filter((f) => f.status === 'diverged' && !force);
     diverged += blocked.length;
+    stale += p.files.filter((f) => f.status === 'old-shipped-version').length;
     if (pending.length === 0 && blocked.length === 0) continue;
     touched++;
     console.log(
@@ -3231,10 +3453,14 @@ function runCommands(argv: string[]): void {
   }
 
   ptyKV('Projects', `${touched} of ${report.projects.length} out of date`);
+  if (stale > 0) {
+    // Worth naming separately: these used to report as `diverged` and sit
+    // there until someone forced them, which is how a template fix stayed
+    // unpropagated across 23 projects. Now they are just updated.
+    ptyDim(`${stale} file(s) are ours from an earlier release — updated, no --force needed.`);
+  }
   if (diverged > 0) {
-    ptyDim(
-      `${diverged} file(s) match no shipped template — hand-edited, or from an older version.`,
-    );
+    ptyDim(`${diverged} file(s) match no template we have ever shipped — hand-edited.`);
     ptyDim('Diff one before deciding; --force overwrites them.');
   }
   ptyDim(

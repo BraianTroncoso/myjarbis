@@ -283,13 +283,27 @@ export function autoCloseSession(
  * Used by the SessionEnd hook. More than one can be open when sessions were
  * started in different modules and never closed — which, without this, is
  * exactly how they accumulate.
+ *
+ * `skip` is how the caller excludes sessions that belong to a Claude process
+ * which is still running. Closing every open session in the project was right
+ * until two processes overlapped, and they overlap on every restart: the new
+ * editor's SessionStart opens a session BEFORE the old editor's SessionEnd
+ * fires, so this function used to close the session the user had just been
+ * given. See sessionOwnership.ts for how ownership is established; the
+ * decision stays with the caller because this module has no business reading
+ * the filesystem.
  */
-export function autoCloseAll(ctx: ServerContext): AutoCloseResult[] {
+export function autoCloseAll(
+  ctx: ServerContext,
+  opts: { skip?: Set<number> } = {},
+): AutoCloseResult[] {
   const project = ctx.project;
   if (!project) return [];
 
+  const skip = opts.skip ?? new Set<number>();
   const results: AutoCloseResult[] = [];
   for (const session of ctx.db.sessions.listOpenByProject(project.id)) {
+    if (skip.has(session.id)) continue;
     const r = autoCloseSession(ctx, session);
     if (r) results.push(r);
   }

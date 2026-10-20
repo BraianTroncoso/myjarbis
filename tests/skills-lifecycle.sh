@@ -31,6 +31,16 @@ WORK="$(mktemp -d -t myjarbis-skills-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
 
+# ─── hermetic HOME ────────────────────────────────────────────────
+#
+# An un-pinned MYJARBIS_HOME resolves to $HOME/.myjarbis (the developer's
+# real shared brain) and the default registry to $MYJARBIS_INSTALL_DIR —
+# i.e. into the checkout. Insurance even where this suite seeds its own db
+# at an explicit path: nothing it does should be able to reach the real home.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+export MYJARBIS_HOME="$WORK/brain"
+export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
+
 # ─── seed project + 2 modules ───
 node --input-type=module -e "
 import { seedNewProject } from '$SEED_HELPER';

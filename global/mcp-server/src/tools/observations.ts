@@ -3,10 +3,16 @@
  *
  * Persists a decision / gotcha / progress / error / discovery under the
  * ACTIVE session. Requires start_session to have been called.
+ *
+ * The note's module is the session's module — there is no module_id column, a
+ * note reaches its module through `session_id`. That is why `module` (filing
+ * under a companion when several are open) needs the sidecar session explained
+ * at its use below, rather than being a one-line override.
  */
 
 import { z } from 'zod';
 import { ServerContext } from '../context.js';
+import { AUTO_MARKER } from './autoClose.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import { ObservationKind } from '../db/schema.js';
 import { maybeRegenerateDiagram } from '../diagram/generate.js';
@@ -58,6 +64,15 @@ export const saveObservationInputSchema = {
         'With topic_key set, keep the previous note and link it via supersedes ' +
         'instead of overwriting it. Default false.',
     },
+    module: {
+      type: 'string' as const,
+      description:
+        'File this note under a DIFFERENT module than the session\'s primary. ' +
+        'Only needed when several modules are open together and this ' +
+        'particular note belongs to a companion — e.g. a gotcha you hit while ' +
+        'reading it. Omit for everything else: the default is the primary, and ' +
+        'that is where notes should land.',
+    },
   },
   required: ['kind', 'title', 'content'],
 };
@@ -85,6 +100,7 @@ const saveObservationArgsZ = z
       )
       .optional(),
     keep_history: z.boolean().optional(),
+    module: z.string().min(1).optional(),
   })
   .strict();
 
@@ -106,7 +122,42 @@ export function saveObservation(
   rawArgs: unknown,
 ): SaveObservationResult {
   const args = saveObservationArgsZ.parse(rawArgs);
-  const { sessionId, moduleId } = ctx.requireActiveSession();
+  const active = ctx.requireActiveSession();
+  let sessionId = active.sessionId;
+  let moduleId = active.moduleId;
+
+  // Filing a note under a companion module.
+  //
+  // An observation reaches its module only through `session_id` — there is no
+  // module_id column — so a note cannot be filed anywhere its session is not.
+  // Rather than add a column (a migration, for an edge case) or quietly file
+  // it under the primary (a lie, since the tool accepted a module), the note
+  // gets a SIDECAR session in the target module: created, written to, and
+  // closed immediately.
+  //
+  // Closed with `next_session = NULL` on purpose. `findLastClosedByModule`
+  // only considers closes that HAVE a next_session, so a sidecar can never
+  // become the companion's newest handoff and cannot bury the one a person
+  // wrote there. And closing it at once means this never adds to the pile of
+  // open sessions that auto-close exists to clean up.
+  //
+  // An open session in that module is reused instead — if something is already
+  // working there, the note belongs to that work.
+  let sidecar: { module: string; sessionId: number; reusedOpenSession: boolean } | undefined;
+  if (args.module) {
+    const target = ctx.requireModule(args.module);
+    if (target.id !== moduleId) {
+      const open = ctx.db.sessions.findActiveByModule(target.id);
+      const session = open ?? ctx.db.sessions.start(target.id);
+      sessionId = session.id;
+      moduleId = target.id;
+      sidecar = {
+        module: target.name,
+        sessionId: session.id,
+        reusedOpenSession: open !== null,
+      };
+    }
+  }
 
   const { row: obs, status } = ctx.db.observations.add({
     sessionId,
@@ -119,6 +170,16 @@ export function saveObservation(
     topicKey: args.topic_key ?? null,
     keepHistory: args.keep_history,
   });
+
+  if (sidecar && !sidecar.reusedOpenSession) {
+    ctx.db.sessions.end(
+      sidecar.sessionId,
+      `${AUTO_MARKER} Opened only to file one note from the session working in ` +
+        `"${ctx.db.modules.findById(active.moduleId)?.name ?? 'another module'}" ` +
+        `(session #${active.sessionId}). Not a unit of work — no handoff.`,
+      null,
+    );
+  }
 
   const module = ctx.db.modules.findById(moduleId)!;
 
@@ -135,11 +196,18 @@ export function saveObservation(
     status,
     topicKey: obs.topic_key ?? undefined,
     hint:
-      status === 'updated'
-        ? `Updated the existing note for topic "${obs.topic_key}" instead of adding a second one.`
-        : args.kind === 'progress'
-          ? 'Tip: pair this with end_session if the story is done.'
-          : undefined,
+      sidecar !== undefined
+        ? `Filed under "${sidecar.module}", not the session's primary module. ` +
+          (sidecar.reusedOpenSession
+            ? `It joined the session already open there (#${sidecar.sessionId}).`
+            : `A session was opened in that module just for this note and closed ` +
+              `again with no handoff, so it cannot shadow that module's "resume here".`) +
+          ` Say so when you report it — a note the user cannot find is worse than one they did not save.`
+        : status === 'updated'
+          ? `Updated the existing note for topic "${obs.topic_key}" instead of adding a second one.`
+          : args.kind === 'progress'
+            ? 'Tip: pair this with end_session if the story is done.'
+            : undefined,
   };
 }
 

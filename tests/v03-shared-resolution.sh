@@ -39,6 +39,11 @@ fi
 WORK="$(mktemp -d -t myjarbis-sharedres-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
+# Hermetic HOME: `myjarbis init` registers the project in $HOME/.claude.json
+# and writes $HOME/.claude/projects/<slug>/memory/. MYJARBIS_HOME keeps its
+# own meaning here — this suite is ABOUT shared-brain resolution — HOME is
+# pinned only so the Claude Code side-effects stop reaching the real home.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
 export MYJARBIS_HOME="$WORK/home"
 export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
 SHARED="$WORK/home/memory.db"

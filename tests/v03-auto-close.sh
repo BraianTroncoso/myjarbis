@@ -33,6 +33,41 @@
 #      and told the user there was no resume point.
 #
 # Exits 0 on success, non-zero on the first failed assertion.
+#
+# ─────────────────────────────────────────────────────────────────────
+# Why this file pins its own timestamps instead of letting the clock do it
+#
+# Every "which close is the newest" question in MyJarbis is answered by
+# comparing `sessions.ended_at`, which SQLite writes with `datetime('now')`
+# — the host's CLOCK_REALTIME, truncated to the second. The suite drives a
+# dozen short-lived node processes, so that clock is the only thing ordering
+# them, and it assumes the clock only ever moves forward.
+#
+# It does not. On the WSL2 machine this is developed on, CLOCK_REALTIME steps
+# BACKWARD by ~0.8s roughly every 32 seconds (Hyper-V guest time sync
+# re-anchoring to the host), measured directly:
+#
+#     BACKWARD STEP 1792508437074 -> 1792508436270  -804ms
+#     BACKWARD STEP 1792508468768 -> 1792508467967  -801ms
+#     BACKWARD STEP 1792508500452 -> 1792508499701  -751ms
+#
+# When one of those steps lands between two closes that are less than a
+# second apart, the one that happened LATER gets the EARLIER `ended_at`, and
+# `findLastClosedByModule` correctly returns the wrong session. Reproduced on
+# iteration 22 of 150: the final section's curated close was stamped 14:58:29
+# while an auto-close that preceded it was stamped 14:58:30, and both of its
+# assertions failed. That is the flake — not a timezone. SQLite's
+# `datetime('now')` is UTC and so is every parse of it in autoClose.ts /
+# session.ts; the suite was run under TZ=UTC, UTC+14, UTC-11, UTC+05:30 and
+# Argentina, and with a faked clock crossing local AND UTC midnight at 20
+# phase offsets, and passes in all of them.
+#
+# So the arrangement each section needs is now written into the fixture
+# explicitly — back-dated by days where the story is "on an earlier day",
+# pinned to an exact tie where the story is "in the same second" — rather
+# than being whatever the clock happened to produce. No assertion was
+# relaxed; the inputs stopped being accidental.
+# ─────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
@@ -50,6 +85,10 @@ fi
 WORK="$(mktemp -d -t myjarbis-autoclose-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
+# Hermetic HOME: `myjarbis init` runs twice below, and each run registers the
+# project in $HOME/.claude.json and writes $HOME/.claude/projects/<slug>/.
+# Unisolated, every run left two dead entries in the developer's real home.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
 export MYJARBIS_HOME="$WORK/home"
 export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
 
@@ -95,12 +134,36 @@ ctx.close();
 "
 
 # The commit the summary is supposed to report has to land AFTER the session
-# opened, because `commitsSince` asks git for `--since <session start>`. This
-# used to be committed before the session, and passed only when the commit and
-# the session start happened to fall inside the same second — `--since` is
-# inclusive at one-second granularity. It was a coin flip that the suite could
-# not report either way, because the assertion ran inside a pipe.
-echo rollup > b.txt && git add b.txt && git commit -qm "feat(api): add the rollup endpoint"
+# opened, because `commitsSince` asks git for `--since <session start> UTC`.
+# This used to be committed before the session, and passed only when the
+# commit and the session start happened to fall inside the same second —
+# `--since` is inclusive at one-second granularity. It was a coin flip that
+# the suite could not report either way, because the assertion ran inside a
+# pipe.
+#
+# Committing "now" and hoping is still a coin flip, just a thinner one: the
+# clock can step backward between the INSERT that stamped started_at and this
+# commit (see the note at the top), and then the commit sits BEFORE the
+# session it belongs to and drops out of `--since`. So derive the commit date
+# from the timestamp that was actually stored, in UTC, a minute later. Same
+# property under test — the commit falls inside the session's window — stated
+# instead of hoped for, and handed to git with an explicit +0000 so there is
+# no local/UTC question on the git side either.
+SESSION_STARTED_AT=$(node --input-type=module -e "
+import { ServerContext } from '$B/context.js';
+const ctx = ServerContext.initialize();
+const open = ctx.db.sessions.listOpenByProject(ctx.requireProject().id);
+console.log(open[open.length - 1].started_at);
+ctx.close();
+")
+COMMIT_DATE=$(node -e "
+const d = new Date(process.argv[1].replace(' ', 'T') + 'Z');
+d.setUTCSeconds(d.getUTCSeconds() + 60);
+console.log(d.toISOString().slice(0, 19).replace('T', ' ') + ' +0000');
+" "$SESSION_STARTED_AT")
+echo rollup > b.txt && git add b.txt
+GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
+  git commit -qm "feat(api): add the rollup endpoint"
 
 # Before: this is the state the project has been living in.
 BEFORE=$(node --input-type=module -e "
@@ -154,9 +217,23 @@ node --input-type=module -e "
 import { ServerContext } from '$B/context.js';
 import { resume } from '$B/tools/session.js';
 const ctx = ServerContext.initialize();
+const m = ctx.db.modules
+  .listByProject(ctx.requireProject().id)
+  .find((x) => x.name === '_general');
+// Pin \"the close that just happened is the newest one\" instead of assuming
+// it. ended_at comes from a clock that steps backward (see the note at the
+// top), so section [1]'s close can outrank this one, and then both
+// assertions below fail for a reason that has nothing to do with
+// project_state. Ids are monotonic; the clock is not — so age every close
+// below the newest id by a day, which is also the shape of the real case.
+ctx.db.db.prepare(
+  \"UPDATE sessions SET ended_at = datetime(ended_at, '-1 day') \" +
+  'WHERE module_id = ? AND ended_at IS NOT NULL AND id < ' +
+  '(SELECT MAX(id) FROM sessions WHERE module_id = ? AND ended_at IS NOT NULL)'
+).run(m.id, m.id);
 const r = resume(ctx, { module: '_general' });
 const out = [];
-const t = (c, m) => out.push((c ? 'PASS|' : 'FAIL|') + m);
+const t = (c, msg) => out.push((c ? 'PASS|' : 'FAIL|') + msg);
 t(/ROLLUP_V2/.test(r.nextSession), 'the living state is used verbatim as the resume point');
 t(/set deliberately/.test(r.nextSession), 'and is marked as the trustworthy source');
 console.log(out.join('\n'));
@@ -207,12 +284,32 @@ const ctx = ServerContext.initialize();
 // either of the two — and it returned the wrong one before the fix.
 startSession(ctx, { module: '_general' });
 saveObservation(ctx, { kind:'discovery', title:'dangling session marker', content:'x' });
-startSession(ctx, { module: '_general' });
-endSession(ctx, { summary: 'Shipped the hourly rollup and verified it in staging.',
+const opened = startSession(ctx, { module: '_general' });
+const closed = endSession(ctx, { summary: 'Shipped the hourly rollup and verified it in staging.',
                   next_session: 'Ask for sign-off on API-12, then enable ROLLUP_V2 in prod.' });
+const autoId = opened.autoClosedPrevious.sessionId;
+// Two fixture facts, written down rather than left to the clock:
+//
+//   · sections [1]-[3] closed sessions in this module seconds ago, and the
+//     clock steps backward (see the note at the top), so one of them can be
+//     stamped AFTER this close. Age everything below the newest id by a day.
+//   · the tie this section is named after is then restored exactly, by
+//     copying the curated close's ended_at onto the auto-close. It used to
+//     be a tie only when the two happened to fall inside one second, i.e.
+//     usually — so the id tie-break was usually, not always, under test.
+ctx.db.db.prepare(
+  \"UPDATE sessions SET ended_at = datetime(ended_at, '-1 day') \" +
+  'WHERE module_id = ? AND ended_at IS NOT NULL AND id < ' +
+  '(SELECT MAX(id) FROM sessions WHERE module_id = ? AND ended_at IS NOT NULL)'
+).run(opened.module.id, opened.module.id);
+ctx.db.db
+  .prepare('UPDATE sessions SET ended_at = ? WHERE id = ?')
+  .run(closed.endedAt, autoId);
 const r = resume(ctx, { module: '_general' });
 const out = [];
 const t = (c, m) => out.push((c ? 'PASS|' : 'FAIL|') + m);
+t(ctx.db.sessions.findById(autoId).ended_at === closed.endedAt,
+  'fixture: the auto-close and the curated close really do share one ended_at');
 t(!r.summary.startsWith('[auto]'), 'resume returns the CURATED summary, not the auto one');
 t(/verified it in staging/.test(r.summary), 'and it is the right curated summary');
 t(/sign-off on API-12/.test(r.nextSession), 'with the curated next_session');
@@ -426,11 +523,26 @@ node --input-type=module -e "
 import { ServerContext } from '$B/context.js';
 import { startSession, endSession, resume } from '$B/tools/session.js';
 const ctx = ServerContext.initialize();
-startSession(ctx, { module: '_general' });
-endSession(ctx, { summary: 'Wrote it up properly this time.', next_session: 'NEWEST CURATED: enable EXPORT_V2 everywhere.' });
+const opened = startSession(ctx, { module: '_general' });
+const closed = endSession(ctx, { summary: 'Wrote it up properly this time.', next_session: 'NEWEST CURATED: enable EXPORT_V2 everywhere.' });
+// This is the block that caught the clock. The two auto-closes above were
+// written by other processes a second or so ago; when CLOCK_REALTIME steps
+// backward in between (see the note at the top) THIS close is stamped
+// EARLIER than them, resume returns an [auto] note, and both assertions
+// below fail — observed with the curated close at 14:58:29 and an auto-close
+// that preceded it at 14:58:30. So age every earlier close by a day, which
+// is both deterministic and the honest shape of the case: the sessions were
+// auto-closed on previous days, the agent wrote this one up today.
+ctx.db.db.prepare(
+  \"UPDATE sessions SET ended_at = datetime(ended_at, '-1 day') \" +
+  'WHERE module_id = ? AND ended_at IS NOT NULL AND id < ' +
+  '(SELECT MAX(id) FROM sessions WHERE module_id = ? AND ended_at IS NOT NULL)'
+).run(opened.module.id, opened.module.id);
 const r = resume(ctx, { module: '_general' });
 const out = [];
 const t = (c, m) => out.push((c ? 'PASS|' : 'FAIL|') + m);
+t(ctx.db.sessions.findLastClosedByModule(opened.module.id).id === closed.sessionId,
+  'fixture: the curated close really is the newest close in the module');
 t(/NEWEST CURATED/.test(r.nextSession), 'resume returns the newest curated handoff');
 t(r.curatedResume === undefined,
   'and curatedResume is absent — nothing is buried, so nothing is duplicated');

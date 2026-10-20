@@ -36,6 +36,11 @@ fi
 WORK="$(mktemp -d -t myjarbis-merge-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
+# Hermetic HOME: the default registry lives next to the install and
+# $HOME/.claude.json / $HOME/.claude/projects/ are written by `init`, so
+# neither may be the developer's real ones. MYJARBIS_HOME is kept as it was.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
 export MYJARBIS_HOME="$WORK/home"
 
 node --input-type=module -e "

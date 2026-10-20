@@ -54,6 +54,13 @@ Your first output: 1-2 conversational lines continuing from
 Do NOT re-print the full "Resume here" block — the user already saw
 it on their terminal.
 
+If the block says `Module: <name> (primary)` followed by
+`Also open (read-only, index only): N`, then several modules are open.
+The session belongs to the primary; the companions are context. Name
+them once in your first line so the user knows what you can see, and
+read the "what changes with companions open" list in Case B — it
+applies here too. **Still do not call `start_session`.**
+
 ### Case B — Hook showed a module menu (no active module)
 
 If your context contains a numbered module menu with options ("new
@@ -67,11 +74,41 @@ When they reply, parse:
 - module name/number → `start_session(<name>)` and show a compact
   greeting with `previousSession.nextSession` (don't re-build blocks
   the hook already printed).
+- **several modules** ("1 and 3", "cli y server", "both") →
+  `start_session(<first>, with_modules=[<rest>])`. The first one named is
+  the PRIMARY: the session belongs to it, and so do observations,
+  progress and the handoff. The rest come along read-only.
 - "new module X" / "nuevo módulo X" / "novo módulo X" → `create_module(name)` + `start_session(name)`.
 - "settings" → show language/persona options inferred from the
   loaded `interaction-style` skill and call
   `set_interaction_style({language?, persona?})` when they pick. (Also
   available via CLI: `myjarbis config language EN`.)
+
+**If the work plausibly spans modules, offer the choice as checkboxes**
+rather than asking for one name. Work does not respect module
+boundaries — touching the CLI usually means reading what the server
+does — and a module the session cannot see is a module whose decisions
+get re-made. Use a multi-select prompt, mark the last-used module as the
+default primary, and say which one that is.
+
+What changes with companions open, and what does not:
+
+- `search` with the default `scope="module"` spans the whole open set and
+  names in `scopeContext.companions` which ones it searched. An explicit
+  `module=` argument is NOT widened.
+- A companion arrives as an INDEX: a row count and when it was last
+  worked in, never bodies. To go deeper:
+  `search(query, module="<name>")` then
+  `load_module(module="<name>", row_ids=[...])`.
+- Everything that writes still goes to the primary. `save_observation`
+  takes an optional `module` to file one note under a companion instead;
+  when you use it, say where the note went.
+- `end_session` is unchanged: ONE handoff, on the primary. If real work
+  happened in a companion, say so in that text.
+
+The selection is remembered in `.myjarbis/active`, so the next session
+opens on the same set. The user can also set it before opening Claude:
+`myjarbis module use cli,server` (first = primary).
 
 ### Case C — No project / No modules
 

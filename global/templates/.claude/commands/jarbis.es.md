@@ -54,6 +54,13 @@ Tu primer output: 1-2 líneas conversacional que continúen desde el
 NO repitas el bloque de "Retomar aquí" completo — el user ya lo vio
 en el terminal.
 
+Si el bloque dice `Module: <name> (primary)` seguido de
+`Also open (read-only, index only): N`, hay varios módulos abiertos. La
+sesión pertenece al primario; los acompañantes son contexto. Nombralos
+una vez en tu primera línea para que el user sepa qué estás viendo, y
+leé la lista de "qué cambia con acompañantes abiertos" del Caso B, que
+también aplica acá. **Igual no llames `start_session`.**
+
 ### Caso B — El hook mostró un menú de módulos (sin active module)
 
 Si en tu contexto hay un menú con módulos numerados y opciones
@@ -67,11 +74,42 @@ Cuando responda, parseá:
 - nombre/número de módulo → `start_session(<name>)` y mostrá greeting
   compacto con `previousSession.nextSession` (sin re-armar bloques que
   el hook ya printeó).
+- **varios módulos** ("1 y 3", "cli y server", "los dos") →
+  `start_session(<primero>, with_modules=[<resto>])`. El primero que
+  nombra es el PRIMARIO: la sesión le pertenece, y también las
+  observaciones, el progreso y el handoff. Los demás entran de lectura.
 - "nuevo módulo X" / "new module X" / "novo módulo X" → `create_module(name)` + `start_session(name)`.
 - "settings" / "configuración" → mostrá opciones de language/persona
   inferidas del skill `interaction-style` y llamá
   `set_interaction_style({language?, persona?})` cuando elija. (También
   está disponible CLI: `myjarbis config language EN`.)
+
+**Si el trabajo puede cruzar módulos, ofrecé la elección con
+checkboxes** en lugar de pedir un nombre. El trabajo no respeta los
+límites de módulo —tocar el CLI casi siempre implica leer qué hace el
+server— y un módulo que la sesión no ve es un módulo cuyas decisiones se
+vuelven a tomar. Usá un prompt de selección múltiple, marcá el último
+módulo usado como primario por defecto, y decí cuál es.
+
+Qué cambia con acompañantes abiertos, y qué no:
+
+- `search` con el `scope="module"` por defecto abarca todo el conjunto
+  abierto y dice en `scopeContext.companions` cuáles buscó. Un `module=`
+  explícito NO se ensancha.
+- Un acompañante llega como ÍNDICE: cantidad de filas y cuándo se
+  trabajó por última vez, nunca los cuerpos. Para profundizar:
+  `search(query, module="<name>")` y después
+  `load_module(module="<name>", row_ids=[...])`.
+- Todo lo que escribe sigue yendo al primario. `save_observation` acepta
+  un `module` opcional para archivar una nota en un acompañante; cuando
+  lo uses, decí dónde quedó.
+- `end_session` no cambia: UN handoff, en el primario. Si hubo trabajo
+  real en un acompañante, mencionalo en ese texto.
+
+La selección queda guardada en `.myjarbis/active`, así que la próxima
+sesión abre con el mismo conjunto. El usuario también puede fijarla
+antes de abrir Claude: `myjarbis module use cli,server` (el primero es
+el primario).
 
 ### Caso C — No hay proyecto / No hay módulos
 

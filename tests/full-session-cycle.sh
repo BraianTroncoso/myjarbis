@@ -31,6 +31,18 @@ fi
 WORK="$(mktemp -d -t myjarbis-cycle-test-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 echo "→ work dir: $WORK"
+
+# ─── hermetic HOME ────────────────────────────────────────────────
+#
+# This suite runs `myjarbis init` for real, which registers the project in
+# $HOME/.claude.json and writes $HOME/.claude/projects/<slug>/memory/; and
+# an un-pinned MYJARBIS_HOME resolves to $HOME/.myjarbis, the developer's
+# real shared brain. Unisolated runs accumulated there and in the registry
+# next to the install. Keep all three inside $WORK.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
+export MYJARBIS_HOME="$WORK/brain"
+export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
+
 cd "$WORK"
 
 # 1. Init

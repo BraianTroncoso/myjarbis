@@ -3,17 +3,24 @@
  * skills, observations.
  *
  * The scope decides which indexes are queried and how they are filtered:
- *   - module       (default): module_context of active module + project_context
+ *   - module       (default): module_context of the OPEN modules (primary plus
+ *                  any companions) + project_context
  *   - project      : module_context of all modules + project_context
  *   - module_only  : ONLY the named or active module's module_context
- *   - observations : observations within a module (or whole project)
+ *   - observations : observations within the open modules (or whole project)
  *   - skills       : skills (project-level + module-level)
+ *
+ * "The open modules" is usually one. When the user opened several together
+ * (see activeModules.ts) the default scope follows the set, because that set
+ * IS what they called the active context — see the comment at the companion
+ * resolution below.
  */
 
 import { z } from 'zod';
 import { ServerContext } from '../context.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import { SearchScope, SearchHit } from '../db/index.js';
+import { readCompanionModules } from '../activeModules.js';
 
 export const searchInputSchema = {
   type: 'object' as const,
@@ -31,10 +38,12 @@ export const searchInputSchema = {
       type: 'string' as const,
       enum: ['module', 'project', 'module_only', 'observations', 'skills'],
       description:
-        'Default "module" = active module context + project core. "project" ' +
-        'expands to all modules. "module_only" excludes project core. ' +
-        '"observations" searches decisions/gotchas/progress. "skills" searches ' +
-        'project/module skill content.',
+        'Default "module" = the open modules (primary + any companions) + ' +
+        'project core. "project" expands to all modules. "module_only" is one ' +
+        'module and excludes project core. "observations" searches ' +
+        'decisions/gotchas/progress. "skills" searches project/module skill ' +
+        'content. Which modules were actually searched comes back in ' +
+        'scopeContext.',
     },
     module: {
       type: 'string' as const,
@@ -64,7 +73,7 @@ const searchArgsZ = z
 export interface SearchResult {
   query: string;
   scope: SearchScope;
-  scopeContext: { project: string; module?: string };
+  scopeContext: { project: string; module?: string; companions?: string[] };
   count: number;
   hits: SearchHit[];
 }
@@ -100,11 +109,41 @@ export function search(ctx: ServerContext, rawArgs: unknown): SearchResult {
     }
   }
 
+  // Companion modules widen the default scope, and only the default scope.
+  //
+  // "Default scope = the active module" is the rule that keeps a search from
+  // dragging in half the project. When the user opened several modules
+  // together, the active context IS the set — a search bounded to the primary
+  // would hide exactly the rows they asked to have open, and they would widen
+  // to scope="project" instead, which is worse than what they wanted.
+  //
+  // Deliberately not applied when:
+  //   · `module` was passed — an explicit module is an explicit answer;
+  //   · scope is `module_only`, whose whole purpose is one module;
+  //   · scope is `project`, already wider than this.
+  let moduleIds: number[] | undefined;
+  let companionNames: string[] = [];
+  if ((scope === 'module' || scope === 'observations') && !args.module && moduleId !== undefined) {
+    const resolved: number[] = [moduleId];
+    for (const name of readCompanionModules(ctx.projectPath)) {
+      const m = ctx.db.modules.findByName(project.id, name);
+      // A stale name in `.myjarbis/active` is ignored rather than fatal: the
+      // session-start hook already warns about it, and a search is the wrong
+      // place to relitigate the selection.
+      if (m && m.id !== moduleId) {
+        resolved.push(m.id);
+        companionNames.push(m.name);
+      }
+    }
+    if (resolved.length > 1) moduleIds = resolved;
+  }
+
   // No projectId here on purpose: the tenant filter lives on the
   // connection (see MyJarbisDB.bindScope), so it cannot be omitted.
   const hits = ctx.db.search(args.query, {
     scope,
     moduleId,
+    moduleIds,
     limit: args.limit ?? 50,
   });
 
@@ -114,6 +153,9 @@ export function search(ctx: ServerContext, rawArgs: unknown): SearchResult {
     scopeContext: {
       project: project.name,
       module: moduleName,
+      // Named in the response so a hit from a companion is explainable rather
+      // than surprising: the agent can say which modules were searched.
+      companions: companionNames.length > 0 ? companionNames : undefined,
     },
     count: hits.length,
     hits,

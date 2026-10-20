@@ -15,6 +15,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ServerContext } from '../context.js';
 import { autoCloseStaleInModule, AUTO_MARKER } from './autoClose.js';
+import { claimSessionForProject } from '../sessionOwnership.js';
+import { writeActiveModules } from '../activeModules.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import {
   ProjectContextRow,
@@ -78,13 +80,30 @@ export const startSessionInputSchema = {
     module: {
       type: 'string' as const,
       description:
-        'Name of the module to work on. Must exist (use create_module first if not).',
+        'Name of the module to work on. Must exist (use create_module first if not). ' +
+        'This is the PRIMARY module: the session belongs to it, and so do ' +
+        'observations, progress and the handoff.',
+    },
+    with_modules: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description:
+        'Additional modules to open READ-ONLY alongside the primary, when the ' +
+        'work spans more than one. Their context is returned as an index ' +
+        '(excerpts, no bodies) and scope="module" searches span them, but ' +
+        'nothing is ever written to them. Use when the user picks several ' +
+        'modules; the selection is remembered for the next session start.',
     },
   },
   required: ['module'],
 };
 
-const startSessionArgsZ = z.object({ module: z.string().min(1) }).strict();
+const startSessionArgsZ = z
+  .object({
+    module: z.string().min(1),
+    with_modules: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
 
 interface ContextEntrySummary {
   id: number;
@@ -158,6 +177,20 @@ export interface StartSessionResult {
     durationMinutes: number;
     nextSessionSource: string;
   };
+  /** Modules opened read-only alongside the primary.
+   *
+   *  Index depth only — a count and the last handoff pointer, never bodies.
+   *  Loading a companion's rows at session start would spend the window on
+   *  context the session may never touch; `search(module=...)` and
+   *  `load_module(module=..., row_ids=[...])` reach them when it does. */
+  companions?: Array<{
+    module: string;
+    description: string | null;
+    rows: number;
+    lastClosedAt: string | null;
+    /** First line of its last handoff, as a pointer rather than the text. */
+    lastHandoffFirstLine: string | null;
+  }>;
   hint?: string;
 }
 
@@ -180,6 +213,51 @@ export function startSession(
 
   const session = ctx.db.sessions.start(module.id);
   ctx.setActiveSession(session.id, module.id);
+
+  // Attribute this session to the editor session driving us, so another
+  // Claude's SessionEnd cannot close it. The hook claims the sessions IT
+  // opens; this covers the other half — the ones the agent opens mid-session
+  // by asking for a module — which is the common case whenever the user did
+  // not run `myjarbis module use` before opening Claude. See
+  // sessionOwnership.ts for why the attribution is an inference and why being
+  // wrong about it is harmless.
+  claimSessionForProject(project.id, session.id);
+
+  // Companion modules: resolved, remembered, and summarised at index depth.
+  //
+  // `requireModule` for each, so a typo fails loudly here rather than
+  // silently dropping a module the user asked for.
+  const companionRows = (args.with_modules ?? [])
+    .map((name) => ctx.requireModule(name))
+    .filter((m) => m.id !== module.id);
+
+  // Remembered only when there IS a multi-module selection to remember.
+  //
+  // `.myjarbis/active` is what the SessionStart hook reads to skip the menu,
+  // and writing it on every start_session would change a contract nobody asked
+  // to change: picking a module in chat would silently make it the auto-start
+  // module for every future open. Two suites caught exactly that. Setting the
+  // single active module stays what it has always been — an explicit
+  // `myjarbis module use`.
+  //
+  // With companions, persisting IS the point: it is what makes the checkbox
+  // prompt and the CLI one feature rather than two, so the next open comes
+  // back with the same set.
+  if (companionRows.length > 0) {
+    writeActiveModules(ctx.projectPath, [module.name, ...companionRows.map((m) => m.name)]);
+  }
+
+  const companions = companionRows.map((m) => {
+    const lastClosed = ctx.db.sessions.findLastClosedByModule(m.id);
+    return {
+      module: m.name,
+      description: m.description,
+      rows: ctx.db.moduleContext.countByModule(m.id),
+      lastClosedAt: lastClosed?.ended_at ?? null,
+      lastHandoffFirstLine:
+        lastClosed?.next_session?.split('\n').find((l) => l.trim().length > 0)?.trim() ?? null,
+    };
+  });
 
   // Living diagram: when a module is chosen by chat (start_session) rather than
   // pre-set via the SessionStart fast-path, open its diagram here too so it
@@ -262,6 +340,7 @@ export function startSession(
           nextSessionSource: autoClosed.nextSessionSource,
         }
       : undefined,
+    companions: companions.length > 0 ? companions : undefined,
     hint: autoClosed
       ? `The previous session in "${module.name}" was left open and has just been ` +
         `closed automatically, so previousSession.nextSession is MACHINE-WRITTEN ` +

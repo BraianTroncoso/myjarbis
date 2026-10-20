@@ -38,6 +38,9 @@ fi
 
 WORK="$(mktemp -d -t myjarbis-bench-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
+# Hermetic HOME, as insurance: nothing here should resolve a path through
+# $HOME, and if something starts to, it must not be the real one.
+export HOME="$WORK/fakehome"; mkdir -p "$HOME"
 export MYJARBIS_HOME="$WORK/home"
 export MYJARBIS_REGISTRY="$WORK/projects-registry.json"
 
