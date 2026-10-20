@@ -63,10 +63,27 @@ Hard rules:
 The older history uses `Por qué:` / `Para qué:` / `Dónde:` as headers, sometimes
 with English prose. `Why:` / `What for:` / `Where:` is the form to use from here.
 
-## Branch
+## Branches
 
 The default branch is **`master`**. There is no `main`. A command or document
 that says `main` is wrong about this repository.
+
+**Work happens on a branch, never directly on `master`.** One branch per
+session — the set of things a session sets out to do, not one per commit. It
+gets merged when the work is verified and the user has tested it.
+
+```
+<type>/<what-the-session-is-about>
+```
+
+Same `type` vocabulary as the commits, kebab-case, English like everything
+else. `fix/session-ownership-and-name-scrub`, not `fix/arreglos` and not
+`braian-dev`.
+
+Why a branch and not a direct commit: the point is being able to see what a
+session did as one unit, and to drop it as one unit if it turns out wrong.
+`master` staying clean and pushed is also what lets `project_state` say
+"master at <sha>, clean" and have that mean something.
 
 ## Verifying a fix
 
