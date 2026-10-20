@@ -293,7 +293,10 @@ export const endSessionInputSchema = {
     summary: {
       type: 'string' as const,
       description:
-        'Retrospective: 1–3 bullet sentences describing what was done. Avoid fluff.',
+        'Retrospective: 1–3 bullet sentences describing what was done. Avoid fluff. ' +
+        'Keep it under ~2000 characters: a long summary is what loses next_session ' +
+        'in transit, and next_session is the half that matters tomorrow. Put the ' +
+        'detail in a save_observation instead.',
     },
     next_session: {
       type: 'string' as const,
@@ -311,6 +314,49 @@ const endSessionArgsZ = z
   })
   .strict();
 
+/**
+ * Both fields are required, and the one that goes missing is always
+ * `next_session` — never `summary`. The cause is not validation: a long
+ * `summary` can get the call's arguments truncated before they reach the
+ * server, so the second key never arrives at all. A bare validator error then
+ * says "next_session: Required", which reads as if the caller forgot it, and
+ * the honest answer ("your summary was too long, the rest was cut off") is
+ * nowhere in the message.
+ *
+ * It cost four retries once and left sessions 464 and 465 with throwaway
+ * handoffs, which is the expensive part: the summary is a nice-to-have, the
+ * handoff is what the next session actually opens with.
+ */
+function parseEndSessionArgs(rawArgs: unknown): {
+  summary: string;
+  next_session: string;
+} {
+  const parsed = endSessionArgsZ.safeParse(rawArgs);
+  if (parsed.success) return parsed.data;
+
+  const received = (rawArgs ?? {}) as Record<string, unknown>;
+  const summaryLength =
+    typeof received.summary === 'string' ? received.summary.length : 0;
+  const nextMissing =
+    received.next_session === undefined || received.next_session === '';
+
+  if (nextMissing && summaryLength > 0) {
+    throw new MyJarbisError(
+      ErrorType.INVALID_INPUT,
+      `end_session got a summary of ${summaryLength} characters and no ` +
+        `next_session. Both are required, and this is what a truncated call ` +
+        `looks like rather than a forgotten argument — a long summary can cut ` +
+        `the rest of the arguments off in transit. Retry with a summary under ` +
+        `~2000 characters; the detail belongs in a save_observation. Do not ` +
+        `settle for a throwaway next_session: it is the line the next session ` +
+        `opens with.`,
+      { summaryLength, nextSessionMissing: true },
+    );
+  }
+
+  throw parsed.error;
+}
+
 export interface EndSessionResult {
   sessionId: number;
   startedAt: string;
@@ -325,7 +371,7 @@ export function endSession(
   ctx: ServerContext,
   rawArgs: unknown,
 ): EndSessionResult {
-  const args = endSessionArgsZ.parse(rawArgs);
+  const args = parseEndSessionArgs(rawArgs);
   const { sessionId, moduleId } = ctx.requireActiveSession();
 
   const closed = ctx.db.sessions.end(sessionId, args.summary, args.next_session);

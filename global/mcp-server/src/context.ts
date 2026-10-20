@@ -34,8 +34,33 @@ export class ServerContext {
   private _project: ProjectRow | null = null;
 
   /** Active session set by start_session, cleared by end_session. */
-  activeSessionId: number | null = null;
-  activeModuleId: number | null = null;
+  private _activeSessionId: number | null = null;
+  private _activeModuleId: number | null = null;
+
+  /**
+   * True once end_session ran in THIS process. It suppresses adopting an open
+   * session from the brain, so "close, then save an observation" keeps failing
+   * the way it should instead of silently landing the note on some other
+   * module's leftover open session.
+   */
+  private sessionEndedHere = false;
+
+  /**
+   * Both read through lazy adoption (see `adoptOpenSessionFromBrain`), which
+   * is why they are getters and not plain fields. Eight call sites across the
+   * tools read them to decide a default, and `search` is one of them: with the
+   * module unresolved it quietly widened `scope="module"` to the whole
+   * project. Fixing the getter fixes every reader at once.
+   */
+  get activeSessionId(): number | null {
+    if (this._activeSessionId === null) this.adoptOpenSessionFromBrain();
+    return this._activeSessionId;
+  }
+
+  get activeModuleId(): number | null {
+    if (this._activeModuleId === null) this.adoptOpenSessionFromBrain();
+    return this._activeModuleId;
+  }
 
   private constructor(
     cwd: string,
@@ -168,29 +193,86 @@ export class ServerContext {
   }
 
   /**
-   * Validate that there is an active session, returning the cached ids.
+   * Validate that there is an active session, returning the ids.
    * Used by save_observation and any tool that requires a live session.
+   *
+   * Falls back to the brain when this process has no session in memory.
+   * It has to: the SessionStart hook opens the session in a short-lived CLI
+   * process, while the MCP server is a different, long-lived one. Holding the
+   * active session only in memory meant the banner announced a live session
+   * that the server could not write to — every `save_observation` as the first
+   * call of a session failed with SESSION_NOT_ACTIVE, and recovering with
+   * `start_session` auto-closed the hook's session and opened a second one.
+   * Sessions 473 and 474 are both three-minute empty automatic closes left by
+   * exactly that, and the churn resets the staleness clock that decides
+   * whether a human handoff is still shown.
    */
   requireActiveSession(): { sessionId: number; moduleId: number } {
-    if (this.activeSessionId === null || this.activeModuleId === null) {
+    const sessionId = this.activeSessionId;
+    const moduleId = this.activeModuleId;
+    if (sessionId === null || moduleId === null) {
       throw new MyJarbisError(
         ErrorType.SESSION_NOT_ACTIVE,
-        'No active session. Call start_session(module) first.',
+        this.sessionEndedHere
+          ? 'The session was closed by end_session. Call start_session(module) to open a new one.'
+          : 'No active session, and this project has no open session in the brain ' +
+              'to adopt. Call start_session(module) first.',
       );
     }
-    return { sessionId: this.activeSessionId, moduleId: this.activeModuleId };
+    return { sessionId, moduleId };
+  }
+
+  /**
+   * Adopt the newest session this project has left open in the brain.
+   *
+   * Recency for an open session is (started_at, id), never started_at alone —
+   * started_at has one-second granularity, so two sessions opened in the same
+   * second tie and the id breaks it. Same rule the closed-session lookups use.
+   *
+   * Never throws. It is reached from getters that callers treat as plain field
+   * reads, so a scope or lookup failure here has to degrade to "no session",
+   * not take down the tool that was only asking for a default.
+   */
+  private adoptOpenSessionFromBrain(): void {
+    if (this.sessionEndedHere) return;
+    const project = this.project;
+    if (!project) return;
+
+    try {
+      const open = this.db.sessions.listOpenByProject(project.id);
+      if (open.length === 0) return;
+
+      const newest = [...open].sort((a, b) =>
+        a.started_at === b.started_at
+          ? a.id - b.id
+          : a.started_at < b.started_at
+            ? -1
+            : 1,
+      )[open.length - 1];
+
+      this.setActiveSession(newest.id, newest.module_id);
+      console.error(
+        `[MyJarbis] Adopted open session #${newest.id} from the brain — it was ` +
+          `opened outside this process (the startup hook), which does not share ` +
+          `memory with the server.`,
+      );
+    } catch {
+      // Degrade to "no active session"; the caller's own error says the rest.
+    }
   }
 
   /** Mark a session active (called from start_session). */
   setActiveSession(sessionId: number, moduleId: number): void {
-    this.activeSessionId = sessionId;
-    this.activeModuleId = moduleId;
+    this._activeSessionId = sessionId;
+    this._activeModuleId = moduleId;
+    this.sessionEndedHere = false;
   }
 
   /** Clear the active session (called from end_session). */
   clearActiveSession(): void {
-    this.activeSessionId = null;
-    this.activeModuleId = null;
+    this._activeSessionId = null;
+    this._activeModuleId = null;
+    this.sessionEndedHere = true;
   }
 
   /** Force re-load of project row from DB. */
