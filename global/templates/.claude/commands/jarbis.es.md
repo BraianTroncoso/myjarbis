@@ -163,24 +163,13 @@ orientarte. **NO cargues bodies completos hasta saber qué necesitás.**
   precisa, search+load resuelven sin sub-agente.
 
 ### FASE 2 — Análisis
-Triggers (lenguaje natural del user): *"vamos a planificar / pensemos /
-arranquemos / qué necesitamos para X / cómo encararíamos Y"*.
+Triggers: *"vamos a planificar / pensemos / arranquemos / qué
+necesitamos para X / cómo encararíamos Y"*.
 
-- Si el módulo es story-driven (tiene rows `kind=story` en
-  `module_context`) y el user mencionó un `localId` (ej. `SHOP-S1.4`,
-  `WEB-101`, `CORE-1234`):
-  1. `search` con scope=module y la query del localId.
-  2. Confirmá con el user: *"Detectado SHOP-S1.4 — '<summary>'. ¿Avanzo
-     con la auditoría?"*.
-  3. Auditá AC vs codebase y devolvé una **tabla de gaps**:
-     ```
-     | Requirement (AC) | Status (present/missing/partial) | Evidence |
-     ```
-  4. Si todo present: proponé cerrar sin tocar código.
-  5. Si hay gaps: proponé un plan en fases con la convención de branch +
-     commits del project_context (e.g., `feature/checkout-e1-s1.4-<slug>`).
-- Si el módulo es free-form: preguntá scope/data/UX/tech antes de
-  proponer phases.
+- Módulo story-driven (tiene rows `kind=story`) y el user mencionó un
+  `localId` → el pipeline completo (detectar, confirmar, tabla de gaps,
+  convención de branch) está en la skill **`myjarbis-story-driven`**.
+- Módulo free-form: preguntá scope/data/UX/tech antes de proponer fases.
 
 **No escribas código todavía.** Esperá la aprobación del user.
 
@@ -193,11 +182,11 @@ Por cada chunk lógico (= un commit):
 2. **Verificá**: corré tests/lint/types como pida el proyecto.
 3. **Commiteá** siguiendo el formato del WORKFLOW del módulo
    (e.g. `feat(checkout-e1): <desc> (SHOP-S1.4)`). Stage por nombre,
-   sin `git add -A`, sin `--no-verify`.
-4. **`save_observation`** con `kind: "decision"` + `title` (≤80,
-   imperativa) + `content` (WHY/WHAT/HOW) + `story_local_id` +
-   `files`. **No es opcional** — toda decisión commiteable se
-   persiste antes de seguir.
+   sin `git add -A`, sin `--no-verify`. El resto del formato, en la
+   skill **`myjarbis-commit-hygiene`**.
+4. **`save_observation`** con `kind: "decision"`. **No es opcional** —
+   toda decisión commiteable se persiste antes de seguir. El formato de
+   title/content/files está en **`myjarbis-observation-protocol`**.
 
 ### FASE 4 — Verificación
 - Tests verdes, lint OK, smoke manual si aplica.
@@ -210,30 +199,30 @@ mismo ritual sin ambigüedad de trigger (y sin preguntar, porque escribirlo
 ya es la confirmación).
 
 1. **`save_observation`** con `kind: "progress"` + `story_local_id` + `files`.
-2. **`end_session`** con DOS campos:
-   - `summary` — retrospectiva 1-3 bullets. Sin celebración.
-   - `next_session` — **el "Retomar aquí" del próximo arranque**.
-     Acción concreta + path/branch/PR + blockers. ≤ 10 líneas.
-   **Pedile al user los 2 textos si no los tiene en mente.**
-   **Confirmá antes de llamar `end_session`** (los triggers como
-   "listo" pueden ser ambiguos).
+2. **`end_session`** con `summary` + `next_session`. El formato de los dos
+   textos y la confirmación obligatoria están en la skill
+   **`myjarbis-session-protocol`**; el `next_session` en particular, en
+   **`myjarbis-bitacora-progress`**.
+
+**Confirmá antes de llamar `end_session`** — "listo" es ambiguo.
 
 ---
 
 ## Otros triggers conversacionales (sin slash command)
 
+Los triggers de **guardar** (decisión / gotcha / progress / error /
+discovery) están en la skill **`myjarbis-observation-protocol`**; los de
+**cerrar** en **`myjarbis-session-protocol`**; los de **cambiar o crear
+módulo** en **`myjarbis-module-orchestration`**; los de **pre-compact**
+en **`myjarbis-compact-protocol`**; un `localId` aislado, en
+**`myjarbis-story-driven`**. Acá quedan solo los que no vive ninguna skill:
+
 | El user dice…                                   | Vos hacés                                                                   |
 |--------------------------------------------------|-----------------------------------------------------------------------------|
-| "decidí X" / "decidimos Y"                       | `save_observation(kind=decision)` con file paths.                           |
 | "guardá esto" / "actualizate la memoria" / "anotá esto" | Corré el ritual `/jarbis-save`: observaciones pendientes + `update_progress` + `set_project_state`. NO llames `end_session` — la sesión sigue. |
-| "encontré que / falla / quedó este bug raro"     | `save_observation(kind=gotcha)`.                                            |
 | "donde estaba?" / "qué hacíamos?"                | `resume()` y leé en voz alta su `nextSession`.                              |
-| "vamos a tocar X" / "cambiamos a Y" / "pasamos a Z" | Confirmá. Si OK: `end_session` actual + `start_session(target)`. Re-materialize ya lo hacen los hooks. |
-| "creemos un módulo nuevo X"                      | `create_module(name, description?)`. Preguntá si arrancar sesión ahí ahora. |
-| "antes de compactar" / antes de `/compact` nativo | Corré el ritual `/jarbis-save`, incluyendo su nota de pre-compact (`kind=discovery`, `tags=pre-compact`, snapshot estructurado). Después dale el OK al user para `/compact`. |
-| Un `localId` aislado (ej. `SHOP-S1.4`)             | Asumí que quiere arrancar esa story → fase 2 (Análisis).                    |
 | "actualizá la docu" / "marcá X como done" / "registrá los smokes" | Por cada story tocada en la sesión: `update_progress(local_id, progress)` con markdown estructurado: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · fecha · notas de smoke. Es el equivalente directo a editar la columna "Smoke" / "Commit" de un PROGRESS.md. NO uses `save_observation` para esto — `progress` es estado relacional al row, observations son lecciones de la sesión. |
-| "settings" / "cambiar estilo" / "cambiar idioma" / "cambiar persona" | Mostrale las opciones disponibles: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. Si vos ya conocés el current (lo podés inferir del skill `interaction-style` cargado), informalo primero. Cuando elija, llamá `set_interaction_style({language?, persona?})` con solo el campo que cambia (el otro se preserva). Avisale al user que el cambio aplica a partir de la próxima respuesta tuya; si quiere ver las skills materializadas refrescadas en disco, que reabra Claude. |
+| "settings" / "cambiar estilo" / "cambiar idioma" / "cambiar persona" | Mostrale las opciones: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. Cuando elija, `set_interaction_style({language?, persona?})` con solo el campo que cambia (el otro se preserva). Aplica desde tu próxima respuesta; para refrescar las skills en disco, que reabra Claude. |
 
 ---
 
@@ -303,5 +292,5 @@ parece pedir eso, decilo y pará.
 
 ---
 
-Ahora ejecutá el bootstrap (steps 1-4 de arriba) y mostrá el greeting
-canónico al user.
+Ahora reaccioná al bootstrap: identificá cuál de los casos A/B/C imprimió
+el hook y respondé con las 1-2 líneas que ese caso pide. Nada más.

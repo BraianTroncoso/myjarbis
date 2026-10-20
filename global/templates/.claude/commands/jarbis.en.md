@@ -165,21 +165,10 @@ stories (localIds) loaded from bootstrap. That's enough to orient.
 Triggers (user's natural language): *"let's plan / think this through /
 let's start / what do we need for X / how should we approach Y"*.
 
-- If the module is story-driven (has `kind=story` rows in
-  `module_context`) and the user mentioned a `localId` (e.g. `SHOP-S1.4`,
-  `WEB-101`, `CORE-1234`):
-  1. `search` with scope=module and the localId as query.
-  2. Confirm with the user: *"Detected SHOP-S1.4 — '<summary>'. Should I
-     proceed with the audit?"*.
-  3. Audit AC vs codebase and return a **gap table**:
-     ```
-     | Requirement (AC) | Status (present/missing/partial) | Evidence |
-     ```
-  4. If everything is present: propose closing without touching code.
-  5. If gaps exist: propose a phased plan with branch + commit
-     conventions from project_context (e.g., `feature/checkout-e1-s1.4-<slug>`).
-- If the module is free-form: ask scope/data/UX/tech before proposing
-  phases.
+- Story-driven module (has `kind=story` rows) and the user mentioned a
+  `localId` → the full pipeline (detect, confirm, gap table, branch
+  convention) lives in the **`myjarbis-story-driven`** skill.
+- Free-form module: ask scope/data/UX/tech before proposing phases.
 
 **Don't write code yet.** Wait for user approval.
 
@@ -192,11 +181,11 @@ For each logical chunk (= one commit):
 2. **Verify**: run tests/lint/types as the project demands.
 3. **Commit** following the module's WORKFLOW format
    (e.g. `feat(checkout-e1): <desc> (SHOP-S1.4)`). Stage by name,
-   no `git add -A`, no `--no-verify`.
-4. **`save_observation`** with `kind: "decision"` + `title` (≤80,
-   imperative) + `content` (WHY/WHAT/HOW) + `story_local_id` +
-   `files`. **Not optional** — every committable decision lands in
-   the DB before moving on.
+   no `git add -A`, no `--no-verify`. The rest of the format is in the
+   **`myjarbis-commit-hygiene`** skill.
+4. **`save_observation`** with `kind: "decision"`. **Not optional** —
+   every committable decision lands in the DB before moving on. The
+   title/content/files format is in **`myjarbis-observation-protocol`**.
 
 ### PHASE 4 — Verification
 - Tests green, lint OK, manual smoke if applicable.
@@ -209,30 +198,30 @@ ritual without trigger ambiguity (and without asking, since typing it is
 already the confirmation).
 
 1. **`save_observation`** with `kind: "progress"` + `story_local_id` + `files`.
-2. **`end_session`** with TWO fields:
-   - `summary` — retrospective 1-3 bullets. No celebration.
-   - `next_session` — **the next opening's "Resume here"**.
-     Concrete action + path/branch/PR + blockers. ≤ 10 lines.
-   **Ask the user for both texts if they don't have them in mind.**
-   **Confirm before calling `end_session`** (triggers like
-   "ok" can be ambiguous).
+2. **`end_session`** with `summary` + `next_session`. The format of both
+   texts and the mandatory confirmation live in the
+   **`myjarbis-session-protocol`** skill; `next_session` specifically in
+   **`myjarbis-bitacora-progress`**.
+
+**Confirm before calling `end_session`** — "ok" is ambiguous.
 
 ---
 
 ## Other conversational triggers (no slash command)
 
+The **saving** triggers (decision / gotcha / progress / error / discovery)
+live in the **`myjarbis-observation-protocol`** skill; the **closing** ones
+in **`myjarbis-session-protocol`**; **switching or creating a module** in
+**`myjarbis-module-orchestration`**; **pre-compact** in
+**`myjarbis-compact-protocol`**; a bare `localId` in
+**`myjarbis-story-driven`**. Only the ones no skill carries are left here:
+
 | When the user says…                              | You do                                                                      |
 |--------------------------------------------------|-----------------------------------------------------------------------------|
-| "I decided X" / "we decided Y"                   | `save_observation(kind=decision)` with file paths.                          |
 | "save this" / "update your memory" / "write this down" | Run the `/jarbis-save` ritual: pending observations + `update_progress` + `set_project_state`. Do NOT call `end_session` — the session keeps going. |
-| "I found that / it fails / weird bug stuck"      | `save_observation(kind=gotcha)`.                                            |
 | "where was I?" / "what were we doing?"           | `resume()` and read out its `nextSession`.                                  |
-| "let's work on X" / "switch to Y" / "move to Z"  | Confirm. If OK: `end_session` current + `start_session(target)`. Hooks re-materialize. |
-| "let's create a new module X"                    | `create_module(name, description?)`. Ask if starting a session there now.   |
-| "before compacting" / before native `/compact`   | Run the `/jarbis-save` ritual, including its pre-compact note (`kind=discovery`, `tags=pre-compact`, structured snapshot). Then OK the user to run `/compact`. |
-| A bare `localId` (e.g. `SHOP-S1.4`)                | Assume they want to start that story → phase 2 (Analysis).                  |
 | "update the docs" / "mark X as done" / "log the smokes" | For each story touched in the session: `update_progress(local_id, progress)` with structured markdown: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · date · smoke notes. Direct equivalent of editing the Smoke/Commit column of a PROGRESS.md. Do NOT use `save_observation` for this — `progress` is row-relational state, observations are session lessons. |
-| "settings" / "change style" / "change language" / "change persona" | Show the available options: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. If you can infer the current values from the loaded `interaction-style` skill, surface them first. When the user picks, call `set_interaction_style({language?, persona?})` with only the changed field (the other is preserved). Tell the user the change applies from your next response; for materialized-skill refresh on disk, they should reopen Claude. |
+| "settings" / "change style" / "change language" / "change persona" | Show the options: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. When the user picks, call `set_interaction_style({language?, persona?})` with only the changed field (the other is preserved). It applies from your next response; to refresh the skills on disk they should reopen Claude. |
 
 ---
 
@@ -303,5 +292,5 @@ across `module_context` + `project_context` first; propose after.
 
 ---
 
-Now run the bootstrap (steps 1-4 above) and show the canonical
-greeting to the user.
+Now react to the bootstrap: work out which of cases A/B/C the hook
+printed, and answer with the 1-2 lines that case asks for. Nothing more.
