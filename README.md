@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Persistent memory + per-project workflow + scoped skills for Claude Code.</b><br>
-  Two slash commands: open and close. Everything else is a conversation.
+  Three slash commands: open, save, close. Everything else is a conversation.
 </p>
 
 <p align="center">
@@ -64,34 +64,20 @@ without a backup or skipping a confirmation you'd want.
 
 ---
 
-## What's new in v0.3
+## Where to go
 
-v0.2 gave the memory a schema. v0.3 is about what the memory was
-*still* doing in prose — and the three habits that proves.
+| If you want to… | Read |
+|---|---|
+| understand the idea in 60 seconds | [In plain terms](#in-plain-terms) |
+| install it and run it today | [Start in 30 seconds](#start-in-30-seconds) |
+| see what using it actually looks like | [See it work](#see-it-work) |
+| know what each feature does | [The features](#the-features) — one line each, expand what matters |
+| wire it into a team | [Org packs](#the-features) and [Workflows as data](#the-features) |
+| understand how it is built | [Deep dive](#deep-dive) |
+| upgrade an existing install | [`docs/UPGRADING.md`](docs/UPGRADING.md) |
 
-| The habit that formed | Why it formed | v0.3 |
-|---|---|---|
-| A new note titled *"CORRECTS note 80"* | nothing could say "this replaces that" | `topic_key` — saving again **updates** the note |
-| *"Don't repeat: comments 4-29337–41"* written into a paragraph | the brain was being used as an idempotency ledger with no structure to be one | `find_by_ref` — a boolean, not a re-read |
-| A fresh *"RESUME HERE"* note every session | the current state had no home | `project_state` — one row, with an expiring lock |
-
-Plus the four structural ones:
-
-- **Org packs** — load how your team works instead of teaching it to each
-  project. `overrides/` replaces a baseline skill; `org sync` re-applies
-  to every project in one command.
-- **Workflows as data** — process as rows with org → project → user
-  inheritance, addressed by abstract capability (`tracker.comment`), so
-  the core never learns a vendor's name.
-- **A fixed taxonomy** — `kind` comes from a catalogue. Three real
-  projects had invented three vocabularies for the same seven ideas.
-- **Sessions that close themselves** — `summary` was NULL on 2 of 2
-  sessions in one real project. Now the harness closes them, in two
-  places, so it survives a killed terminal.
-
-Everything is additive. Existing projects keep working on their current
-schema until you run `myjarbis migrate`, which backs up first.
-[Full details below](#org-packs--load-how-your-team-works-dont-teach-it).
+Everything below the fold is collapsed on purpose. Open only what you need —
+nothing has been cut.
 
 ---
 
@@ -161,7 +147,23 @@ The CLI is consistent and instant (zero LLM tokens) — here's `myjarbis status`
 
 ---
 
-## Why per-project, per-module?
+## The features
+
+One line each. Expand the ones you care about; skip the rest.
+
+| | What it gives you |
+|---|---|
+| **Per-project, per-module** | memory scoped to the vertical you are in, not the whole repo |
+| **`myjarbis start`** | launch any project from anywhere, with Claude and `/jarbis` already running |
+| **CLI workflow** | git-like verbs that cost zero LLM tokens |
+| **Org packs** | load how your team works instead of teaching it to each project |
+| **Workflows as data** | process as rows with inheritance, addressed by capability, not vendor |
+| **Notes with identity** | saving again updates a note instead of leaving a rival next to it |
+| **One brain or many** | shared by default, isolated when a project needs it |
+| **Living diagrams** | documentation that redraws itself from what you saved |
+
+<details>
+<summary><b>Why per-project, per-module?</b></summary>
 
 In real projects, work is **vertical**. You don't work on "the codebase";
 you work on the Checkout flow, then Catalog, then Translations. Each
@@ -191,9 +193,10 @@ When you open Claude, the SessionStart hook asks which vertical you want.
 **Only that module + the project core get loaded.** The other modules stay
 out of context — that's the core token-saving move.
 
----
+</details>
 
-## `myjarbis start` — launch from anywhere
+<details>
+<summary><b><code>myjarbis start</code> — launch from anywhere</b></summary>
 
 Run it from **any** directory. It reads your global registry, lets you
 pick by number, name, or substring, and opens each chosen project ready
@@ -225,9 +228,10 @@ skipped. On WSL the tab is forced opaque (`--opacity 100`) so it doesn't
 inherit a transparent profile. After you exit claude, the tab drops to a
 shell in the project dir (keep-alive), so the window stays useful.
 
----
+</details>
 
-## CLI workflow (git-like)
+<details>
+<summary><b>CLI workflow (git-like)</b></summary>
 
 `/jarbis` is fastest when it doesn't have to render a menu — it just
 continues with what's set. The CLI handles setup and switching, like
@@ -251,9 +255,10 @@ continues (no tool calls, no menu render).
 > is no `myjarbis search`. Use `myjarbis status` and `myjarbis timeline`
 > from the shell.
 
----
+</details>
 
-## Org packs — load how your team works, don't teach it
+<details>
+<summary><b>Org packs — load how your team works, don't teach it</b></summary>
 
 `myjarbis init` seeds ten generic skills. Everything specific to *your
 organization* — review rules, release checklist, how tickets get closed —
@@ -291,9 +296,10 @@ as skipped rather than silently missed.
 contract is readable. Your rules, client names and tool wrappers stay out
 of this repo.
 
----
+</details>
 
-## Workflows as data, not prose
+<details>
+<summary><b>Workflows as data, not prose</b></summary>
 
 Process written as prose gets duplicated and then contradicted. Workflows
 are rows, resolved **org → project → user** into one ordered list:
@@ -323,9 +329,10 @@ myjarbis provider set tracker acme-tracker --config='{"base_url":"https://..."}'
 > export, because the brain dump is meant to be committed. Store the
 > location instead: `{"token_file": "~/.config/acme/token"}`.
 
----
+</details>
 
-## Notes that have identity
+<details>
+<summary><b>Notes that have identity</b></summary>
 
 Three habits formed in v0.2 because nothing better existed. v0.3 gives
 each one a column:
@@ -345,9 +352,10 @@ myjarbis kinds list         # the allowed context kinds
 three vocabularies for the same seven ideas. An unknown kind is rejected
 *with the nearest match*; a pack can add its own.
 
----
+</details>
 
-## One brain or many
+<details>
+<summary><b>One brain or many</b></summary>
 
 Pre-v0.3 there was one `memory.db` per project. That still works and is
 still the default (`isolation = silo`). v0.3 adds a **shared brain** at
@@ -372,6 +380,42 @@ myjarbis merge --from <proj>/.myjarbis/memory.db --as acme-portal
 
 Opening a brain never migrates it — merely *looking* for a project would
 otherwise rewrite the schema of files you never named.
+
+</details>
+
+---
+
+<details>
+<summary><b>What's new in v0.3</b></summary>
+
+v0.2 gave the memory a schema. v0.3 is about what the memory was
+*still* doing in prose — and the three habits that proves.
+
+| The habit that formed | Why it formed | v0.3 |
+|---|---|---|
+| A new note titled *"CORRECTS note 80"* | nothing could say "this replaces that" | `topic_key` — saving again **updates** the note |
+| *"Don't repeat: comments 4-29337–41"* written into a paragraph | the brain was being used as an idempotency ledger with no structure to be one | `find_by_ref` — a boolean, not a re-read |
+| A fresh *"RESUME HERE"* note every session | the current state had no home | `project_state` — one row, with an expiring lock |
+
+Plus the four structural ones:
+
+- **Org packs** — load how your team works instead of teaching it to each
+  project. `overrides/` replaces a baseline skill; `org sync` re-applies
+  to every project in one command.
+- **Workflows as data** — process as rows with org → project → user
+  inheritance, addressed by abstract capability (`tracker.comment`), so
+  the core never learns a vendor's name.
+- **A fixed taxonomy** — `kind` comes from a catalogue. Three real
+  projects had invented three vocabularies for the same seven ideas.
+- **Sessions that close themselves** — `summary` was NULL on 2 of 2
+  sessions in one real project. Now the harness closes them, in two
+  places, so it survives a killed terminal.
+
+Everything is additive. Existing projects keep working on their current
+schema until you run `myjarbis migrate`, which backs up first.
+[Full details above](#the-features).
+
+</details>
 
 ---
 
@@ -831,7 +875,7 @@ myjarbis import <file.json> --target=... --kind=<kind> --mapping='items[]'
 <summary><b>Tests</b></summary>
 
 ```bash
-bash tests/run-all.sh          # 18 suites, 300 assertions, each builds its own fixture
+bash tests/run-all.sh          # 18 suites, 302 assertions, each builds its own fixture
 ```
 
 ```bash
@@ -876,9 +920,9 @@ snapshot instead of `bin/` and passes regardless of the source.
 ---
 
 <p align="center">
-  <b>Two slash commands: <code>/jarbis</code> to open, <code>/jarbis-close</code> to close.</b> Everything else is conversation or a quick CLI verb.<br>
+  <b>Three slash commands: <code>/jarbis</code> to open, <code>/jarbis-save</code> to write it down, <code>/jarbis-close</code> to close.</b> Everything else is conversation or a quick CLI verb.<br>
   No <code>/plan</code>, <code>/implement</code>, <code>/complete</code> — the 10 baseline skills let the agent infer all of it.<br>
-  <code>/jarbis-close</code> is not a new capability, it is the one ritual worth having a key for: the <code>SessionEnd</code> hook always closes the session, but only a written handoff tells the next one what to do.
+  None of the three is a new capability. They are the rituals worth having a key for: the <code>SessionEnd</code> hook always closes the session, but only a written handoff tells the next one what to do — and <code>/jarbis-save</code> writes that handoff without ending anything, for the sessions that stop without being closed.
 </p>
 
 <p align="center">
