@@ -212,6 +212,33 @@ else
   oops "running twice changed the permissions again"
 fi
 
+# ── [5b] a project whose hooks are already fine still gets them ─────────
+#
+# This is the hole the first fleet run fell into. `update` only called
+# `hook install claude` for projects the health report flagged as needing
+# hook repair, and `wireClaudeHooks` is also where the permission merge
+# lives — so 23 projects reporting "up to date" received 0 of 6 entries.
+# The fleet that is healthiest is the one that would never be reached.
+echo '[5b] an already-wired project still receives the baseline'
+rm -f "$WORK/proj/.claude/settings.local.json"
+node "$B/cli.js" hook install claude >/dev/null 2>&1   # wire from scratch
+FIRST="$(read_perms)"
+# Strip the permissions, leave the hooks wired: exactly the state of a
+# project that was wired before the baseline existed.
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/proj/.claude/settings.local.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf-8'));
+  delete j.permissions;
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+" 2>/dev/null
+node "$B/cli.js" hook install claude >/dev/null 2>&1
+if [ -n "$(read_perms)" ] && [ "$(read_perms)" = "$FIRST" ]; then
+  pass "a wired project with no permissions block gets the baseline back"
+else
+  oops "an already-wired project was left without the baseline: $(read_perms)"
+fi
+
 # ── [6] the skill agrees with the command ───────────────────────────────
 echo '[6] module-orchestration does not re-query what the hook handed over'
 SKILL="$WORK/proj/.claude/skills/myjarbis-module-orchestration/SKILL.md"

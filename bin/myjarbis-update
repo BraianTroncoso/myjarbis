@@ -590,6 +590,7 @@ process.stdin.on('end', () => {
         # either way, so a user-authored skill beside them is never at risk.
         note "re-materializing skills to disk..."
         MAT_OK=0; MAT_FAIL=0
+        PERM_OK=0
         while IFS=$'\t' read -r status name dir hooks schema isolation wiring; do
             [ "${status:-}" != "OK" ] && continue
             if ( cd "$dir" && env -u MYJARBIS_PROJECT node \
@@ -599,8 +600,26 @@ process.stdin.on('end', () => {
                 MAT_FAIL=$((MAT_FAIL+1))
                 note "  $name — could not materialize (run inside it: myjarbis skill materialize)"
             fi
+
+            # `hook install claude` again, for EVERY project, not just the ones
+            # the report flagged.
+            #
+            # The repair loop above is gated on NEEDS_HOOKS > 0 and skips any
+            # project whose hooks are already current and wired — correct for
+            # hooks, wrong for everything else `hook install claude` now does.
+            # It also merges the baseline permission allowlist, and a fleet
+            # whose hooks are all healthy is exactly the fleet that would never
+            # receive it: 23 projects reported "up to date" and got 0 of 6
+            # entries. Anything idempotent belongs outside the gate; the call
+            # rewrites nothing when the file already says it, and reports
+            # "already wired (no changes)".
+            if ( cd "$dir" && env -u MYJARBIS_PROJECT node \
+                 "$INSTALL_DIR/mcp-server/build/cli.js" hook install claude ) >/dev/null 2>&1; then
+                PERM_OK=$((PERM_OK+1))
+            fi
         done <<< "$REPORT"
         note "  $MAT_OK project(s) re-materialized$([ "$MAT_FAIL" -gt 0 ] && echo ", $MAT_FAIL failed")"
+        note "  $PERM_OK project(s) have the read-only permission baseline"
         note "no need to reopen Claude for the skills — they are on disk now"
     else
         note "skipped projects (--no-projects): commands and skills not propagated"
