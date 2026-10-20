@@ -288,7 +288,7 @@ JARBIS_LANG=$(echo "$LANG_CHOICE" | tr '[:upper:]' '[:lower:]')
 # Listed rather than globbed so a half-finished template in the install dir
 # cannot become a live command, and so `commands sync` (which propagates
 # these to projects that already exist) has the same list to work from.
-for cmd in jarbis jarbis-close; do
+for cmd in jarbis jarbis-close jarbis-save; do
     CMD_TEMPLATE="$INSTALL_DIR/templates/.claude/commands/${cmd}.${JARBIS_LANG}.md"
     if [ ! -f "$CMD_TEMPLATE" ]; then
         note "${cmd}.${JARBIS_LANG}.md not found, falling back to ES"

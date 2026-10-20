@@ -52,10 +52,45 @@ CMDS="$WORK/proj/.claude/commands"
 # ── [1] init installs every shipped command ───────────────────────
 echo "[1] a freshly initialised project is already current"
 
-if [ -f "$CMDS/jarbis.md" ] && [ -f "$CMDS/jarbis-close.md" ]; then
-  pass "init installed both jarbis.md and jarbis-close.md"
+# Driven off SHIPPED_COMMANDS rather than a hand-written list, so a command
+# added to the product without being installed by `init` fails here instead
+# of shipping unreachable. That is the gap this whole suite exists for.
+WANT=$(node -e "
+  import('$B/commands.js').then(m=>console.log(m.SHIPPED_COMMANDS.join(' ')))")
+MISSED=""
+for c in $WANT; do
+  [ -f "$CMDS/$c.md" ] || MISSED="$MISSED $c"
+done
+if [ -z "$MISSED" ]; then
+  pass "init installed every shipped command ($WANT)"
 else
-  oops "init did not install the full command set: $(ls "$CMDS" 2>&1)"
+  oops "init did not install:$MISSED — found: $(ls "$CMDS" 2>&1)"
+fi
+
+# Each one has to exist in every language, or `commands sync` silently
+# falls back and a user on ES/PT gets a command they cannot read.
+MISSING_TPL=""
+for c in $WANT; do
+  for l in es en pt; do
+    [ -f "$TPL/$c.$l.md" ] || MISSING_TPL="$MISSING_TPL $c.$l"
+  done
+done
+if [ -z "$MISSING_TPL" ]; then
+  pass "every shipped command ships in all three languages"
+else
+  oops "missing templates:$MISSING_TPL"
+fi
+
+# /jarbis-save is only worth having if it is NOT /jarbis-close. The one
+# line that makes them different is the absence of end_session, so assert
+# that rather than trusting the prose around it.
+if [ -f "$TPL/jarbis-save.en.md" ]; then
+  if grep -q 'Do not call `end_session`' "$TPL/jarbis-save.en.md" \
+     && grep -q 'set_project_state' "$TPL/jarbis-save.en.md"; then
+    pass "jarbis-save says set_project_state and refuses end_session"
+  else
+    oops "jarbis-save lost the rule that distinguishes it from jarbis-close"
+  fi
 fi
 
 node "$CLI" commands sync --json > "$WORK/c1.json" 2>&1 || true

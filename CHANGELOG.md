@@ -56,8 +56,14 @@
   no wiring reported `current`, rendered as "up to date". That false reading
   then switched off the repair: `update --projects` gated its refresh loop on
   `hooks != current` and skipped exactly the broken shape. On the machine this
-  was found on, 6 of 23 registered projects were unwired and the command would
-  have visited none of them.
+  was found on, **22 of its 23 live projects were unwired** — every one except
+  the MyJarbis checkout itself — and the command would have visited none of
+  them. All 22 have since been repaired with `hook install claude`.
+
+  That figure was first reported as 6, by a hand-written check that counted a
+  project as wired if the string `myjarbis` appeared anywhere in its settings
+  file. It matched permission entries. The number only came out right once the
+  detector below was doing the counting, which is the argument for having it.
 
   `wiring` is now its own field — `wired` / `partial` / `unwired` / `unknown`
   — reported beside `hooks` rather than folded into it, because the repairs
@@ -72,6 +78,27 @@
 
 ### Added
 
+- **`/jarbis-save`** — a third slash command: write the session down and keep
+  working. Observations + `update_progress` + `set_project_state`, and
+  deliberately **no** `end_session`.
+
+  `save_observation` already happened on its own as you worked; the gap was
+  `set_project_state`, which only ran at the close. So any session that ended
+  without `/jarbis-close` — a crash, a `/clear`, a closed laptop — left the
+  next one reading the state of the session before. Invisible: the banner
+  prints, the handoff is there, it is simply describing a world that moved on.
+
+  The command fixes the *call sequence*, not the content. What goes in each
+  note is still the agent's judgement, which was never the part that failed —
+  a bad note gets read and corrected, a skipped `set_project_state` makes no
+  sound. It is also now the pre-compaction protocol, replacing a fourth
+  separate path that meant the same thing.
+
+  Ships in EN/ES/PT. `tests/v04-commands-sync.sh` now drives its
+  "init installs everything" check off `SHIPPED_COMMANDS` instead of a
+  hand-written list, so a command added to the product without being installed
+  by `init` turns the suite red rather than shipping unreachable.
+
 - **`myjarbis update --projects-only`** — repair every project's hooks without
   the pull, the re-sync or the rebuild. Reaching that step previously meant
   replacing the MCP server build a running Claude session is attached to, for
@@ -80,7 +107,7 @@
 
 ### Testing
 
-Eighteen suites, 300 assertions.
+Eighteen suites, 302 assertions.
 
 `v04-hook-wiring` covers the end-to-end claim (`init` leaves the events bound
 and every bound command runs), the non-destructive merge, idempotency, the
