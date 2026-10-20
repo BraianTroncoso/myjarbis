@@ -437,14 +437,23 @@ process.stdin.on('end', () => {
             case "${wiring:-unknown}" in wired) WANT_WIRE= ;; esac
             [ -z "$WANT_COPY" ] && [ -z "$WANT_WIRE" ] && continue
 
-            # Never overwrite the source checkout with the installed copy.
-            # This repo tracks templates/.claude-plugin as the original; the
-            # template we copy FROM is a snapshot of it. When they differ it
-            # is normally because the checkout is ahead, so refreshing here
-            # would silently revert work in progress.
+            # Never overwrite the source checkout's templates with the
+            # installed copy. This repo tracks templates/.claude-plugin as the
+            # original; the template we copy FROM is a snapshot of it. When
+            # they differ it is normally because the checkout is ahead, so
+            # copying here would silently revert work in progress.
+            #
+            # But that hazard is about the COPY, and this used to `continue`,
+            # which also skipped the WIRING — and the wiring is not copied from
+            # any snapshot, it is written from CLAUDE_HOOKS in code. So the one
+            # project that could never be re-wired was the developer's own
+            # checkout: add a matcher, propagate it to all 22 others, and the
+            # repo you actually work in keeps the stale binding. It is the last
+            # place you would look, because it is the place you assume is
+            # current.
             if [ -n "$SOURCE" ] && [ "$(cd "$dir" 2>/dev/null && pwd)" = "$SOURCE" ]; then
-                note "  $name — source checkout, not refreshing from its own copy"
-                continue
+                note "  $name — source checkout: re-wiring only, templates left alone"
+                WANT_COPY=
             fi
 
             if [ -n "$WANT_COPY" ] && [ -d "$INSTALL_DIR/templates/.claude-plugin" ]; then

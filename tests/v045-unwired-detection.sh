@@ -290,11 +290,23 @@ else
   echo "$OUT" | tail -25 | sed 's/^/        /' >&2
 fi
 
-if echo "$OUT" | grep -q "source checkout, not refreshing"; then
-  pass "it said why it skipped the checkout"
+if echo "$OUT" | grep -q "source checkout: re-wiring only"; then
+  pass "it said what it did and did not do to the checkout"
 else
-  oops "expected the skip to be explained in the output"
+  oops "expected the partial skip to be explained in the output"
   echo "$OUT" | tail -25 | sed 's/^/        /' >&2
+fi
+
+# The other half of that skip, and the reason it is only half: the WIRING is
+# written from CLAUDE_HOOKS in code, not copied from the installed snapshot,
+# so refusing to copy templates is no reason to leave the checkout unwired.
+# It used to `continue` past both, which made the developer's own repo the one
+# project that could never be re-wired — the last place anyone would look.
+if [ -f "$SRC/.claude/settings.local.json" ] && \
+   grep -q 'claude-plugin/scripts/session-start.sh' "$SRC/.claude/settings.local.json"; then
+  pass "and re-wired it anyway (the settings file deleted above is back)"
+else
+  oops "the source checkout was left unwired: $(ls "$SRC/.claude" 2>/dev/null | tr '\n' ' ')"
 fi
 
 # --projects-only must not have remembered the throwaway checkout as the

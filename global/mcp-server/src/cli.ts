@@ -2381,10 +2381,16 @@ function runHookInstallClaude(rest: string[] = []): void {
       console.log('WIRED');
       return;
     }
-    const { state, bound, missing } = wiringState(hookWiringRoot());
-    if (state === 'wired') {
+    // `anyBound`, not `state === 'wired'`: since wiringState started checking
+    // matchers, a project bound entirely with an older matcher is `partial`
+    // rather than `wired` — correctly, because that binding really does not
+    // fire for the source we added. But it is still "bound in an older shape",
+    // which is the distinction this message exists to make.
+    const { bound, missing, anyBound } = wiringState(hookWiringRoot());
+    if (anyBound) {
       console.log('STALE WIRING');
       console.log('  bound, but not the way this version writes it');
+      if (missing.length > 0) console.log(`  out of date: ${missing.join(', ')}`);
       process.exit(2);
     }
     console.log('NOT WIRED');

@@ -131,6 +131,31 @@
   output written to a file whose path is printed. A passing run prints exactly
   what it did before, one line per suite.
 
+- **The one project that could never be re-wired was the developer's own
+  checkout.** `update --projects` refuses to copy the installed
+  `.claude-plugin/` snapshot over the source checkout, which is right — the
+  checkout is normally ahead, so copying would silently revert work in
+  progress. But it did that with `continue`, which also skipped the **wiring**,
+  and the wiring is not copied from any snapshot: it is written from
+  `CLAUDE_HOOKS` in code. So adding a matcher propagated it to 22 projects and
+  left the 23rd — the repo you actually work in, and the last place you would
+  look, because it is the one you assume is current. It now re-wires and still
+  leaves the templates alone, saying so.
+
+- **The wiring detector ignored matchers, so a stale binding read as `wired`.**
+  It counted an event as bound when any entry of ours existed on it. A
+  `SessionStart` bound to `startup|clear` genuinely does not fire on `resume`,
+  and calling that wired is how a matcher change reaches most of a fleet and
+  silently misses the rest — nothing reports a gap, so nothing repairs it. It
+  also meant a project with only the `compact` entry read as fully wired,
+  since `SessionStart` carries two bindings and one was enough.
+
+  Coverage is now checked per binding: an event is bound when every matcher we
+  declare for it is covered by one of our entries. Still deliberately lenient
+  about the command string and the timeout — someone who moved the scripts or
+  set their own timeout is wired, and rewriting over that would be the wrong
+  repair.
+
 - **`doctor` said "NOT wired — Claude Code will never run them" about hooks
   that were wired and firing.** `hook install claude --check` reported on
   whether the block it would write differs from the one on disk, which is true
