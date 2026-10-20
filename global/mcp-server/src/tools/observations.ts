@@ -33,7 +33,7 @@ export const saveObservationInputSchema = {
     story_local_id: {
       type: 'string' as const,
       description:
-        'Optional ID linking this observation to a story (e.g., MM-S1.2).',
+        'Optional ID linking this observation to a story (e.g., SHOP-S1.2).',
     },
     files: {
       type: 'string' as const,
@@ -272,7 +272,7 @@ export const updateProgressInputSchema = {
     local_id: {
       type: 'string' as const,
       description:
-        'Story localId (e.g. "MM-S3.6"). Resolves to the module_context row whose source_path ends with "#<localId>" or whose title contains it.',
+        'Story localId (e.g. "SHOP-S3.6"). Resolves to the module_context row whose source_path ends with "#<localId>" or whose title contains it.',
     },
     row_id: {
       type: 'number' as const,
@@ -282,7 +282,7 @@ export const updateProgressInputSchema = {
     progress: {
       type: 'string' as const,
       description:
-        'Free-form markdown describing current status. Examples: "✅ done batch 2 (2026-05-04) · commits 8c75a075,845014ef · smoke OK", "🔄 wip · branch mm-bt-repository", "🔴 blocked · waiting on S3.21 backend". Pass an empty string to clear.',
+        'Free-form markdown describing current status. Examples: "✅ done batch 2 (2026-05-04) · commits a1b2c3d4,e5f6a7b8 · smoke OK", "🔄 wip · branch checkout-cart-repository", "🔴 blocked · waiting on S3.21 backend". Pass an empty string to clear.',
     },
   },
   required: ['progress'],

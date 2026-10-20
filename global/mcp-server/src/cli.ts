@@ -170,7 +170,7 @@ function runImport(argv: string[]): void {
 
   const target = flags.target as string | undefined;
   const kind = flags.kind as string | undefined;
-  if (!target) fail('--target is required (e.g. --target=project or --target=module:MM)');
+  if (!target) fail('--target is required (e.g. --target=project or --target=module:checkout)');
   if (!kind) fail('--kind is required');
 
   const ext = path.extname(filePath).toLowerCase();
@@ -1247,7 +1247,7 @@ const HOOK_I18N = {
     no_project_body: (cwd: string) =>
       `No hay proyecto MyJarbis en ${cwd}.\nCorré \`myjarbis init\` desde este directorio para habilitar memoria persistente.`,
     no_modules_body: (header: string) =>
-      `${header}\n\nNo hay módulos registrados todavía.\nCreá uno con: \`myjarbis module add <name>\`\n(Los módulos son verticales: ej. MM, PageBuilder, Translations.)`,
+      `${header}\n\nNo hay módulos registrados todavía.\nCreá uno con: \`myjarbis module add <name>\`\n(Los módulos son verticales: ej. checkout, catalog, Translations.)`,
     modules_label: 'Módulos:',
     paused_tag: ' (en pausa)',
     last_session_tag: (ts: string) => `last session ${ts} UTC`,
@@ -1271,7 +1271,7 @@ const HOOK_I18N = {
     no_project_body: (cwd: string) =>
       `No MyJarbis project at ${cwd}.\nRun \`myjarbis init\` from this directory to enable persistent memory.`,
     no_modules_body: (header: string) =>
-      `${header}\n\nNo modules registered yet.\nCreate one with: \`myjarbis module add <name>\`\n(Modules are verticals: e.g., MM, PageBuilder, Translations.)`,
+      `${header}\n\nNo modules registered yet.\nCreate one with: \`myjarbis module add <name>\`\n(Modules are verticals: e.g., checkout, catalog, Translations.)`,
     modules_label: 'Modules:',
     paused_tag: ' (paused)',
     last_session_tag: (ts: string) => `last session ${ts} UTC`,
@@ -1295,7 +1295,7 @@ const HOOK_I18N = {
     no_project_body: (cwd: string) =>
       `Sem projeto MyJarbis em ${cwd}.\nRode \`myjarbis init\` deste diretório para habilitar memória persistente.`,
     no_modules_body: (header: string) =>
-      `${header}\n\nNenhum módulo registrado ainda.\nCrie um com: \`myjarbis module add <name>\`\n(Módulos são verticais: ex. MM, PageBuilder, Translations.)`,
+      `${header}\n\nNenhum módulo registrado ainda.\nCrie um com: \`myjarbis module add <name>\`\n(Módulos são verticais: ex. checkout, catalog, Translations.)`,
     modules_label: 'Módulos:',
     paused_tag: ' (em pausa)',
     last_session_tag: (ts: string) => `last session ${ts} UTC`,

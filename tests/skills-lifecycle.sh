@@ -39,8 +39,8 @@ const r = seedNewProject('$WORK', { name: 'skills-test', framework: 'generic' })
 const db = MyJarbisDB.open('$WORK');
 // Writes need a bound tenant scope; there is no implicit 'current project'.
 db.bindScope({ kind: 'project', id: r.projectId });
-db.modules.create(r.projectId, 'MM', 'Media Manager');
-db.modules.create(r.projectId, 'PageBuilder', 'Page Builder');
+db.modules.create(r.projectId, 'checkout', 'Checkout flow');
+db.modules.create(r.projectId, 'catalog', 'Catalog');
 db.close();
 console.log('seeded:', JSON.stringify(r));
 "
@@ -70,39 +70,39 @@ node --input-type=module -e "
 
 # ─── 2. add module-level skills ───
 echo "→ adding module-level skills"
-cat > "$WORK/sk-mm.md" << 'EOF'
+cat > "$WORK/sk-checkout.md" << 'EOF'
 ---
-name: mm-pixel-perfect
-description: Pixel-perfect Blade against design package
+name: checkout-conventions
+description: Checkout conventions against the design package
 ---
-# MM pixel-perfect
+# checkout conventions
 Use exact HTML from design package.
 EOF
-cat > "$WORK/sk-pb.md" << 'EOF'
+cat > "$WORK/sk-catalog.md" << 'EOF'
 ---
-name: pb-elements
-description: Page Builder element catalog
+name: catalog-blocks
+description: Catalog block library
 ---
 # PB elements
 Catalog of available block elements.
 EOF
-"$MJ" skill add mm-pixel-perfect --content-from="$WORK/sk-mm.md" --module=MM --description="MM-only" >/dev/null
-"$MJ" skill add pb-elements --content-from="$WORK/sk-pb.md" --module=PageBuilder --description="PB-only" >/dev/null
+"$MJ" skill add checkout-conventions --content-from="$WORK/sk-checkout.md" --module=checkout --description="checkout-only" >/dev/null
+"$MJ" skill add catalog-blocks --content-from="$WORK/sk-catalog.md" --module=catalog --description="catalog-only" >/dev/null
 
-# ─── 3. materialize for MM ───
-echo "→ materialize for MM"
-"$MJ" skill materialize --module=MM > "$WORK/mat1.json"
+# ─── 3. materialize for checkout ───
+echo "→ materialize for checkout"
+"$MJ" skill materialize --module=checkout > "$WORK/mat1.json"
 node --input-type=module -e "
   import { readFileSync, readdirSync } from 'fs';
   const m = JSON.parse(readFileSync('$WORK/mat1.json', 'utf-8'));
   const dir = readdirSync('$WORK/.claude/skills').sort();
   console.log('  written:', m.written.sort().join(', '));
   console.log('  fs:     ', dir.join(', '));
-  // Should have 10 baselines + mm-pixel-perfect (NO pb-elements)
+  // Should have 10 baselines + checkout-conventions (NO catalog-blocks)
   const expectedFolders = [
     'myjarbis-bitacora-progress', 'myjarbis-commit-hygiene',
     'myjarbis-compact-protocol', 'myjarbis-framework-detect',
-    'myjarbis-interaction-style', 'myjarbis-mm-pixel-perfect',
+    'myjarbis-interaction-style', 'myjarbis-checkout-conventions',
     'myjarbis-module-orchestration', 'myjarbis-observation-protocol',
     'myjarbis-session-protocol', 'myjarbis-story-driven',
     'myjarbis-subagent-delegation',
@@ -114,74 +114,74 @@ node --input-type=module -e "
 "
 
 # ─── 4. re-materialize idempotent ───
-echo "→ re-materialize for MM (expect all unchanged)"
-"$MJ" skill materialize --module=MM > "$WORK/mat2.json"
+echo "→ re-materialize for checkout (expect all unchanged)"
+"$MJ" skill materialize --module=checkout > "$WORK/mat2.json"
 node --input-type=module -e "
   import { readFileSync } from 'fs';
   const m = JSON.parse(readFileSync('$WORK/mat2.json', 'utf-8'));
   if (m.written.length !== 0) { console.error('✗ written should be empty:', m.written); process.exit(1); }
-  if (m.unchanged.length !== 11) { console.error('✗ unchanged should be 11 (10 baselines + mm-pixel-perfect):', m.unchanged); process.exit(1); }
+  if (m.unchanged.length !== 11) { console.error('✗ unchanged should be 11 (10 baselines + checkout-conventions):', m.unchanged); process.exit(1); }
   if (m.removed.length !== 0) { console.error('✗ removed should be empty:', m.removed); process.exit(1); }
 "
 
-# ─── 5. switch to PageBuilder, mm-pixel-perfect should disappear ───
-echo "→ switch to PageBuilder"
-"$MJ" skill materialize --module=PageBuilder > "$WORK/mat3.json"
+# ─── 5. switch to catalog, checkout-conventions should disappear ───
+echo "→ switch to catalog"
+"$MJ" skill materialize --module=catalog > "$WORK/mat3.json"
 node --input-type=module -e "
   import { readFileSync, readdirSync } from 'fs';
   const m = JSON.parse(readFileSync('$WORK/mat3.json', 'utf-8'));
   const dir = readdirSync('$WORK/.claude/skills').sort();
   console.log('  written:', m.written.join(', '));
   console.log('  removed:', m.removed.join(', '));
-  if (!m.removed.includes('mm-pixel-perfect')) {
-    console.error('✗ mm-pixel-perfect should have been removed'); process.exit(1);
+  if (!m.removed.includes('checkout-conventions')) {
+    console.error('✗ checkout-conventions should have been removed'); process.exit(1);
   }
-  if (!m.written.includes('pb-elements')) {
-    console.error('✗ pb-elements should have been written'); process.exit(1);
+  if (!m.written.includes('catalog-blocks')) {
+    console.error('✗ catalog-blocks should have been written'); process.exit(1);
   }
-  if (dir.includes('myjarbis-mm-pixel-perfect')) {
-    console.error('✗ mm-pixel-perfect folder still exists in FS'); process.exit(1);
+  if (dir.includes('myjarbis-checkout-conventions')) {
+    console.error('✗ checkout-conventions folder still exists in FS'); process.exit(1);
   }
-  if (!dir.includes('myjarbis-pb-elements')) {
-    console.error('✗ pb-elements folder missing'); process.exit(1);
+  if (!dir.includes('myjarbis-catalog-blocks')) {
+    console.error('✗ catalog-blocks folder missing'); process.exit(1);
   }
 "
 
 # ─── 6. edit content via add_skill (idempotent UPSERT) ───
-echo "→ edit pb-elements content + re-materialize"
-cat > "$WORK/sk-pb-v2.md" << 'EOF'
+echo "→ edit catalog-blocks content + re-materialize"
+cat > "$WORK/sk-catalog-v2.md" << 'EOF'
 ---
-name: pb-elements
-description: Page Builder element catalog (v2)
+name: catalog-blocks
+description: Catalog block library (v2)
 ---
 # PB elements
 Updated content with extra notes.
 EOF
-"$MJ" skill add pb-elements --content-from="$WORK/sk-pb-v2.md" --module=PageBuilder --description="PB v2" > "$WORK/edit.json"
+"$MJ" skill add catalog-blocks --content-from="$WORK/sk-catalog-v2.md" --module=catalog --description="catalog v2" > "$WORK/edit.json"
 node --input-type=module -e "
   import { readFileSync } from 'fs';
   const r = JSON.parse(readFileSync('$WORK/edit.json', 'utf-8'));
   if (r.status !== 'updated') { console.error('✗ expected status=updated, got', r.status); process.exit(1); }
 "
-"$MJ" skill materialize --module=PageBuilder > "$WORK/mat4.json"
+"$MJ" skill materialize --module=catalog > "$WORK/mat4.json"
 node --input-type=module -e "
   import { readFileSync } from 'fs';
   const m = JSON.parse(readFileSync('$WORK/mat4.json', 'utf-8'));
-  if (!m.written.includes('pb-elements')) { console.error('✗ pb-elements should be re-written'); process.exit(1); }
-  const skillFile = readFileSync('$WORK/.claude/skills/myjarbis-pb-elements/SKILL.md', 'utf-8');
+  if (!m.written.includes('catalog-blocks')) { console.error('✗ catalog-blocks should be re-written'); process.exit(1); }
+  const skillFile = readFileSync('$WORK/.claude/skills/myjarbis-catalog-blocks/SKILL.md', 'utf-8');
   if (!skillFile.includes('Updated content with extra notes')) { console.error('✗ FS not updated'); process.exit(1); }
 "
 
 # ─── 7. delete skill cleans FS on materialize ───
-echo "→ delete pb-elements + re-materialize (cleanup)"
-"$MJ" skill delete pb-elements --module=PageBuilder >/dev/null
-"$MJ" skill materialize --module=PageBuilder > "$WORK/mat5.json"
+echo "→ delete catalog-blocks + re-materialize (cleanup)"
+"$MJ" skill delete catalog-blocks --module=catalog >/dev/null
+"$MJ" skill materialize --module=catalog > "$WORK/mat5.json"
 node --input-type=module -e "
   import { readFileSync, existsSync } from 'fs';
   const m = JSON.parse(readFileSync('$WORK/mat5.json', 'utf-8'));
-  if (!m.removed.includes('pb-elements')) { console.error('✗ pb-elements should be removed'); process.exit(1); }
-  if (existsSync('$WORK/.claude/skills/myjarbis-pb-elements')) {
-    console.error('✗ pb-elements folder still exists'); process.exit(1);
+  if (!m.removed.includes('catalog-blocks')) { console.error('✗ catalog-blocks should be removed'); process.exit(1); }
+  if (existsSync('$WORK/.claude/skills/myjarbis-catalog-blocks')) {
+    console.error('✗ catalog-blocks folder still exists'); process.exit(1);
   }
 "
 

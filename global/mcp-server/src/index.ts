@@ -225,7 +225,7 @@ function buildToolRegistry(): RegisteredTool[] {
         '(typically a story). Replaces the role of editing a "Smoke" or ' +
         '"Commit" column in PROGRESS.md — call when the user says "marcá ' +
         'X como done", "actualizá la docu", or after closing a smoke batch. ' +
-        'Resolves by local_id (e.g. "MM-S3.6") or row_id. Free-form markdown.',
+        'Resolves by local_id (e.g. "SHOP-S3.6") or row_id. Free-form markdown.',
       inputSchema: updateProgressInputSchema,
       handler: (ctx, args) => updateProgress(ctx, args),
     },

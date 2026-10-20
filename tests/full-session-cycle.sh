@@ -43,19 +43,19 @@ SKILL_COUNT=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d -name 'myjarbi
 echo "  ✓ memory.db + 10 baseline skills materialized"
 
 # 2. Add module
-echo "→ [2] module add MM"
-"$MJ" module add MM --description="Media Manager" >/dev/null
-"$MJ" skill add mm-pixel-perfect --module=MM \
-  --content-from=<(printf '%s\n' '---' 'name: mm-pixel-perfect' 'description: pixel-perfect Blade' '---' '# pixel perfect') >/dev/null
+echo "→ [2] module add checkout"
+"$MJ" module add checkout --description="Checkout flow" >/dev/null
+"$MJ" skill add checkout-conventions --module=checkout \
+  --content-from=<(printf '%s\n' '---' 'name: checkout-conventions' 'description: checkout conventions' '---' '# checkout conventions') >/dev/null
 
-# 3. SessionStart hook (no module preselected if there's >1; we have only MM
+# 3. SessionStart hook (no module preselected if there's >1; we have only checkout
 #    + _general from migration, so 2; expect menu)
 echo "→ [3] SessionStart hook output"
 HOOK_OUT=$(node "$CLI" hook session-start)
 echo "$HOOK_OUT" | head -3
 echo "$HOOK_OUT" | grep -q "Modules:" || { echo "✗ hook should list modules"; exit 1; }
 
-# 4. start_session for MM (manually via DB; the agent would do this)
+# 4. start_session for checkout (manually via DB; the agent would do this)
 echo "→ [4] start_session via direct call → assert context payload"
 node --input-type=module -e "
   process.chdir('$WORK');
@@ -64,25 +64,25 @@ node --input-type=module -e "
   import { saveObservation } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/observations.js';
   import { materializeSkills } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/skills.js';
   const ctx = ServerContext.initialize();
-  const s = startSession(ctx, { module: 'MM' });
+  const s = startSession(ctx, { module: 'checkout' });
   if (s.previousSession !== null) { console.error('✗ previousSession should be null on first start'); process.exit(1); }
-  const mat = materializeSkills(ctx, { module: 'MM' });
-  if (!mat.written.includes('mm-pixel-perfect')) { console.error('✗ mm-pixel-perfect should be materialized'); process.exit(1); }
+  const mat = materializeSkills(ctx, { module: 'checkout' });
+  if (!mat.written.includes('checkout-conventions')) { console.error('✗ checkout-conventions should be materialized'); process.exit(1); }
   saveObservation(ctx, { kind: 'decision', title: 'Picked Pest', content: 'WHY: faster than vanilla. WHAT: replaced PHPUnit. HOW: composer require pestphp.' });
-  saveObservation(ctx, { kind: 'gotcha',   title: 'JSON column needs MySQL 8', content: 'asset_translations.metadata is JSON.' });
-  endSession(ctx, { summary: 'Pest installed and verified', next_session: 'Continuar con MM-S1.4 mañana: migración asset_translations.' });
+  saveObservation(ctx, { kind: 'gotcha',   title: 'JSON column needs MySQL 8', content: 'order_items.metadata is JSON.' });
+  endSession(ctx, { summary: 'Pest installed and verified', next_session: 'Continuar con SHOP-S1.4 mañana: migración order_items.' });
   ctx.close();
   console.log('  ✓ session #' + s.sessionId + ' opened, 2 observations, closed with next_session');
 "
 
-# 5. Verify mm-pixel-perfect is on disk
-[ -d .claude/skills/myjarbis-mm-pixel-perfect ] || { echo "✗ mm-pixel-perfect folder missing"; exit 1; }
+# 5. Verify checkout-conventions is on disk
+[ -d .claude/skills/myjarbis-checkout-conventions ] || { echo "✗ checkout-conventions folder missing"; exit 1; }
 
-# 6. Re-fire SessionStart hook → should show MM's next_session
+# 6. Re-fire SessionStart hook → should show checkout's next_session
 echo "→ [6] re-fire SessionStart hook (simulating reopening Claude)"
 HOOK_OUT2=$(node "$CLI" hook session-start)
 echo "$HOOK_OUT2" | tail -5
-if ! echo "$HOOK_OUT2" | grep -q "Continuar con MM-S1.4 mañana"; then
+if ! echo "$HOOK_OUT2" | grep -q "Continuar con SHOP-S1.4 mañana"; then
   echo "✗ hook output should include the next_session text"
   echo "--- HOOK_OUT2 ---"
   echo "$HOOK_OUT2"
@@ -97,9 +97,9 @@ node --input-type=module -e "
   import { ServerContext } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/context.js';
   import { startSession } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/session.js';
   const ctx = ServerContext.initialize();
-  const s = startSession(ctx, { module: 'MM' });
+  const s = startSession(ctx, { module: 'checkout' });
   if (!s.previousSession) { console.error('✗ previousSession should NOT be null'); process.exit(1); }
-  if (!s.previousSession.nextSession || !s.previousSession.nextSession.includes('MM-S1.4')) {
+  if (!s.previousSession.nextSession || !s.previousSession.nextSession.includes('SHOP-S1.4')) {
     console.error('✗ previousSession.nextSession missing/incorrect:', s.previousSession);
     process.exit(1);
   }
@@ -107,7 +107,7 @@ node --input-type=module -e "
   ctx.close();
 "
 
-# 8. Switch to _general (module already exists) → mm-pixel-perfect should disappear
+# 8. Switch to _general (module already exists) → checkout-conventions should disappear
 echo "→ [8] switch module → skills cleanup"
 node --input-type=module -e "
   process.chdir('$WORK');
@@ -115,13 +115,13 @@ node --input-type=module -e "
   import { materializeSkills } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/skills.js';
   const ctx = ServerContext.initialize();
   const r = materializeSkills(ctx, { module: '_general' });
-  if (!r.removed.includes('mm-pixel-perfect')) {
-    console.error('✗ mm-pixel-perfect should be removed when switching away'); process.exit(1);
+  if (!r.removed.includes('checkout-conventions')) {
+    console.error('✗ checkout-conventions should be removed when switching away'); process.exit(1);
   }
-  console.log('  ✓ mm-pixel-perfect cleaned up (removed:', r.removed.join(','), ')');
+  console.log('  ✓ checkout-conventions cleaned up (removed:', r.removed.join(','), ')');
   ctx.close();
 "
-[ ! -d .claude/skills/myjarbis-mm-pixel-perfect ] || { echo "✗ folder still on disk"; exit 1; }
+[ ! -d .claude/skills/myjarbis-checkout-conventions ] || { echo "✗ folder still on disk"; exit 1; }
 
 # 9. doctor must still pass
 echo "→ [9] doctor"

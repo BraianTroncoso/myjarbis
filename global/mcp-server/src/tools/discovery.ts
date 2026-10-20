@@ -150,7 +150,7 @@ export const createModuleInputSchema = {
     name: {
       type: 'string' as const,
       description:
-        'Module name. Convention: kebab-case or short identifier matching the vertical (e.g., "MM", "PageBuilder", "Translations").',
+        'Module name. Convention: kebab-case or short identifier matching the vertical (e.g., "checkout", "catalog", "Translations").',
     },
     description: {
       type: 'string' as const,

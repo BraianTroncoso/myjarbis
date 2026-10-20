@@ -37,7 +37,7 @@ function parseTarget(raw: string): ResolvedTarget {
     if (!name) {
       throw new MyJarbisError(
         ErrorType.INVALID_INPUT,
-        'target "module:" requires a module name (e.g., "module:MM").',
+        'target "module:" requires a module name (e.g., "module:checkout").',
       );
     }
     return { kind: 'module', moduleName: name };

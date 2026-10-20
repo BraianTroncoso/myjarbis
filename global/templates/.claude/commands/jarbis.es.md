@@ -123,10 +123,10 @@ Triggers (lenguaje natural del user): *"vamos a planificar / pensemos /
 arranquemos / qué necesitamos para X / cómo encararíamos Y"*.
 
 - Si el módulo es story-driven (tiene rows `kind=story` en
-  `module_context`) y el user mencionó un `localId` (ej. `MM-S1.4`,
-  `CHK-101`, `PROL-1234`):
+  `module_context`) y el user mencionó un `localId` (ej. `SHOP-S1.4`,
+  `WEB-101`, `CORE-1234`):
   1. `search` con scope=module y la query del localId.
-  2. Confirmá con el user: *"Detectado MM-S1.4 — '<summary>'. ¿Avanzo
+  2. Confirmá con el user: *"Detectado SHOP-S1.4 — '<summary>'. ¿Avanzo
      con la auditoría?"*.
   3. Auditá AC vs codebase y devolvé una **tabla de gaps**:
      ```
@@ -134,7 +134,7 @@ arranquemos / qué necesitamos para X / cómo encararíamos Y"*.
      ```
   4. Si todo present: proponé cerrar sin tocar código.
   5. Si hay gaps: proponé un plan en fases con la convención de branch +
-     commits del project_context (e.g., `feature/mm-e1-s1.4-<slug>`).
+     commits del project_context (e.g., `feature/checkout-e1-s1.4-<slug>`).
 - Si el módulo es free-form: preguntá scope/data/UX/tech antes de
   proponer phases.
 
@@ -148,7 +148,7 @@ Por cada chunk lógico (= un commit):
    `project_context` kind=`practice|convention`.
 2. **Verificá**: corré tests/lint/types como pida el proyecto.
 3. **Commiteá** siguiendo el formato del WORKFLOW del módulo
-   (e.g. `feat(mm-e1): <desc> (MM-S1.4)`). Stage por nombre,
+   (e.g. `feat(checkout-e1): <desc> (SHOP-S1.4)`). Stage por nombre,
    sin `git add -A`, sin `--no-verify`.
 4. **`save_observation`** con `kind: "decision"` + `title` (≤80,
    imperativa) + `content` (WHY/WHAT/HOW) + `story_local_id` +
@@ -186,7 +186,7 @@ ya es la confirmación).
 | "vamos a tocar X" / "cambiamos a Y" / "pasamos a Z" | Confirmá. Si OK: `end_session` actual + `start_session(target)`. Re-materialize ya lo hacen los hooks. |
 | "creemos un módulo nuevo X"                      | `create_module(name, description?)`. Preguntá si arrancar sesión ahí ahora. |
 | "antes de compactar" / antes de `/compact` nativo | `save_observation(kind=discovery, tags=pre-compact, content=<snapshot estructurado>)`. Después dale el OK al user para `/compact`. |
-| Un `localId` aislado (ej. `MM-S1.4`)             | Asumí que quiere arrancar esa story → fase 2 (Análisis).                    |
+| Un `localId` aislado (ej. `SHOP-S1.4`)             | Asumí que quiere arrancar esa story → fase 2 (Análisis).                    |
 | "actualizá la docu" / "marcá X como done" / "registrá los smokes" | Por cada story tocada en la sesión: `update_progress(local_id, progress)` con markdown estructurado: status (`✅ done` / `🔄 wip` / `🔴 blocked`) · commits · fecha · notas de smoke. Es el equivalente directo a editar la columna "Smoke" / "Commit" de un PROGRESS.md. NO uses `save_observation` para esto — `progress` es estado relacional al row, observations son lecciones de la sesión. |
 | "settings" / "cambiar estilo" / "cambiar idioma" / "cambiar persona" | Mostrale las opciones disponibles: language=EN/ES/PT, persona=concise/pair/mentor/reviewer. Si vos ya conocés el current (lo podés inferir del skill `interaction-style` cargado), informalo primero. Cuando elija, llamá `set_interaction_style({language?, persona?})` con solo el campo que cambia (el otro se preserva). Avisale al user que el cambio aplica a partir de la próxima respuesta tuya; si quiere ver las skills materializadas refrescadas en disco, que reabra Claude. |
 

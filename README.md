@@ -164,7 +164,7 @@ The CLI is consistent and instant (zero LLM tokens) — here's `myjarbis status`
 ## Why per-project, per-module?
 
 In real projects, work is **vertical**. You don't work on "the codebase";
-you work on the Media Manager, then Page Builder, then Translations. Each
+you work on the Checkout flow, then Catalog, then Translations. Each
 vertical has its own workflow, plan, stories, and skills.
 
 MyJarbis models that explicitly — and **only loads the vertical you're in**:
@@ -501,10 +501,10 @@ every `module_context` row (typically a story) has a free-form markdown
 `progress` field the agent maintains:
 
 ```
-"mark MM-S3.6 as done with commit abc1234, smoke OK"
+"mark SHOP-S3.6 as done with commit abc1234, smoke OK"
   ↓
 update_progress(
-  local_id = "MM-S3.6",
+  local_id = "SHOP-S3.6",
   progress = "done · batch 2 (2026-05-04) · commit abc1234 · smoke OK"
 )
 ```
@@ -587,13 +587,13 @@ with `myjarbis skill edit interaction-style`.
 myjarbis skill add tracker-rules --content-from=docs/tracker-rules.md \
   --description="Issue-tracking rules for this project"
 
-# module-level (only active when working on MM)
-myjarbis skill add mm-pixel-perfect --module=MM \
-  --content-from=docs/mm-pixel-perfect.md \
-  --description="MM: copy HTML from design package, never reinterpret"
+# module-level (only active when working on checkout)
+myjarbis skill add checkout-conventions --module=checkout \
+  --content-from=docs/checkout-conventions.md \
+  --description="checkout: copy HTML from design package, never reinterpret"
 ```
 
-When you `start_session(MM)`, MM's skills materialize to `.claude/skills/`.
+When you `start_session(checkout)`, checkout's skills materialize to `.claude/skills/`.
 Switch modules and they disappear; the new module's appear.
 
 </details>
