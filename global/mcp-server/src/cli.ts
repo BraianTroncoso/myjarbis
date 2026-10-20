@@ -35,6 +35,7 @@ import { computeCost, formatTable } from './tools/cost.js';
 import { generateModuleDiagram, isDiagramAuto } from './diagram/generate.js';
 import { exportBrain, importBrain, brainStatus } from './tools/brain.js';
 import { autoCloseAll, AUTO_MARKER, truncate } from './tools/autoClose.js';
+import { mergeBaselinePermissions } from './permissions.js';
 import {
   claimSession,
   hasOwnClaim,
@@ -2171,6 +2172,8 @@ interface WireReport {
   unusable: string[];
   /** False when the file already said exactly this — nothing was written. */
   changed: boolean;
+  /** Baseline read-only permissions added that the user did not already have. */
+  permissionsAdded: string[];
 }
 
 
@@ -2210,6 +2213,7 @@ function wireClaudeHooks(projectPath: string, dryRun = false): WireReport {
     kept: 0,
     unusable: [],
     changed: false,
+    permissionsAdded: [],
   };
 
   // Group by event first, so the two SessionStart entries land in one array.
@@ -2243,6 +2247,8 @@ function wireClaudeHooks(projectPath: string, dryRun = false): WireReport {
   }
 
   settings.hooks = hooksBlock;
+  report.permissionsAdded = mergeBaselinePermissions(settings);
+
   const after = JSON.stringify(settings, null, 2) + '\n';
   // `changed` means "the file on disk does not already say this", which is
   // what --check reports on without writing anything.
@@ -2418,6 +2424,13 @@ function runHookInstallClaude(rest: string[] = []): void {
   for (const line of report.wired) ptyLine('  ' + line);
   if (report.replaced > 0) ptyKV('Rewired', `${report.replaced} previous MyJarbis entr${report.replaced === 1 ? 'y' : 'ies'}`);
   if (report.kept > 0) ptyKV('Kept', `${report.kept} of your own hook(s) on the same events`);
+  if (report.permissionsAdded.length > 0) {
+    console.log('');
+    ptyKV('Pre-approved', `${report.permissionsAdded.length} read-only permission(s)`);
+    for (const p of report.permissionsAdded) ptyLine('  ' + dim(p));
+    ptyDim('Reads and MyJarbis\'s own tools, so the session does not open asking.');
+    ptyDim('Nothing that writes, pushes or deletes — those still prompt.');
+  }
   if (report.unusable.length > 0) {
     console.log('');
     ptyKV('Skipped', red(report.unusable.join(', ')));

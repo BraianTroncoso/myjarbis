@@ -64,6 +64,7 @@ SUITES=(
   v045-commands-history
   v045-update-observation-files
   v046-multi-module
+  v046-bootstrap-size
 )
 
 # ─── what to print when a suite fails ─────────────────────────────
