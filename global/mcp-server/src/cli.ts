@@ -3401,7 +3401,7 @@ function runSkillReseed(argv: string[]): void {
     }
     ptyDim(
       apply
-        ? 'Rewritten. Open Claude in each project to re-materialise .claude/skills/.'
+        ? 'Rewritten. Run `myjarbis skill materialize` in a project to put it on disk, or just `myjarbis update`, which now does both.'
         : 'Nothing was written. Re-run with --apply (add --all for every project).',
     );
   }

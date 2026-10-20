@@ -102,7 +102,24 @@ sync_executables() {
     done
 }
 
-SYNC_PROJECTS=""
+# Propagation is ON by default.
+#
+# It used to be opt-in behind --projects, and the three things that need
+# propagating lived behind three different commands: hooks here, slash
+# commands in `commands sync`, skills in `skill reseed`. docs/UPGRADING.md
+# literally introduces the skills one with "This is the step most likely to
+# be forgotten", which is a design admitting its own failure mode in prose.
+#
+# It was forgotten, repeatedly and expensively: 23 projects ran a stale
+# `/jarbis`, then 22 ran a stale hook matcher, then every project kept a
+# `module-orchestration` skill ordering the agent to re-query what the hook
+# had already handed it. Each time the code was fixed, each time the fleet
+# was not, and each time it surfaced as "the tool got slow" rather than as
+# "a propagation step was skipped".
+#
+# `update` means "make this machine current". If something has to be run
+# afterwards for that to be true, it was part of the update.
+SYNC_PROJECTS=1
 SOURCE_OVERRIDE=""
 SKIP_PULL=""
 ASSUME_YES=""
@@ -111,6 +128,7 @@ PROJECTS_ONLY=""
 for arg in "$@"; do
     case "$arg" in
         --projects)   SYNC_PROJECTS=1 ;;
+        --no-projects) SYNC_PROJECTS="" ;;
         # Repairing a project's hooks needs nothing from the checkout: the
         # templates and the build are already in the install dir. Reinstalling
         # both just to re-copy five shell scripts also swaps the MCP build out
@@ -120,11 +138,16 @@ for arg in "$@"; do
         --yes|-y)     ASSUME_YES=1 ;;
         --from=*)     SOURCE_OVERRIDE="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: myjarbis update [--projects|--projects-only] [--no-pull] [--yes] [--from=<path>]"
+            echo "Usage: myjarbis update [--projects-only|--no-projects] [--no-pull] [--yes] [--from=<path>]"
             echo
-            echo "  --projects       Also refresh hook scripts in every registered"
-            echo "                   project (never touches memory.db)."
-            echo "  --projects-only  Only do that. Skips the pull, the re-sync and"
+            echo "  By default this also propagates to every registered project:"
+            echo "  hook scripts and their wiring, slash commands, and baseline"
+            echo "  skills (reseeded, then re-materialized to .claude/skills/ so"
+            echo "  you do not have to reopen Claude in each one)."
+            echo
+            echo "  --projects       Kept for compatibility; this is now the default."
+            echo "  --no-projects    Update this installation only, touch no project."
+            echo "  --projects-only  Only propagate. Skips the pull, the re-sync and"
             echo "                   the rebuild, so a running Claude session keeps"
             echo "                   working. Use this to fix unwired projects."
             echo "  --no-pull        Re-sync from the local checkout without pulling."
@@ -343,7 +366,7 @@ note "mcp-server $VERSION · schema v$SCHEMA"
 fi  # end of the steps 2-4 block skipped by --projects-only
 
 # ─── [5/5] report (and optionally refresh) registered projects ────
-step 5 "Check registered projects"
+step 5 "Propagate to registered projects"
 if [ ! -f "$REGISTRY_FILE" ]; then
     note "no registry yet — nothing to check"
     ok
@@ -481,11 +504,107 @@ process.stdin.on('end', () => {
         # Worth its own line: the scripts are fine, so nothing looks wrong
         # until you notice the session greeting never appears.
         [ "$UNWIRED_HOOKS" -gt 0 ] && warn "$UNWIRED_HOOKS project(s) have hooks bound to no event — they never run"
-        note "fix them with: myjarbis update --projects"
+        note "fix them with: myjarbis update"
         note "(it replaces .claude-plugin/ and rewrites .claude/settings.local.json — memory.db is never touched)"
     fi
 
-    note "slash commands are not part of this: myjarbis commands sync --all"
+    # ── Slash commands ──────────────────────────────────────────────
+    #
+    # Files in each project's .claude/commands/. `commands sync --all`
+    # walks the registry itself, and classifies before writing: a copy
+    # byte-identical to any template this repo has ever shipped is
+    # `old-shipped-version` and gets updated, while one a human edited is
+    # `diverged` and is left alone until someone passes --force. So this is
+    # safe to run unattended — the guard is in the classifier, not in the
+    # user remembering to run it.
+    if [ -n "$SYNC_PROJECTS" ]; then
+        # `MYJARBIS_PROJECT` names one project and short-circuits resolution
+        # for EVERY target, so `--all` would silently collapse to that one.
+        # Plausible whenever update is run from inside a project, which is
+        # the normal case. Unset it for these calls only.
+        MJ_CLI=(env -u MYJARBIS_PROJECT node "$INSTALL_DIR/mcp-server/build/cli.js")
+
+        # `|| true` on every one of these: the self-overwrite suite runs this
+        # script against a STUB mcp-server whose build/cli.js does not exist,
+        # and `set -euo pipefail` would turn a missing file into a failed
+        # update. The same applies to the greps — grep exits 1 when it matches
+        # nothing, and under pipefail that kills the run.
+        echo
+        note "syncing slash commands..."
+        CMD_OUT=$("${MJ_CLI[@]}" commands sync --all --apply 2>&1 || true)
+        echo "$CMD_OUT" | sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -iE "updated|wrote|current|diverged|Nothing|Every project" \
+            | head -6 | while read -r l; do note "  $l"; done || true
+
+        # ── Baseline skills ─────────────────────────────────────────
+        #
+        # Skills are ROWS in the brain, not files, so `update` copying code
+        # never reached them. `skill reseed --all` walks the registry and
+        # compares content hashes; it refuses `interaction-style`, which is
+        # composed per project from the user's language and persona and would
+        # otherwise be replaced by a placeholder everywhere at once. That
+        # exclusion is why this can run without --include-owned, and the
+        # reseed test exists to catch anyone who adds that flag here.
+        #
+        # The hazard that remains, and why the backup below is not optional:
+        # reseed has no equivalent of `commands sync`'s `diverged` + `--force`
+        # gate. A baseline skill someone hand-edited hashes differently from
+        # the shipped one — exactly like a stale copy does — so it is rewritten
+        # with no warning. Up to 9 project-level rows per project, no deletes,
+        # but across a shared brain there is no transaction spanning projects:
+        # a failure halfway leaves a partial reseed.
+        if [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
+            BRAIN="${MYJARBIS_HOME:-$HOME/.myjarbis}/memory.db"
+            if [ -f "$BRAIN" ]; then
+                BACKUP_DIR="$INSTALL_DIR/backups"
+                mkdir -p "$BACKUP_DIR"
+                BACKUP="$BACKUP_DIR/memory.db.pre-reseed-$(date +%Y%m%d-%H%M%S)"
+                # -wal and -shm too: copying the main file alone can capture a
+                # database whose newest writes are still in the log.
+                cp "$BRAIN" "$BACKUP" 2>/dev/null || true
+                cp "$BRAIN-wal" "$BACKUP-wal" 2>/dev/null || true
+                cp "$BRAIN-shm" "$BACKUP-shm" 2>/dev/null || true
+                note "brain backed up to ${BACKUP#"$INSTALL_DIR"/}"
+            fi
+        fi
+
+        note "reseeding baseline skills..."
+        SKILL_OUT=$("${MJ_CLI[@]}" skill reseed --all --apply 2>&1 || true)
+        echo "$SKILL_OUT" | sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -iE "updated|inserted|unchanged|project" \
+            | head -6 | while read -r l; do note "  $l"; done || true
+
+        # ── And onto disk ───────────────────────────────────────────
+        #
+        # Reseed writes rows; `.claude/skills/*/SKILL.md` is what Claude Code
+        # indexes. That re-materialisation used to happen only on the next
+        # SessionStart, which is the step that turned "run one command" into
+        # "now reopen Claude in twenty-three projects".
+        #
+        # `--no-cleanup` on purpose: without it, a project with no open
+        # session materializes project-level skills only AND deletes the
+        # myjarbis-* folders a previous module session left behind. Harmless
+        # in the end — SessionStart rebuilds them — but an update has no
+        # business deleting anything, and strictly additive is the behaviour
+        # that needs no explanation. Only myjarbis-* folders are ever touched
+        # either way, so a user-authored skill beside them is never at risk.
+        note "re-materializing skills to disk..."
+        MAT_OK=0; MAT_FAIL=0
+        while IFS=$'\t' read -r status name dir hooks schema isolation wiring; do
+            [ "${status:-}" != "OK" ] && continue
+            if ( cd "$dir" && env -u MYJARBIS_PROJECT node \
+                 "$INSTALL_DIR/mcp-server/build/cli.js" skill materialize --no-cleanup ) >/dev/null 2>&1; then
+                MAT_OK=$((MAT_OK+1))
+            else
+                MAT_FAIL=$((MAT_FAIL+1))
+                note "  $name — could not materialize (run inside it: myjarbis skill materialize)"
+            fi
+        done <<< "$REPORT"
+        note "  $MAT_OK project(s) re-materialized$([ "$MAT_FAIL" -gt 0 ] && echo ", $MAT_FAIL failed")"
+        note "no need to reopen Claude for the skills — they are on disk now"
+    else
+        note "skipped projects (--no-projects): commands and skills not propagated"
+    fi
 
     if [ "$OLD_SCHEMA" -gt 0 ]; then
         echo
