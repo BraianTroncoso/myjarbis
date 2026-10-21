@@ -66,27 +66,17 @@ que vale aqui também. **Ainda assim não chame `start_session`.**
 Se no seu contexto há um menu com módulos numerados e opções
 ("novo módulo X", "settings"), o usuário ainda não escolheu.
 
-**O usuário NÃO vê esse menu.** A saída do hook entra no SEU contexto,
-não no terminal dele. Perguntar "qual módulo?" sem listá-los pede que
-escolha de uma lista que não tem na frente.
+**O menu está na tela do usuário, não no seu contexto.** O hook mostra
+direto para ele; a você chega só uma linha dizendo quantos módulos há.
+É deliberado: enquanto não se sabe o que ele quer, 18 descrições não te
+servem de nada, e são justamente o que ele precisa para escolher.
 
-Então seu primeiro output é: o bloco de módulos **copiado tal e qual**,
-e depois uma linha pedindo a escolha. Exemplo:
+Seu primeiro output: 1 linha curta esperando escolha.
 
-> ```
-> Módulos (18) · ▸ = último trabalhado
->   1. _general                 2026-10-14  Migrated from v0.1; cross-cutting context
->  ▸14. post-design             2026-10-16  Sistema de design VISUAL das peças sociais…
-> ```
-> Qual? (vários com vírgula: o primeiro manda)
+> Pronto, qual módulo? (vários com vírgula: o primeiro manda)
 
-**Copiar, não re-formatar.** O hook já renderizou isso no servidor
-justamente para que você não gaste raciocínio remontando: não reordene,
-não reescreva descrições, não adicione colunas. Cole o bloco e pergunte.
-Remontar do zero é o custo que esse render existe para evitar.
-
-Não copie o resto da saída do hook — nem o contrato de memória nem o
-"Retomar aqui", que é do módulo que o usuário ainda não escolheu.
+Não liste os módulos — ele já está vendo. **A única exceção**: se disser
+que não vê nenhuma lista, aí `list_modules` e mostre.
 
 Quando responder, parseie:
 - nome/número de módulo → `start_session(<name>)` e mostre greeting

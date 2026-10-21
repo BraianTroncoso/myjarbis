@@ -1665,8 +1665,44 @@ function runHookSessionStart(): void {
         lines.push('', t.stale_warning(staleAfter));
       }
     }
-    lines.push('', t.memory_contract);
-    console.log(lines.join('\n'));
+
+    // The menu goes to the USER; the model gets three lines.
+    //
+    // Plain stdout from a SessionStart hook is added to the model's context
+    // and is NOT printed to the user's terminal. That asymmetry is the whole
+    // bug: we rendered a careful menu, spent 11 KB of the model's context on
+    // it, and the person who had to choose never saw it — they were asked
+    // "which module?" with no list in front of them.
+    //
+    // It is also context spent on the wrong question. With no active module
+    // nobody knows yet what the user wants, so eighteen module descriptions
+    // buy the model nothing: all it has to do is wait. The descriptions are
+    // for the human doing the choosing.
+    //
+    // So: `systemMessage` carries the menu and is displayed; the model is
+    // told only that a menu is on screen and to wait for the answer. In this
+    // branch that takes the model's bootstrap from ~11 KB to a few hundred
+    // bytes, and the user finally sees what they are picking from.
+    //
+    // The fallback is deliberate and cheap: if `systemMessage` ever stops
+    // rendering, the user says "I don't see anything" and the agent recovers
+    // with one `list_modules` call — which is why the context line names it.
+    // Silent-and-unrecoverable was the failure mode worth designing out.
+    console.log(
+      JSON.stringify({
+        systemMessage: lines.join('\n'),
+        hookSpecificOutput: {
+          hookEventName: 'SessionStart',
+          additionalContext: [
+            `MyJarbis: project "${project.name}", ${active.length} module(s), none active.`,
+            'A module menu is ON THE USER\'S SCREEN right now — it was shown to them, not to you, and it lists every module with its description and when it was last worked in.',
+            'Answer with ONE short line asking which one, and wait. Do NOT call list_modules, current_project or resume, and do not re-print the menu: they can already see it. Only if the user says they cannot see any list, call list_modules and show it.',
+            'When they pick: start_session(<name>), or start_session(<first>, with_modules=[<rest>]) for several, where the first is the primary.',
+            t.memory_contract,
+          ].join('\n'),
+        },
+      }),
+    );
   } finally {
     ctx.close();
   }

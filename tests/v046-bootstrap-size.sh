@@ -54,6 +54,21 @@ FAILED=0
 pass() { echo "    ✓ $1"; }
 oops() { echo "    ✗ $1" >&2; FAILED=$((FAILED + 1)); }
 
+# The menu branch emits JSON now: the module list rides in `systemMessage`,
+# which Claude Code DISPLAYS to the user, while the model gets a short
+# summary in `additionalContext`. Assertions about what the menu LOOKS LIKE
+# have to read the displayed field — grepping raw stdout would be measuring
+# one long line of JSON and calling it a menu.
+menu_text() {
+  node "$B/cli.js" hook session-start 2>/dev/null \
+    | node -e "
+let s='';
+process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{
+  try { process.stdout.write(JSON.parse(s).systemMessage || ''); }
+  catch { process.stdout.write(s); }
+});" 2>/dev/null || true
+}
+
 mkdir -p "$WORK/proj" && cd "$WORK/proj" && git init -q .
 git config user.email t@example.com && git config user.name Test
 "$MJ" init --yes --skip-memory >/dev/null 2>&1
@@ -69,7 +84,7 @@ echo "→ description fixture: ${#LONG} chars"
 
 # ── [1] the description is clipped in the menu ──────────────────────────
 echo '[1] a long description does not reach the menu whole'
-HOOK_OUT=$(node "$B/cli.js" hook session-start 2>&1 || true)
+HOOK_OUT=$(menu_text)
 
 if echo "$HOOK_OUT" | grep -q "Modules ("; then
   pass "the menu rendered"
@@ -139,7 +154,7 @@ node --input-type=module -e "
   } finally { ctx.close(); }
 " >/dev/null 2>&1
 
-HOOK2=$(node "$B/cli.js" hook session-start 2>&1 || true)
+HOOK2=$(menu_text)
 if echo "$HOOK2" | grep -q "▸.*bravo"; then
   pass "bravo is marked as the last worked module"
 else
@@ -261,31 +276,76 @@ else
   oops "module-orchestration was not materialized at $SKILL"
 fi
 
-# ── [7] the command tells the agent to SHOW the menu ────────────────────
-echo '[7] the /jarbis templates relay the menu instead of hiding it'
-# This failure is silent and total: the hook renders a perfect menu, the
-# agent obeys the command and replies "which module?", and the user is
-# asked to pick from a list that was never on their screen. Hook stdout
-# lands in the model's context, not the terminal — the command used to
-# say "the user already saw it", which was never true.
+# ── [7] the menu goes to the USER, a summary goes to the model ──────────
+echo '[7] the menu is displayed to the user, not spent on the model'
+# Plain stdout from a SessionStart hook is added to the model's context and
+# is NOT printed to the user's terminal. Rendering the menu there spent
+# ~11 KB of context on eighteen descriptions the model has no use for yet,
+# AND left the person who had to choose staring at "which module?" with no
+# list. `systemMessage` is the field Claude Code displays.
+MENU_JSON=$(node "$B/cli.js" hook session-start 2>/dev/null || true)
+# Quoted heredoc: the script below reaches node byte for byte, so its own
+# quotes and regexes are not re-interpreted by the shell first.
+cat > "$WORK/parse.js" <<'PARSEJS'
+let s = '';
+process.stdin.on('data', (d) => (s += d)).on('end', () => {
+  try {
+    const j = JSON.parse(s);
+    const sm = j.systemMessage || '';
+    const ac = (j.hookSpecificOutput && j.hookSpecificOutput.additionalContext) || '';
+    console.log(JSON.stringify({
+      smLen: sm.length,
+      acLen: ac.length,
+      smHasModules: /alpha/.test(sm),
+      acHasModules: /alpha/.test(ac),
+      acWarnsNoRequery: /Do NOT call list_modules/.test(ac),
+      acHasFallback: /cannot see any list/.test(ac),
+    }));
+  } catch {
+    console.log('PARSE_FAIL');
+  }
+});
+PARSEJS
+PARSED=$(echo "$MENU_JSON" | node "$WORK/parse.js" 2>/dev/null || echo PARSE_FAIL)
+
+if [ "$PARSED" = "PARSE_FAIL" ] || [ -z "$PARSED" ]; then
+  oops "the menu branch did not emit parseable JSON: $(echo "$MENU_JSON" | head -2)"
+else
+  cat > "$WORK/field.js" <<'FIELDJS'
+let s = '';
+process.stdin.on('data', (d) => (s += d))
+  .on('end', () => console.log(JSON.parse(s)[process.argv[2]]));
+FIELDJS
+  field() { echo "$PARSED" | node "$WORK/field.js" "$1"; }
+  [ "$(field smHasModules)" = "true" ] \
+    && pass "the module list is in systemMessage, where the user sees it" \
+    || oops "systemMessage does not carry the module list"
+  [ "$(field acHasModules)" = "false" ] \
+    && pass "the module list is NOT spent on the model's context" \
+    || oops "the model still receives the full module list"
+  [ "$(field acWarnsNoRequery)" = "true" ] \
+    && pass "the model is told not to re-query what it was not given" \
+    || oops "nothing stops the model from calling list_modules anyway"
+  # Without this the failure is silent AND unrecoverable: if systemMessage
+  # ever stops rendering, the user sees nothing and the model, correctly
+  # believing a menu is on screen, keeps asking them to pick from it.
+  [ "$(field acHasFallback)" = "true" ] \
+    && pass "and given a recovery path if the user sees no list" \
+    || oops "no recovery path when systemMessage does not render"
+  AC_LEN=$(field acLen)
+  [ "$AC_LEN" -lt 2000 ] \
+    && pass "the model's bootstrap is $AC_LEN bytes (was ~11000)" \
+    || oops "the model's bootstrap is $AC_LEN bytes — the menu leaked back in"
+fi
+
 TPL_DIR="$REPO_ROOT/global/templates/.claude/commands"
 for L in es en pt; do
   F="$TPL_DIR/jarbis.$L.md"
-  if [ ! -f "$F" ]; then
-    oops "missing template: jarbis.$L.md"
-    continue
-  fi
-  # Matched on the instruction, not on prose that could be reworded: the
-  # template must say the user does not see it, and must say copy verbatim.
-  if grep -qiE "NO ve ese menú|does NOT see that menu|NÃO vê esse menu" "$F"; then
-    pass "jarbis.$L.md warns that the user cannot see the hook output"
+  [ -f "$F" ] || { oops "missing template: jarbis.$L.md"; continue; }
+  if grep -qiE "no ve ninguna lista|cannot see any list|não vê nenhuma lista" "$F"; then
+    pass "jarbis.$L.md carries the same recovery path"
   else
-    oops "jarbis.$L.md does not warn that the menu is invisible to the user"
-  fi
-  if grep -qiE "copiado tal cual|copied verbatim|copiado tal e qual" "$F"; then
-    pass "jarbis.$L.md says to copy it rather than re-format it"
-  else
-    oops "jarbis.$L.md does not tell the agent to copy the block verbatim"
+    oops "jarbis.$L.md has no recovery path for an invisible menu"
   fi
 done
 
