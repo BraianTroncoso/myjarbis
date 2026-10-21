@@ -4,6 +4,47 @@
 
 ### Added
 
+- **Opening Claude is no longer an invitation to use MyJarbis.** With no
+  active module the SessionStart hook prints one line — `18 module(s), none
+  active, last: post-design. Run /jarbis to pick one.` — and tells the model
+  to stay out of the way. The full menu renders when it is asked for, from
+  `list_modules`, which now returns a pre-rendered `display` field.
+
+  Before this, every single session start spent 11.2 KB of the model's
+  context on nineteen module descriptions plus the newest handoff — a handoff
+  belonging to a module the user had not chosen — and none of it was visible
+  to the user, because plain hook stdout goes to the model's context and not
+  to the terminal. So the menu was simultaneously too expensive and invisible:
+  `/jarbis` would answer "which module?" with no list on screen.
+
+  Measured on a 19-module project: what the user sees at startup went
+  4169 → 114 bytes; what the model receives, 11225 → 677. The menu itself,
+  when requested, is 2711 bytes and carries no handoff.
+
+  `systemMessage` is what makes the display half work — it is the hook output
+  field Claude Code shows to the user. The renderer moved to `menu.ts` so the
+  hook and `list_modules` cannot drift into two different menus.
+
+- **`myjarbis update` propagates everything now**, not just hook scripts:
+  slash commands, baseline skills, and the read-only permission allowlist,
+  then re-materializes `.claude/skills/` in every project so nobody has to
+  reopen Claude in twenty-three repos. Propagation is on by default;
+  `--no-projects` opts out.
+
+  It backs the brain up (WAL included) before reseeding, because `skill
+  reseed` has no `diverged` + `--force` gate: a hand-edited baseline skill
+  hashes like a stale one and is rewritten without warning.
+
+- **A read-only permission baseline is pre-approved when a project is wired.**
+  One `mcp__myjarbis__*` entry covers all 32 tools, plus `myjarbis` and four
+  read-only git commands. Strictly additive: it never reorders or drops what
+  the user added, never touches `deny`, and a test fails if anyone widens it
+  to something that writes.
+
+  Note that `permissions.defaultMode: "bypassPermissions"` is NOT set and
+  cannot be: Claude Code ignores that value when it comes from a project
+  settings file.
+
 - **Several modules open at once, with one of them primary.** Work does not
   respect module boundaries — touching the CLI usually means reading what the
   server does — and the old shape forced a choice between carrying the wrong
@@ -48,6 +89,26 @@
   every future open.
 
 ### Fixed
+
+- **The `module-orchestration` baseline skill told the agent to call
+  `list_modules` at session start** — the exact thing the `/jarbis` command
+  forbids in bootstrap, and the reason `/jarbis` in a large project would
+  spend a minute shelling out to `myjarbis module list` and querying the
+  `projects` table for information the hook had already handed it. The skill
+  predated the server-side menu and nothing compares a skill against the
+  command it contradicts.
+
+- **`update` reached every project whose hooks were broken, and no others.**
+  The per-project loop was gated on "does this project need hook repair?",
+  which was right for hooks and wrong for everything else `hook install
+  claude` grew to do — including the permission allowlist. Twenty-three
+  projects reported "up to date" and received none of it. Anything idempotent
+  now runs outside that gate.
+
+- **A project-level `commit-hygiene` skill in this repo asked for a
+  `Co-Authored-By: Claude` trailer** while `docs/CONVENTIONS.md`, the README
+  and the `/jarbis` command all forbade it, and no commit in the history ever
+  carried one.
 
 - **A close could be stamped before the close that preceded it.** `ended_at`
   is the only key ordering closes (`ORDER BY ended_at DESC, id DESC`), and it
