@@ -22,11 +22,15 @@ Everything they do, you still do when the user asks for it in words.
 
 ## Bootstrap (two paths depending on the SessionStart hook)
 
-CRITICAL: the SessionStart hook already did discovery (printed
-project + active module + last "Resume here" to the user). Your job
-on `/jarbis` activation is to REACT to what the hook did, not repeat
-it. **Do not call `current_project` or `list_modules` in bootstrap** —
-that info is already in your context via the hook output.
+CRITICAL: the SessionStart hook already did discovery. Your job on
+`/jarbis` activation is to REACT to what it left, not repeat it.
+**Do not call `current_project` or `resume` in bootstrap** — that info
+is already in your context.
+
+The one exception is Case B: with no active module the hook
+deliberately does NOT print the menu (opening Claude is not a request
+to use MyJarbis), so there you DO call `list_modules` — once — and
+print its `display`.
 
 ### Case A — Hook auto-started a session (active module set)
 
@@ -61,24 +65,23 @@ them once in your first line so the user knows what you can see, and
 read the "what changes with companions open" list in Case B — it
 applies here too. **Still do not call `start_session`.**
 
-### Case B — Hook showed a module menu (no active module)
+### Case B — No module is active
 
-If your context contains a numbered module menu with options ("new
-module X", "settings"), the user hasn't picked yet.
+If your context says MyJarbis is installed but **no module is active**,
+the user has not picked yet and no project context is loaded.
 
-**The menu is on the user's screen, not in your context.** The hook
-shows it to them directly; all you get is one line saying how many
-modules there are. That is deliberate: until anyone knows what they
-want, eighteen module descriptions buy you nothing, and they are
-exactly what the user needs in order to choose.
+Opening Claude in a directory is not a request to use MyJarbis, so the
+hook does NOT print the menu: it leaves one line and gets out of the
+way. But if the user typed `/jarbis`, they are asking for it.
 
-Your first output: 1 short line awaiting choice.
+So: **call `list_modules` and print its `display` field verbatim** — it
+comes already rendered from the server. Then one line asking for the
+pick.
 
-> Ready, which module? (several comma-separated: the first is primary)
-
-Do not list the modules — they are already looking at them. **The one
-exception**: if they say they cannot see any list, call `list_modules`
-and show it.
+**Print, do not rebuild.** Do not construct the list from `modules[]`:
+formatting nineteen rows out of structured data is exactly the
+reasoning that server-side rendering exists to avoid. `display` is
+ready; it goes to the output untouched.
 
 When they reply, parse:
 - module name/number → `start_session(<name>)` and show a compact

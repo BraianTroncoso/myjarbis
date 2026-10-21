@@ -65,7 +65,19 @@ echo "→ [2] module add checkout"
 echo "→ [3] SessionStart hook output"
 HOOK_OUT=$(node "$CLI" hook session-start)
 echo "$HOOK_OUT" | head -3
-echo "$HOOK_OUT" | grep -q "Modules (" || { echo "✗ hook should list modules"; exit 1; }
+# With no active module the hook prints a POINTER, not the menu: opening
+# Claude in a directory is not a request to use MyJarbis. The menu itself is
+# one `list_modules` away, which is what /jarbis does.
+echo "$HOOK_OUT" | grep -q "none active" || { echo "✗ hook should report that no module is active"; exit 1; }
+node --input-type=module -e "
+import { ServerContext } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/context.js';
+import { listModules } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/tools/discovery.js';
+const ctx = ServerContext.initialize();
+try {
+  const d = listModules(ctx, {}).display || '';
+  if (!/Modules \(/.test(d)) { console.error('display did not render the menu'); process.exit(1); }
+} finally { ctx.close(); }
+" || { echo "✗ list_modules should hand back the rendered menu"; exit 1; }
 
 # 4. start_session for checkout (manually via DB; the agent would do this)
 echo "→ [4] start_session via direct call → assert context payload"
@@ -92,6 +104,10 @@ node --input-type=module -e "
 
 # 6. Re-fire SessionStart hook → should show checkout's next_session
 echo "→ [6] re-fire SessionStart hook (simulating reopening Claude)"
+# Pick the module first, which is what "reopening Claude to carry on" means.
+# The hook only loads a module's context — and its handoff — when one is
+# active; with none it prints a pointer and stays out of the way.
+"$MJ" module use checkout >/dev/null 2>&1
 HOOK_OUT2=$(node "$CLI" hook session-start)
 echo "$HOOK_OUT2" | tail -5
 if ! echo "$HOOK_OUT2" | grep -q "Continuar con SHOP-S1.4 mañana"; then
@@ -101,6 +117,19 @@ if ! echo "$HOOK_OUT2" | grep -q "Continuar con SHOP-S1.4 mañana"; then
   exit 1
 fi
 echo "  ✓ next_session surfaced by hook"
+
+# Undo the two side effects of picking the module above: `module use` makes
+# every later hook auto-start, and the hook just opened a session. Step 7
+# asserts on previousSession, which would otherwise be that auto-started one
+# instead of the session closed in step 4.
+"$MJ" module unset >/dev/null 2>&1
+node --input-type=module -e "
+  process.chdir('$WORK');
+  import { ServerContext } from '$MYJARBIS_INSTALL_DIR/mcp-server/build/context.js';
+  const ctx = ServerContext.initialize();
+  ctx.db.db.prepare('DELETE FROM sessions WHERE ended_at IS NULL').run();
+  ctx.close();
+" >/dev/null 2>&1 || true
 
 # 7. start_session again → previousSession should be populated
 echo "→ [7] start_session again → previousSession populated"

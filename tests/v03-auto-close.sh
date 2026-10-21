@@ -454,6 +454,12 @@ ctx.close();
 read_asserts
 
 # The hook output is what the USER reads, and it was showing the empty one.
+# The hook only prints a handoff when a module is ACTIVE. With none active
+# it deliberately prints a one-line pointer instead: opening Claude in a
+# directory is not a request to use MyJarbis, and the newest close belongs
+# to a module the user has not chosen. Pick the module first, which is the
+# state this assertion was always really about — a person resuming work.
+"$MJ" module use _general >/dev/null 2>&1
 HOOKOUT=$(node "$CLI" hook session-start 2>/dev/null)
 echo "$HOOKOUT" | grep -q "CURATED HANDOFF" \
   && pass "the SessionStart hook prints the curated handoff, not the synthetic one" \

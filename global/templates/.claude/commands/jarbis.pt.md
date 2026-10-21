@@ -22,11 +22,14 @@ Tudo o que eles fazem, você também faz quando ele pede falando.
 
 ## Bootstrap (dois caminhos conforme o SessionStart hook)
 
-CRÍTICO: o SessionStart hook já fez o discovery (imprimiu projeto +
-módulo ativo + última "Retomar aqui" ao usuário). Seu trabalho na
-ativação de `/jarbis` é REAGIR ao que o hook fez, não repetir.
-**Não chame `current_project` nem `list_modules` no bootstrap** — a
-info já está no seu contexto via o output do hook.
+CRÍTICO: o SessionStart hook já fez o discovery. Seu trabalho na
+ativação de `/jarbis` é REAGIR ao que ele deixou, não repetir.
+**Não chame `current_project` nem `resume` no bootstrap** — a info já
+está no seu contexto.
+
+A única exceção é o Caso B: sem módulo ativo o hook deliberadamente NÃO
+imprime o menu (abrir Claude não é pedir MyJarbis), então ali você SIM
+chama `list_modules` — uma vez — e imprime o `display`.
 
 ### Caso A — Hook auto-iniciou uma sessão (active module setado)
 
@@ -61,22 +64,23 @@ uma vez na sua primeira linha para o usuário saber o que você consegue
 ver, e leia a lista de "o que muda com acompanhantes abertos" do Caso B,
 que vale aqui também. **Ainda assim não chame `start_session`.**
 
-### Caso B — Hook mostrou um menu de módulos (sem active module)
+### Caso B — Nenhum módulo ativo
 
-Se no seu contexto há um menu com módulos numerados e opções
-("novo módulo X", "settings"), o usuário ainda não escolheu.
+Se o seu contexto diz que MyJarbis está instalado mas **nenhum módulo
+está ativo**, o usuário ainda não escolheu e não há contexto carregado.
 
-**O menu está na tela do usuário, não no seu contexto.** O hook mostra
-direto para ele; a você chega só uma linha dizendo quantos módulos há.
-É deliberado: enquanto não se sabe o que ele quer, 18 descrições não te
-servem de nada, e são justamente o que ele precisa para escolher.
+Abrir Claude num diretório não é pedir para usar MyJarbis, então o hook
+NÃO imprime o menu: deixa uma linha e sai do caminho. Mas se o usuário
+escreveu `/jarbis`, está pedindo.
 
-Seu primeiro output: 1 linha curta esperando escolha.
+Então: **chame `list_modules` e imprima o campo `display` tal e qual**,
+que já vem renderizado pelo servidor. Depois, uma linha pedindo a
+escolha.
 
-> Pronto, qual módulo? (vários com vírgula: o primeiro manda)
-
-Não liste os módulos — ele já está vendo. **A única exceção**: se disser
-que não vê nenhuma lista, aí `list_modules` e mostre.
+**Imprimir, não remontar.** Não construa a lista a partir de
+`modules[]`: formatar 19 linhas a partir de dados estruturados é
+justamente o raciocínio que renderizar no servidor existe para evitar.
+`display` já está pronto; vai para o output sem ser tocado.
 
 Quando responder, parseie:
 - nome/número de módulo → `start_session(<name>)` e mostre greeting

@@ -202,12 +202,34 @@ node --input-type=module -e "
   endSession(ctx, { summary: 'Closed by hand again.', next_session: '$NEXT' });
   ctx.close();
 " >/dev/null 2>&1 || oops "could not close a session for the hook to read"
+# The hook only prints a handoff when a module is ACTIVE. With none active
+# it deliberately prints a one-line pointer instead: opening Claude in a
+# directory is not a request to use MyJarbis, and the newest close belongs
+# to a module the user has not chosen. Pick the module first, which is the
+# state this assertion was always really about — a person resuming work.
+"$MJ" module use _general >/dev/null 2>&1
 HOOK_OUT=$(node "$CLI" hook session-start 2>&1 || true)
 if echo "$HOOK_OUT" | grep -q "22 projects still lack the command"; then
   pass "the handoff text reached the terminal"
 else
   oops "the hook did not print the handoff: $(echo "$HOOK_OUT" | tail -3 | tr '\n' ' ')"
 fi
+
+# Undo both side effects of the line above, or the rest of this suite runs in
+# a state it did not ask for: `module use` makes the next hook auto-start a
+# session, and the hook above already opened one — while the assertions below
+# are specifically about closing with NOTHING open.
+"$MJ" module unset >/dev/null 2>&1
+node --input-type=module -e "
+  process.chdir('$WORK/proj');
+  import { ServerContext } from '$B/context.js';
+  const ctx = ServerContext.initialize();
+  const open = ctx.db.sessions.listOpen ? ctx.db.sessions.listOpen() : [];
+  for (const row of ctx.db.db.prepare('SELECT id FROM sessions WHERE ended_at IS NULL').all()) {
+    ctx.db.db.prepare(\"DELETE FROM sessions WHERE id = ?\").run(row.id);
+  }
+  ctx.close();
+" >/dev/null 2>&1 || true
 
 # ── [7] closing with nothing open fails cleanly ───────────────────
 echo "[7] closing when nothing is open"

@@ -11,6 +11,9 @@ import { z } from 'zod';
 import { ServerContext } from '../context.js';
 import { MyJarbisError, ErrorType } from '../types.js';
 import { ModuleStatus } from '../db/schema.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { renderModuleMenu, menuStringsFor } from '../menu.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // current_project
@@ -99,7 +102,35 @@ export interface ListModulesResult {
   projectName: string;
   count: number;
   modules: ListedModule[];
+  /**
+   * The menu, already rendered — print it verbatim.
+   *
+   * Absent when there are no modules. This is the same block the SessionStart
+   * pointer refers to, from the same renderer, so the "show me the modules"
+   * path and the "a menu exists" path cannot describe different things.
+   */
+  display?: string;
   hint?: string;
+}
+
+
+/**
+ * The project's configured language, for the menu strings.
+ *
+ * Read here rather than threaded through: `list_modules` is reachable from
+ * the MCP server, where no hook has already resolved it. Any failure falls
+ * back to English rather than throwing — a menu in the wrong language still
+ * lets someone pick a module.
+ */
+function readProjectLanguage(projectPath: string): string | undefined {
+  try {
+    const p = path.join(projectPath, '.myjarbis', 'config', 'settings.json');
+    if (!fs.existsSync(p)) return undefined;
+    const j = JSON.parse(fs.readFileSync(p, 'utf-8')) as { language?: unknown };
+    return typeof j.language === 'string' ? j.language : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function listModules(
@@ -129,14 +160,49 @@ export function listModules(
     };
   });
 
+  // The SAME block the SessionStart pointer refers to, from the same
+  // renderer. `/jarbis` prints this verbatim instead of rebuilding a menu
+  // out of `modules[]` — an agent reformatting a nineteen-row list from
+  // structured data is exactly the ~28s of reasoning that rendering
+  // server-side was introduced to remove (commit 190aef6).
+  //
+  // The highlight is the most recently CLOSED module, which is the same
+  // signal the hook uses for "what was being worked on last".
+  let newest: { name: string; ended_at: string } | null = null;
+  for (const m of enriched) {
+    if (m.lastSessionEndedAt && (!newest || m.lastSessionEndedAt > newest.ended_at)) {
+      newest = { name: m.name, ended_at: m.lastSessionEndedAt };
+    }
+  }
+
+  const display =
+    enriched.length === 0
+      ? undefined
+      : [
+          `═══ MyJarbis · ${project.name} ═══`,
+          '',
+          renderModuleMenu(
+            enriched.map((m) => ({
+              name: m.name,
+              description: m.description,
+              status: m.status,
+              lastEndedAt: m.lastSessionEndedAt,
+            })),
+            menuStringsFor(readProjectLanguage(ctx.projectPath)),
+            newest?.name ?? null,
+            (iso) => iso.replace(' ', 'T').slice(0, 10),
+          ),
+        ].join('\n');
+
   return {
     projectName: project.name,
     count: enriched.length,
     modules: enriched,
+    display,
     hint:
       enriched.length === 0
         ? `No modules yet. Use create_module(name) to add the first vertical.`
-        : undefined,
+        : 'Print `display` VERBATIM for the user to pick from — do not rebuild it from `modules[]`.',
   };
 }
 

@@ -36,6 +36,7 @@ import { generateModuleDiagram, isDiagramAuto } from './diagram/generate.js';
 import { exportBrain, importBrain, brainStatus } from './tools/brain.js';
 import { autoCloseAll, AUTO_MARKER, truncate } from './tools/autoClose.js';
 import { mergeBaselinePermissions } from './permissions.js';
+import { MENU_I18N } from './menu.js';
 import {
   claimSession,
   hasOwnClaim,
@@ -1324,11 +1325,9 @@ const HOOK_I18N = {
       `No hay proyecto MyJarbis en ${cwd}.\nCorré \`myjarbis init\` desde este directorio para habilitar memoria persistente.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNo hay módulos registrados todavía.\nCreá uno con: \`myjarbis module add <name>\`\n(Los módulos son verticales: ej. checkout, catalog, Translations.)`,
-    modules_label: (n: number) => `Módulos (${n}) · ▸ = último trabajado`,
-    paused_tag: ' (en pausa)',
-    no_sessions_tag: 'sin sesiones',
-    menu_actions:
-      'nombre o número → arrancar · varios con coma → multi-módulo (el primero manda) · "nuevo módulo <name>" · "settings"',
+    ...MENU_I18N.es,
+    menu_pointer: (proj: string, n: number, last: string | null) =>
+      `MyJarbis · ${proj} — ${n} módulo(s), ninguno activo${last ? `, último: ${last}` : ''}. Corré /jarbis para elegir.`,
     resume_label: (mod: string, ts: string) => `── Última "Retomar aquí" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── "Retomar aquí" REAL, escrita a mano (${mod}, ${ts} UTC) — estaba tapada por ${buried} cierre(s) automático(s) ──`,
@@ -1344,11 +1343,9 @@ const HOOK_I18N = {
       `No MyJarbis project at ${cwd}.\nRun \`myjarbis init\` from this directory to enable persistent memory.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNo modules registered yet.\nCreate one with: \`myjarbis module add <name>\`\n(Modules are verticals: e.g., checkout, catalog, Translations.)`,
-    modules_label: (n: number) => `Modules (${n}) · ▸ = last worked in`,
-    paused_tag: ' (paused)',
-    no_sessions_tag: 'no sessions',
-    menu_actions:
-      'name or number → start · several comma-separated → multi-module (first one is primary) · "new module <name>" · "settings"',
+    ...MENU_I18N.en,
+    menu_pointer: (proj: string, n: number, last: string | null) =>
+      `MyJarbis · ${proj} — ${n} module(s), none active${last ? `, last: ${last}` : ''}. Run /jarbis to pick one.`,
     resume_label: (mod: string, ts: string) => `── Last "Resume here" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── The REAL "Resume here", human-written (${mod}, ${ts} UTC) — it was buried under ${buried} automatic close(s) ──`,
@@ -1364,11 +1361,9 @@ const HOOK_I18N = {
       `Sem projeto MyJarbis em ${cwd}.\nRode \`myjarbis init\` deste diretório para habilitar memória persistente.`,
     no_modules_body: (header: string) =>
       `${header}\n\nNenhum módulo registrado ainda.\nCrie um com: \`myjarbis module add <name>\`\n(Módulos são verticais: ex. checkout, catalog, Translations.)`,
-    modules_label: (n: number) => `Módulos (${n}) · ▸ = último trabalhado`,
-    paused_tag: ' (em pausa)',
-    no_sessions_tag: 'sem sessões',
-    menu_actions:
-      'nome ou número → começar · vários com vírgula → multi-módulo (o primeiro manda) · "novo módulo <name>" · "settings"',
+    ...MENU_I18N.pt,
+    menu_pointer: (proj: string, n: number, last: string | null) =>
+      `MyJarbis · ${proj} — ${n} módulo(s), nenhum ativo${last ? `, último: ${last}` : ''}. Rode /jarbis para escolher.`,
     resume_label: (mod: string, ts: string) => `── Última "Retomar aqui" (${mod}, ${ts} UTC) ──`,
     curated_label: (mod: string, ts: string, buried: number) =>
       `── "Retomar aqui" REAL, escrita à mão (${mod}, ${ts} UTC) — estava coberta por ${buried} fechamento(s) automático(s) ──`,
@@ -1613,91 +1608,35 @@ function runHookSessionStart(): void {
     }
     const highlight: string | null = mostRecent ? mostRecent.mod : null;
 
-    // The description is CLIPPED. A project with twenty modules carrying a
-    // paragraph each turned this menu into 11 KB the model had to read before
-    // it could ask a one-word question — and what it does with that is
-    // deliberate: it goes and re-queries what it was already handed. One line
-    // per module is what picking one actually requires; the full text is a
-    // `load_module` away.
-    const lines: string[] = [header, '', t.modules_label(active.length)];
-    const width = Math.max(...active.map((m) => m.name.length));
-    rows.forEach(({ module: m, last }, idx) => {
-      // The most recently worked module is marked rather than reordered:
-      // alphabetical order is what makes a 19-item list scannable, and
-      // hoisting one entry costs that for everyone else.
-      const mark = highlight === m.name ? '▸' : ' ';
-      const num = `${idx + 1}.`.padStart(3);
-      const pausedTag = m.status === 'paused' ? t.paused_tag : '';
-      const sessionTag = last?.ended_at
-        ? stableDateLabel(last.ended_at).slice(0, 10)
-        : t.no_sessions_tag;
-      const head = `${mark}${num} ${m.name.padEnd(width)}${pausedTag}  ${sessionTag}`;
-      const desc = m.description ? `  ${truncate(m.description, MENU_DESC_LEN)}` : '';
-      lines.push(`${head}${desc}`);
-    });
-
-    lines.push('', t.menu_actions);
-    if (mostRecent) {
-      const last = ctx.db.sessions.findById(mostRecent.sessionId)!;
-      const curated = last.next_session!.startsWith(AUTO_MARKER)
-        ? ctx.db.sessions.findLastCuratedByModule(mostRecent.moduleId)
-        : null;
-      const show = curated?.next_session ? curated : last;
-
-      if (curated?.next_session) {
-        const buried = ctx.db.sessions.countClosedAfterInModule(
-          mostRecent.moduleId,
-          curated,
-        );
-        lines.push('', t.curated_note);
-        lines.push(
-          '',
-          t.curated_label(mostRecent.mod, stableDateLabel(curated.ended_at), buried),
-        );
-      } else {
-        lines.push('', t.resume_label(mostRecent.mod, stableDateLabel(mostRecent.ended_at)));
-      }
-      lines.push(show.next_session!);
-
-      const staleAfter = readStaleThreshold(ctx.projectPath);
-      const staleness = computeStaleness(show.ended_at, staleAfter);
-      if (staleness?.stale) {
-        lines.push('', t.stale_warning(staleAfter));
-      }
-    }
-
-    // The menu goes to the USER; the model gets three lines.
+    // No active module: say ONE line and get out of the way.
     //
-    // Plain stdout from a SessionStart hook is added to the model's context
-    // and is NOT printed to the user's terminal. That asymmetry is the whole
-    // bug: we rendered a careful menu, spent 11 KB of the model's context on
-    // it, and the person who had to choose never saw it — they were asked
-    // "which module?" with no list in front of them.
+    // Opening Claude in a directory is not a request to use MyJarbis. The
+    // menu used to print on every single SessionStart — nineteen modules with
+    // descriptions, plus the newest handoff — whether the user came to work
+    // on a vertical or to fix a typo. Forty-three lines of someone else's
+    // agenda before they typed anything.
     //
-    // It is also context spent on the wrong question. With no active module
-    // nobody knows yet what the user wants, so eighteen module descriptions
-    // buy the model nothing: all it has to do is wait. The descriptions are
-    // for the human doing the choosing.
+    // The handoff is gone from this branch entirely, and that is the sharper
+    // point: it belongs to the module with the most recent close, which is a
+    // module the user has NOT chosen. Printing it answers a question nobody
+    // asked, in two kilobytes.
     //
-    // So: `systemMessage` carries the menu and is displayed; the model is
-    // told only that a menu is on screen and to wait for the answer. In this
-    // branch that takes the model's bootstrap from ~11 KB to a few hundred
-    // bytes, and the user finally sees what they are picking from.
+    // The full menu now renders when it is actually wanted — `/jarbis`, via
+    // `list_modules`, which returns the same block from the same renderer
+    // (menu.ts) so the two paths cannot drift.
     //
-    // The fallback is deliberate and cheap: if `systemMessage` ever stops
-    // rendering, the user says "I don't see anything" and the agent recovers
-    // with one `list_modules` call — which is why the context line names it.
-    // Silent-and-unrecoverable was the failure mode worth designing out.
+    // Why not just make `/jarbis` re-trigger the hook: a slash command
+    // cannot fire a SessionStart. The split is the only shape available.
+    const pointer = t.menu_pointer(project.name, active.length, highlight);
     console.log(
       JSON.stringify({
-        systemMessage: lines.join('\n'),
+        systemMessage: pointer,
         hookSpecificOutput: {
           hookEventName: 'SessionStart',
           additionalContext: [
-            `MyJarbis: project "${project.name}", ${active.length} module(s), none active.`,
-            'A module menu is ON THE USER\'S SCREEN right now — it was shown to them, not to you, and it lists every module with its description and when it was last worked in.',
-            'Answer with ONE short line asking which one, and wait. Do NOT call list_modules, current_project or resume, and do not re-print the menu: they can already see it. Only if the user says they cannot see any list, call list_modules and show it.',
-            'When they pick: start_session(<name>), or start_session(<first>, with_modules=[<rest>]) for several, where the first is the primary.',
+            `MyJarbis is set up in this project ("${project.name}", ${active.length} module(s)), but NO module is active, so no project context is loaded.`,
+            'Do nothing about this. Do not greet, do not call list_modules, current_project or resume, and do not mention MyJarbis unless the user brings it up.',
+            'If the user runs /jarbis or asks to work on a module: list_modules returns a `display` field already rendered — print it verbatim and let them pick. Then start_session(<name>), or start_session(<first>, with_modules=[<rest>]) for several, where the first is the primary.',
             t.memory_contract,
           ].join('\n'),
         },

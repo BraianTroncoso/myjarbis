@@ -60,13 +60,13 @@ oops() { echo "    ✗ $1" >&2; FAILED=$((FAILED + 1)); }
 # have to read the displayed field — grepping raw stdout would be measuring
 # one long line of JSON and calling it a menu.
 menu_text() {
-  node "$B/cli.js" hook session-start 2>/dev/null \
-    | node -e "
-let s='';
-process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{
-  try { process.stdout.write(JSON.parse(s).systemMessage || ''); }
-  catch { process.stdout.write(s); }
-});" 2>/dev/null || true
+  node --input-type=module -e "
+import { ServerContext } from '$B/context.js';
+import { listModules } from '$B/tools/discovery.js';
+const ctx = ServerContext.initialize();
+try { process.stdout.write(listModules(ctx, {}).display || ''); }
+finally { ctx.close(); }
+" 2>/dev/null || true
 }
 
 mkdir -p "$WORK/proj" && cd "$WORK/proj" && git init -q .
@@ -277,14 +277,13 @@ else
 fi
 
 # ── [7] the menu goes to the USER, a summary goes to the model ──────────
-echo '[7] the menu is displayed to the user, not spent on the model'
+echo '[7] no module active: a pointer, not the whole menu'
 # Plain stdout from a SessionStart hook is added to the model's context and
 # is NOT printed to the user's terminal. Rendering the menu there spent
 # ~11 KB of context on eighteen descriptions the model has no use for yet,
 # AND left the person who had to choose staring at "which module?" with no
 # list. `systemMessage` is the field Claude Code displays.
-MENU_JSON=$(node "$B/cli.js" hook session-start 2>/dev/null || true)
-# Quoted heredoc: the script below reaches node byte for byte, so its own
+# Quoted heredocs: these scripts reach node byte for byte, so their own
 # quotes and regexes are not re-interpreted by the shell first.
 cat > "$WORK/parse.js" <<'PARSEJS'
 let s = '';
@@ -298,54 +297,71 @@ process.stdin.on('data', (d) => (s += d)).on('end', () => {
       acLen: ac.length,
       smHasModules: /alpha/.test(sm),
       acHasModules: /alpha/.test(ac),
-      acWarnsNoRequery: /Do NOT call list_modules/.test(ac),
-      acHasFallback: /cannot see any list/.test(ac),
+      smHasHandoff: /Resume here|Retomar aqu/.test(sm),
     }));
   } catch {
     console.log('PARSE_FAIL');
   }
 });
 PARSEJS
-PARSED=$(echo "$MENU_JSON" | node "$WORK/parse.js" 2>/dev/null || echo PARSE_FAIL)
-
-if [ "$PARSED" = "PARSE_FAIL" ] || [ -z "$PARSED" ]; then
-  oops "the menu branch did not emit parseable JSON: $(echo "$MENU_JSON" | head -2)"
-else
-  cat > "$WORK/field.js" <<'FIELDJS'
+cat > "$WORK/field.js" <<'FIELDJS'
 let s = '';
 process.stdin.on('data', (d) => (s += d))
   .on('end', () => console.log(JSON.parse(s)[process.argv[2]]));
 FIELDJS
+MENU_JSON=$(node "$B/cli.js" hook session-start 2>/dev/null || true)
+PARSED=$(echo "$MENU_JSON" | node "$WORK/parse.js" 2>/dev/null || echo PARSE_FAIL)
+
+if [ "$PARSED" = "PARSE_FAIL" ] || [ -z "$PARSED" ]; then
+  oops "the no-active-module branch did not emit parseable JSON: $(echo "$MENU_JSON" | head -2)"
+else
   field() { echo "$PARSED" | node "$WORK/field.js" "$1"; }
-  [ "$(field smHasModules)" = "true" ] \
-    && pass "the module list is in systemMessage, where the user sees it" \
-    || oops "systemMessage does not carry the module list"
+  # Opening Claude in a directory is not a request to use MyJarbis. The menu
+  # used to print on EVERY SessionStart — 19 modules plus the newest handoff,
+  # 43 lines of someone else's agenda before the user typed anything.
+  [ "$(field smHasModules)" = "false" ] \
+    && pass "the full menu does not print on every session start" \
+    || oops "the module list still prints unasked at session start"
   [ "$(field acHasModules)" = "false" ] \
-    && pass "the module list is NOT spent on the model's context" \
+    && pass "and it is not spent on the model's context either" \
     || oops "the model still receives the full module list"
-  [ "$(field acWarnsNoRequery)" = "true" ] \
-    && pass "the model is told not to re-query what it was not given" \
-    || oops "nothing stops the model from calling list_modules anyway"
-  # Without this the failure is silent AND unrecoverable: if systemMessage
-  # ever stops rendering, the user sees nothing and the model, correctly
-  # believing a menu is on screen, keeps asking them to pick from it.
-  [ "$(field acHasFallback)" = "true" ] \
-    && pass "and given a recovery path if the user sees no list" \
-    || oops "no recovery path when systemMessage does not render"
+  SM_LEN=$(field smLen)
+  [ "$SM_LEN" -lt 300 ] \
+    && pass "the user gets a $SM_LEN-byte pointer, not a wall (was 4169)" \
+    || oops "the session-start pointer is $SM_LEN bytes — the menu leaked back in"
+  # The handoff belongs to the module with the newest close, which is a module
+  # the user has NOT chosen. Printing it answers a question nobody asked.
+  [ "$(field smHasHandoff)" = "false" ] \
+    && pass "no handoff from an unchosen module" \
+    || oops "a handoff for a module the user never picked is being printed"
   AC_LEN=$(field acLen)
-  [ "$AC_LEN" -lt 2000 ] \
+  [ "$AC_LEN" -lt 1200 ] \
     && pass "the model's bootstrap is $AC_LEN bytes (was ~11000)" \
-    || oops "the model's bootstrap is $AC_LEN bytes — the menu leaked back in"
+    || oops "the model's bootstrap is $AC_LEN bytes"
+fi
+
+# ── [7b] but /jarbis can still get it, pre-rendered ──────────────────────
+echo '[7b] list_modules hands back the menu already rendered'
+LM="$(menu_text)"
+if echo "$LM" | grep -q "alpha" && echo "$LM" | grep -q "Modules ("; then
+  pass "display carries the rendered block for /jarbis to print"
+else
+  oops "list_modules.display did not render the menu: $(echo "$LM" | head -2)"
+fi
+if echo "$LM" | grep -q "pick up from here"; then
+  oops "display carries a handoff it should not"
+else
+  pass "and it carries no handoff either"
 fi
 
 TPL_DIR="$REPO_ROOT/global/templates/.claude/commands"
 for L in es en pt; do
   F="$TPL_DIR/jarbis.$L.md"
   [ -f "$F" ] || { oops "missing template: jarbis.$L.md"; continue; }
-  if grep -qiE "no ve ninguna lista|cannot see any list|não vê nenhuma lista" "$F"; then
-    pass "jarbis.$L.md carries the same recovery path"
+  if grep -q 'display' "$F"; then
+    pass "jarbis.$L.md tells the agent to print list_modules.display"
   else
-    oops "jarbis.$L.md has no recovery path for an invisible menu"
+    oops "jarbis.$L.md never mentions the pre-rendered display field"
   fi
 done
 

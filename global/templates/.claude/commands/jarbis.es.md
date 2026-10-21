@@ -22,11 +22,15 @@ Todo lo que hacen, lo podés hacer igual cuando te lo pide hablando.
 
 ## Bootstrap (dos caminos según el SessionStart hook)
 
-CRÍTICO: el SessionStart hook ya hizo el discovery (printeó al user
-proyecto + módulo activo + último "Retomar aquí"). Tu trabajo en
-`/jarbis` activación es REACCIONAR a lo que hizo el hook, NO repetirlo.
-**No llames `current_project` ni `list_modules` en bootstrap** — la
-info ya está en tu contexto vía el output del hook.
+CRÍTICO: el SessionStart hook ya hizo el discovery. Tu trabajo en la
+activación de `/jarbis` es REACCIONAR a lo que dejó, no repetirlo.
+**No llames `current_project` ni `resume` en el bootstrap** — esa info
+ya está en tu contexto.
+
+La única excepción es el Caso B: sin módulo activo el hook
+deliberadamente NO imprime el menú (abrir Claude no es pedir MyJarbis),
+así que ahí sí llamás `list_modules` — una vez — y printeás su
+`display`.
 
 ### Caso A — El hook auto-arrancó una sesión (active module seteado)
 
@@ -61,23 +65,23 @@ una vez en tu primera línea para que el user sepa qué estás viendo, y
 leé la lista de "qué cambia con acompañantes abiertos" del Caso B, que
 también aplica acá. **Igual no llames `start_session`.**
 
-### Caso B — El hook mostró un menú de módulos (sin active module)
+### Caso B — No hay módulo activo
 
-Si en tu contexto hay un menú con módulos numerados y opciones
-("nuevo módulo X", "settings"), el user todavía no eligió.
+Si tu contexto dice que MyJarbis está instalado pero **ningún módulo
+está activo**, el user todavía no eligió y no hay contexto cargado.
 
-**El menú está en la pantalla del user, no en tu contexto.** El hook se
-lo muestra directo; a vos te llega solo una línea diciendo cuántos
-módulos hay. Es deliberado: mientras no se sepa qué quiere, 18
-descripciones no te sirven de nada, y son justo lo que él necesita para
-elegir.
+Abrir Claude en un directorio no es pedir usar MyJarbis, así que el
+hook NO imprime el menú: deja una línea y se corre. Pero si el user
+escribió `/jarbis`, sí lo está pidiendo.
 
-Tu primer output: 1 línea breve esperando elección.
+Entonces: **`list_modules` y printeá su campo `display` tal cual**, que
+viene ya renderizado por el servidor. Después, una línea pidiendo la
+elección.
 
-> Listo, ¿cuál módulo? (varios con coma: el primero manda)
-
-No listes los módulos — ya los está viendo. **La única excepción**: si
-dice que no ve ninguna lista, entonces `list_modules` y mostrásela.
+**Printear, no re-armar.** No construyas la lista desde `modules[]`:
+formatear 18 filas desde datos estructurados es justo el razonamiento
+que renderizar en el servidor existe para evitar. `display` ya está
+listo; va al output sin tocarlo.
 
 Cuando responda, parseá:
 - nombre/número de módulo → `start_session(<name>)` y mostrá greeting

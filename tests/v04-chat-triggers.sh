@@ -78,10 +78,10 @@ else
 fi
 
 HOOK_OUT=$(node "$CLI" hook session-start 2>&1 || true)
-# Matched on the label's stem, not its punctuation: the menu header carries a
-# module count and a legend now, and pinning the exact string made a cosmetic
-# edit look like a broken language switch.
-if echo "$HOOK_OUT" | grep -q "Modules ("; then
+# The language signal moved: with no active module the hook prints a
+# one-line pointer rather than the menu, so that line is what carries the
+# locale now. Matched on the phrase, not on punctuation around it.
+if echo "$HOOK_OUT" | grep -q "none active"; then
   pass "the hook renders in English"
 else
   oops "the hook did not switch language: $(echo "$HOOK_OUT" | sed -n '3p')"
@@ -136,7 +136,7 @@ else
   oops "the CLI path left settings.json at $(lang_in_settings)"
 fi
 HOOK_ES=$(node "$CLI" hook session-start 2>&1 || true)
-if echo "$HOOK_ES" | grep -q "Módulos ("; then
+if echo "$HOOK_ES" | grep -q "ninguno activo"; then
   pass "and the hook is back in Spanish"
 else
   oops "the hook did not follow the CLI change"
