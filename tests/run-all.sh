@@ -79,6 +79,7 @@ SUITES=(
   v051-propagation-failures
   v052-init-mcp-merge
   v052-start-by-name
+  v052-init-batch
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

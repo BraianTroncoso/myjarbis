@@ -23,7 +23,7 @@ show_help() {
     echo
     echo -e "${RED}${BOLD}Commands${NC}"
     echo
-    echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project"
+    echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project (or several: --list)"
     echo -e "  ${BOLD}start${NC}      Pick a registered project and open it with claude + /jarbis"
     echo -e "  ${BOLD}doctor${NC}     Verify installation and project setup"
     echo -e "  ${BOLD}list${NC}       List all registered projects"
