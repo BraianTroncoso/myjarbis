@@ -88,9 +88,9 @@ nothing has been cut.
 git clone https://github.com/braiantroncoso/myjarbis.git
 cd myjarbis && ./install.sh
 
-# 2. register a project (once per project)
-cd ~/projects/my-app
-myjarbis init
+# 2. register your projects (once) — pick them from a list
+myjarbis init --list ~/projects
+#    or name them: myjarbis init ~/projects/my-app ~/projects/api
 
 # 3. work — from anywhere, any day
 myjarbis start
@@ -545,15 +545,34 @@ Personas:
   Persona [1/2/3/4, default 1]: 1
 ```
 
+Both are yours, not the project's: the answers are saved to
+`~/.myjarbis/defaults.json` and every later `init` reuses them without
+asking. `--ask` asks again (and saves the new answers);
+`--language=` / `--persona=` change one run without touching the defaults.
+
 Skip the prompts for CI / scripts:
 
 ```bash
 MYJARBIS_LANGUAGE=ES MYJARBIS_PERSONA=concise myjarbis init
 ```
 
+**Several projects at once.** Name them, or pick them from a list:
+
+```bash
+myjarbis init ~/projects/api ~/projects/web    # these, in one run
+myjarbis init --list ~/projects                # pick from the repos in a folder
+```
+
+`--list` shows the git repositories in the folder, marks the ones already
+initialised, and lets you toggle by number (`1 3`, `2-5`, `all`) or name,
+open a subfolder by its letter, go up with `..`, and pick across several
+folders before confirming. Without a folder it opens the last one you
+listed. Directories that are not repositories, or are already initialised,
+are skipped (`--yes` reinitialises those).
+
 `init` registers the MCP server in `~/.claude.json` **next to** the servers
 the project already has — it never replaces them — and backs the file up
-first (`~/.claude.json.bak-<ms>`).
+first (`~/.claude.json.bak-<ms>`, once per batch).
 
 Create your verticals and import the `.md` files you already keep on disk:
 
@@ -923,6 +942,7 @@ current+1 up to `SCHEMA_VERSION`; each step is idempotent. v3 added
 
 ```bash
 myjarbis init                       # init project (interactive)
+myjarbis init <dir>... | --list [folder]   # several projects in one run
 myjarbis start [name] [flags]       # global launcher (see above)
 myjarbis doctor                     # health check (25+ probes)
 myjarbis status [--json]            # git-like overview

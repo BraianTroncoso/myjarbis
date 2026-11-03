@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- **`myjarbis init --list [folder]` and `myjarbis init <dir>...` — several
+  projects in one run.** Registering a machine's worth of projects meant a
+  `cd` and the same two questions per project, so the second project cost as
+  much as the first. `--list` shows the git repositories in a folder, marks the
+  ones already initialised, and lets you toggle by number, range, `all` or
+  name, walk into subfolders and pick across several before confirming; it
+  remembers the last folder. Naming the directories does the same without the
+  picker. Each project still runs the very same init in its own process, so a
+  batch cannot drift from a single one; non-repositories and initialised
+  projects are skipped (`--yes` reinitialises), a missing directory fails the
+  batch by name, and `~/.claude.json` is backed up once per batch instead of
+  once per project. The picker is written for bash 3.2, which is what
+  `/bin/bash` still is on macOS.
+
+- **Language and persona are asked once.** They are the person's, not the
+  project's: the answers are saved to `~/.myjarbis/defaults.json` (under
+  `MYJARBIS_HOME`, so a reinstall does not forget them) and every later init
+  reuses them. `--ask` asks again; `--language=` / `--persona=` change one run
+  and never rewrite the defaults, so CI cannot either.
+  `tests/v052-init-batch.sh`.
+
 ### Fixed
 
 - **`myjarbis init` no longer unregisters the project's other MCP servers.**

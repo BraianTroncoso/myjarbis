@@ -26,12 +26,24 @@ SKIP_MEMORY=""
 ORG_SLUG="${MYJARBIS_ORG:-}"
 ISOLATION=""
 PACK_PATH=""
+LANG_FLAG=""
+PERSONA_FLAG=""
+ASK=""
+LIST=""
+# Everything except the paths, so each project of a batch is initialised with
+# exactly the options the user typed once.
+PASSTHROUGH=()
+TARGETS=()
 
 for arg in "$@"; do
     case "$arg" in
         --yes|-y)        ASSUME_YES=1 ;;
         --skip-memory)   SKIP_MEMORY=1 ;;
         --org=*)         ORG_SLUG="${arg#*=}" ;;
+        --language=*)    LANG_FLAG="${arg#*=}" ;;
+        --persona=*)     PERSONA_FLAG="${arg#*=}" ;;
+        --ask)           ASK=1 ;;
+        --list)          LIST=1; continue ;;
         # Accepted here AND forwarded below. cli.ts has understood both since
         # v0.3, but this script neither parsed nor passed them, so they were
         # unreachable from `myjarbis init` — --isolation=shared in particular,
@@ -39,11 +51,25 @@ for arg in "$@"; do
         --isolation=*)   ISOLATION="${arg#*=}" ;;
         --pack-path=*)   PACK_PATH="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: myjarbis init [--yes] [--skip-memory] [--org=<slug>]"
+            echo "Usage: myjarbis init [<dir>...] [--yes] [--skip-memory] [--org=<slug>]"
             echo "                     [--isolation=silo|shared] [--pack-path=<dir>]"
+            echo "                     [--language=EN|ES|PT] [--persona=<1-4|name>] [--ask]"
+            echo "       myjarbis init --list [<folder>]"
             echo
+            echo "  --list [<folder>]   Pick the projects to initialise from a list of the"
+            echo "                      git repositories in <folder> (default: the last"
+            echo "                      folder you listed, else the current one). You can"
+            echo "                      walk into subfolders and pick across several."
+            echo "  <dir>...            Initialise these projects instead of the current"
+            echo "                      directory, in one run. Directories that are not"
+            echo "                      git repositories, or are already initialised, are"
+            echo "                      skipped (pass --yes to reinitialise those)."
             echo "  --yes, -y           Do not prompt; accept reinitialization."
             echo "  --skip-memory       Leave Claude Code's MEMORY.md untouched."
+            echo "  --language=<lang>   Language for this run, over the saved default."
+            echo "  --persona=<p>       Persona for this run, over the saved default."
+            echo "  --ask               Ignore the saved defaults and ask again; the"
+            echo "                      answers become the new defaults."
             echo "  --org=<slug>        Seed this project from a registered org pack."
             echo "  --isolation=<mode>  Where the rows live: 'silo' (default, its"
             echo "                      own .myjarbis/memory.db) or 'shared' (the"
@@ -52,11 +78,16 @@ for arg in "$@"; do
             echo "                      registered one. Implies --org."
             exit 0
             ;;
-        *)
+        -*)
             echo "Unknown option: $arg (try --help)" >&2
             exit 1
             ;;
+        *)
+            TARGETS+=("$arg")
+            continue
+            ;;
     esac
+    PASSTHROUGH+=("$arg")
 done
 
 if [ -n "$ISOLATION" ] && [ "$ISOLATION" != "silo" ] && [ "$ISOLATION" != "shared" ]; then
@@ -70,6 +101,305 @@ step()    { echo -e "${RED}[$1/9]${NC}  ${BOLD}$2${NC}"; }
 ok()      { echo -e "       OK"; }
 note()    { echo -e "       ${DIM}$1${NC}"; }
 warn()    { echo -e "       ${RED}WARN${NC}  $1"; }
+tilde()   { case "$1" in "$HOME"*) echo "~${1#"$HOME"}" ;; *) echo "$1" ;; esac; }
+lower()   { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# ─── defaults: asked once, reused by every project after ──────────
+# Language and persona are a person's, not a project's. Asking them again on
+# every init is what made a second project cost as much as the first. They
+# live under MYJARBIS_HOME, not INSTALL_DIR, because a reinstall wipes the
+# latter and should not forget who the user is.
+DEFAULTS_FILE="${MYJARBIS_HOME:-$HOME/.myjarbis}/defaults.json"
+
+default_get() {
+    [ -f "$DEFAULTS_FILE" ] || return 0
+    node -e '
+        try {
+            const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            if (d[process.argv[2]] != null) console.log(d[process.argv[2]]);
+        } catch {}
+    ' "$DEFAULTS_FILE" "$1"
+}
+
+default_set() {
+    mkdir -p "$(dirname "$DEFAULTS_FILE")"
+    node -e '
+        const fs = require("fs");
+        const f = process.argv[1];
+        let d = {};
+        try { d = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+        for (let i = 2; i < process.argv.length; i += 2) d[process.argv[i]] = process.argv[i + 1];
+        fs.writeFileSync(f, JSON.stringify(d, null, 2) + "\n");
+    ' "$DEFAULTS_FILE" "$@"
+}
+
+# Precedence: --language/--persona, then the env vars, then the saved
+# defaults (unless --ask), then a prompt, then EN / concise. Only answers
+# typed at a prompt are saved: a flag or env var is a choice for one run, and
+# CI must not rewrite a developer's defaults.
+resolve_style() {
+    LANG_CHOICE="${LANG_FLAG:-${MYJARBIS_LANGUAGE:-}}"
+    PERSONA_CHOICE="${PERSONA_FLAG:-${MYJARBIS_PERSONA:-}}"
+    STYLE_FROM_DEFAULTS=""
+    local asked=""
+
+    if [ -z "$ASK" ]; then
+        if [ -z "$LANG_CHOICE" ]; then
+            LANG_CHOICE="$(default_get language)"
+            [ -z "$LANG_CHOICE" ] || STYLE_FROM_DEFAULTS=1
+        fi
+        if [ -z "$PERSONA_CHOICE" ]; then
+            PERSONA_CHOICE="$(default_get persona)"
+            [ -z "$PERSONA_CHOICE" ] || STYLE_FROM_DEFAULTS=1
+        fi
+    fi
+
+    if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
+        echo
+        echo -e "       ${BOLD}Language for the /jarbis prompt${NC}"
+        echo -e "         EN  English (United States) ${DIM}[default]${NC}"
+        echo -e "         ES  Español (Argentina)"
+        echo -e "         PT  Português (Brazil)"
+        read -p "       Choice [EN]: " LANG_CHOICE
+        LANG_CHOICE="${LANG_CHOICE:-EN}"
+        asked=1
+    fi
+    if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
+        echo
+        echo -e "       ${BOLD}Personas${NC}"
+        echo -e "         1   Concise            ${DIM}terse, no preamble [default]${NC}"
+        echo -e "         2   Pair programmer    ${DIM}1-line intent before each change${NC}"
+        echo -e "         3   Mentor             ${DIM}WHAT/WHY/HOW/BENEFITS${NC}"
+        echo -e "         4   Critical reviewer  ${DIM}challenges your assumptions first${NC}"
+        read -p "       Choice [1]: " PERSONA_CHOICE
+        PERSONA_CHOICE="${PERSONA_CHOICE:-1}"
+        asked=1
+    fi
+
+    LANG_CHOICE="${LANG_CHOICE:-EN}"
+    LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
+    PERSONA_CHOICE="${PERSONA_CHOICE:-1}"
+    case "$LANG_CHOICE" in
+        EN|ES|PT) ;;
+        *) echo "Language must be EN, ES or PT (got \"$LANG_CHOICE\")" >&2; exit 1 ;;
+    esac
+
+    if [ -n "$asked" ]; then
+        default_set language "$LANG_CHOICE" persona "$PERSONA_CHOICE"
+        echo
+        note "saved as your default for every next project ($(tilde "$DEFAULTS_FILE"))"
+        note "change it with: myjarbis init --ask"
+    fi
+}
+
+# ─── --list: pick the projects from a folder ──────────────────────
+# A project is a directory holding a .git. A folder without one is offered
+# as a place to walk into when it holds projects, so a tree like
+# ~/code/{work,personal}/<repo> is reachable without knowing it in advance.
+# Written for bash 3.2, which is what /bin/bash still is on macOS: no
+# ${x,,}, no mapfile, no associative arrays.
+PICKED=()
+
+is_picked() {
+    local p
+    for p in "${PICKED[@]}"; do [ "$p" = "$1" ] && return 0; done
+    return 1
+}
+
+toggle_pick() {
+    local p kept=()
+    if is_picked "$1"; then
+        for p in "${PICKED[@]}"; do [ "$p" = "$1" ] || kept+=("$p"); done
+        PICKED=("${kept[@]}")
+    else
+        PICKED+=("$1")
+    fi
+}
+
+pick_projects() {
+    local root="$1" letters="a b c d e f g h i j k l m n o p q r s t u v w x y z"
+    local d s n i tok line lo hi matches mark state
+
+    while true; do
+        root="$(cd "$root" && pwd)"
+        P_DIRS=(); F_DIRS=(); F_COUNTS=()
+        for d in "$root"/*/; do
+            [ -d "$d" ] || continue
+            d="${d%/}"
+            case "$(basename "$d")" in node_modules|vendor) continue ;; esac
+            if [ -e "$d/.git" ]; then
+                P_DIRS+=("$d")
+            else
+                n=0
+                for s in "$d"/*/; do [ -e "${s}.git" ] && n=$((n + 1)); done
+                if [ "$n" -gt 0 ]; then F_DIRS+=("$d"); F_COUNTS+=("$n"); fi
+            fi
+        done
+        LETTERS=($letters)
+
+        echo
+        echo -e "${RED}${BOLD}MyJarbis${NC} · pick the projects to initialise"
+        echo
+        echo -e "  ${BOLD}Folder${NC}  $(tilde "$root")"
+        echo
+        if [ "${#P_DIRS[@]}" -eq 0 ]; then
+            echo -e "  ${DIM}no git repositories here${NC}"
+        fi
+        for i in "${!P_DIRS[@]}"; do
+            d="${P_DIRS[$i]}"
+            mark="[ ]"; is_picked "$d" && mark="[${RED}x${NC}]"
+            state=""; [ -d "$d/.myjarbis" ] && state="already initialised"
+            printf "  ${BOLD}%2d${NC})  %b %-30s ${DIM}%s${NC}\n" "$((i + 1))" "$mark" "$(basename "$d")" "$state"
+        done
+        if [ "${#F_DIRS[@]}" -gt 0 ]; then
+            echo
+            echo -e "  ${BOLD}Folders${NC} ${DIM}(open one to pick inside it)${NC}"
+            for i in "${!F_DIRS[@]}"; do
+                [ "$i" -lt 26 ] || break
+                printf "  ${BOLD}%2s${NC})  %-34s ${DIM}%s project(s)${NC}\n" "${LETTERS[$i]}" "$(basename "${F_DIRS[$i]}")/" "${F_COUNTS[$i]}"
+            done
+        fi
+        echo
+        echo -e "  ${DIM}numbers ('1 3', '2-5', 'all') toggle · a letter opens a folder · '..' goes up${NC}"
+        echo -e "  ${DIM}a path jumps there · Enter when done${NC}  ${BOLD}selected: ${#PICKED[@]}${NC}"
+        printf "  ${BOLD}>${NC} "
+        read -r line || line=""
+
+        [ -n "${line// /}" ] || break
+
+        for tok in $line; do
+            case "$tok" in
+                ..)
+                    root="$(dirname "$root")"
+                    ;;
+                all)
+                    for d in "${P_DIRS[@]}"; do
+                        [ -d "$d/.myjarbis" ] && [ -z "$ASSUME_YES" ] && continue
+                        is_picked "$d" || PICKED+=("$d")
+                    done
+                    ;;
+                [a-z])
+                    i=0; s=""
+                    for d in $letters; do [ "$d" = "$tok" ] && s="$i"; i=$((i + 1)); done
+                    if [ -n "$s" ] && [ "$s" -lt "${#F_DIRS[@]}" ]; then
+                        root="${F_DIRS[$s]}"
+                    else
+                        echo -e "  ${RED}no folder '$tok'${NC}"
+                    fi
+                    ;;
+                */*|'~'*)
+                    d="${tok/#\~/$HOME}"
+                    if [ -d "$d" ]; then root="$d"; else echo -e "  ${RED}not a directory: $tok${NC}"; fi
+                    ;;
+                *)
+                    if [[ "$tok" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
+                        lo="${tok%-*}"; hi="${tok#*-}"
+                        for ((n = lo; n <= hi; n++)); do
+                            if [ "$n" -ge 1 ] && [ "$n" -le "${#P_DIRS[@]}" ]; then
+                                toggle_pick "${P_DIRS[$((n - 1))]}"
+                            else
+                                echo -e "  ${RED}out of range: $n${NC}"
+                            fi
+                        done
+                    else
+                        matches=()
+                        for d in "${P_DIRS[@]}"; do
+                            case "$(lower "$(basename "$d")")" in *"$(lower "$tok")"*) matches+=("$d") ;; esac
+                        done
+                        if [ "${#matches[@]}" -eq 1 ]; then
+                            toggle_pick "${matches[0]}"
+                        elif [ "${#matches[@]}" -eq 0 ]; then
+                            echo -e "  ${RED}no project matches '$tok'${NC}"
+                        else
+                            echo -e "  ${RED}'$tok' matches ${#matches[@]} projects — use a number${NC}"
+                        fi
+                    fi
+                    ;;
+            esac
+        done
+    done
+
+    LAST_ROOT="$root"
+}
+
+if [ -n "$LIST" ]; then
+    if [ ! -t 0 ]; then
+        echo "--list needs a terminal to pick from. Pass the directories instead:" >&2
+        echo "  myjarbis init <dir> <dir> ..." >&2
+        exit 1
+    fi
+    ROOT="${TARGETS[0]:-}"
+    [ -n "$ROOT" ] || ROOT="$(default_get last_root)"
+    [ -n "$ROOT" ] && [ -d "$ROOT" ] || ROOT="$CURRENT_DIR"
+    pick_projects "$ROOT"
+    default_set last_root "$LAST_ROOT"
+
+    if [ "${#PICKED[@]}" -eq 0 ]; then
+        echo "  nothing selected"
+        exit 0
+    fi
+    echo
+    echo -e "  ${BOLD}To initialise${NC}"
+    for d in "${PICKED[@]}"; do
+        if [ -d "$d/.myjarbis" ] && [ -z "$ASSUME_YES" ]; then
+            echo -e "    $(tilde "$d")  ${DIM}already initialised — skipped (--yes reinitialises)${NC}"
+        else
+            echo -e "    $(tilde "$d")"
+        fi
+    done
+    echo
+    read -p "  Go ahead? [Y/n] " -r
+    case "$REPLY" in [Nn]*) echo "  cancelled"; exit 0 ;; esac
+    TARGETS=("${PICKED[@]}")
+fi
+
+# ─── several projects in one run ──────────────────────────────────
+# Each project still goes through the very same steps below, in its own
+# process, so a batch cannot drift from a single init. What the batch adds is
+# asking the language and persona ONCE, up here, and handing the answer down.
+if [ "${#TARGETS[@]}" -gt 0 ]; then
+    resolve_style
+    SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    DONE=(); SKIPPED=(); FAILED=()
+    export MYJARBIS_IN_BATCH=1
+
+    if [ -f "$HOME/.claude.json" ]; then
+        cp -p "$HOME/.claude.json" "$HOME/.claude.json.bak-$(date +%s)000"
+        export MYJARBIS_CLAUDE_JSON_BACKED_UP=1
+    fi
+
+    for target in "${TARGETS[@]}"; do
+        if [ ! -d "$target" ]; then
+            FAILED+=("$target (not a directory)")
+            continue
+        fi
+        dir="$(cd "$target" && pwd)"
+        if [ ! -e "$dir/.git" ]; then
+            SKIPPED+=("$(tilde "$dir") (not a git repository)")
+            continue
+        fi
+        if [ -d "$dir/.myjarbis" ] && [ -z "$ASSUME_YES" ]; then
+            SKIPPED+=("$(tilde "$dir") (already initialised)")
+            continue
+        fi
+        if (cd "$dir" && "$SELF" "${PASSTHROUGH[@]}" --language="$LANG_CHOICE" --persona="$PERSONA_CHOICE" </dev/null); then
+            DONE+=("$(tilde "$dir")")
+        else
+            FAILED+=("$(tilde "$dir")")
+        fi
+    done
+
+    section "Batch complete"
+    echo
+    for d in "${DONE[@]}";    do echo -e "  ${BOLD}done${NC}     $d"; done
+    for d in "${SKIPPED[@]}"; do echo -e "  ${DIM}skipped  $d${NC}"; done
+    for d in "${FAILED[@]}";  do echo -e "  ${RED}failed${NC}   $d"; done
+    echo
+    echo -e "  ${DIM}language $LANG_CHOICE · persona $PERSONA_CHOICE — then:${NC} myjarbis start"
+    echo
+    [ "${#FAILED[@]}" -eq 0 ]
+    exit $?
+fi
 
 echo
 echo -e "${RED}${BOLD}MyJarbis${NC} · project setup"
@@ -268,20 +598,12 @@ ok
 step 4 "Install /jarbis command"
 
 # Language has to be known BEFORE this step so we can pick the right
-# trilingual variant of jarbis.md. Step 7 also needs it (for the
-# interaction-style skill); we just resolve it once here.
-LANG_CHOICE="${MYJARBIS_LANGUAGE:-}"
-if [ -t 0 ] && [ -z "$LANG_CHOICE" ]; then
-    echo
-    echo -e "       ${BOLD}Language for the /jarbis prompt${NC}"
-    echo -e "         EN  English (United States) ${DIM}[default]${NC}"
-    echo -e "         ES  Español (Argentina)"
-    echo -e "         PT  Português (Brazil)"
-    read -p "       Choice [EN]: " LANG_CHOICE
-    echo
+# trilingual variant of jarbis.md. Step 8 also needs it (for the
+# interaction-style skill); both are resolved once here.
+resolve_style
+if [ -n "$STYLE_FROM_DEFAULTS" ]; then
+    note "language $LANG_CHOICE · persona $PERSONA_CHOICE, from your defaults (--ask to change)"
 fi
-LANG_CHOICE="${LANG_CHOICE:-EN}"
-LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:lower:]' '[:upper:]')
 JARBIS_LANG=$(echo "$LANG_CHOICE" | tr '[:upper:]' '[:lower:]')
 
 # Every slash command ships as <name>.<lang>.md and installs as <name>.md.
@@ -402,21 +724,7 @@ ok
 # ─── [8/9] persona + seed memory.db ───────────────────────────────
 step 8 "Configure persona and seed memory.db"
 
-# LANG_CHOICE was resolved at step 4 (needed there to pick the right
-# trilingual jarbis.md). We only need persona here.
-PERSONA_CHOICE="${MYJARBIS_PERSONA:-}"
-
-if [ -t 0 ] && [ -z "$PERSONA_CHOICE" ]; then
-    echo -e "       ${BOLD}Personas${NC}"
-    echo -e "         1   Concise            ${DIM}terse, no preamble [default]${NC}"
-    echo -e "         2   Pair programmer    ${DIM}1-line intent before each change${NC}"
-    echo -e "         3   Mentor             ${DIM}WHAT/WHY/HOW/BENEFITS${NC}"
-    echo -e "         4   Critical reviewer  ${DIM}challenges your assumptions first${NC}"
-    read -p "       Choice [1]: " PERSONA_CHOICE
-    echo
-fi
-PERSONA_CHOICE="${PERSONA_CHOICE:-1}"
-
+# LANG_CHOICE and PERSONA_CHOICE were both resolved at step 4.
 note "language: $LANG_CHOICE"
 note "persona:  $PERSONA_CHOICE"
 
@@ -494,7 +802,10 @@ if os.path.exists(claude_config):
     except ValueError as e:
         print(f'~/.claude.json is not valid JSON ({e}), left untouched', file=sys.stderr)
         sys.exit(1)
-    shutil.copy2(claude_config, f'{claude_config}.bak-{int(time.time() * 1000)}')
+    # A batch backs the file up once, before its first project, rather than
+    # leaving one copy of a file this size per project.
+    if not os.environ.get('MYJARBIS_CLAUDE_JSON_BACKED_UP'):
+        shutil.copy2(claude_config, f'{claude_config}.bak-{int(time.time() * 1000)}')
 
 entry = data.setdefault('projects', {}).setdefault(os.getcwd(), {})
 servers = entry.get('mcpServers') or {}
@@ -529,6 +840,8 @@ echo -e "  ${BOLD}Language${NC}   $LANG_CHOICE"
 echo -e "  ${BOLD}Persona${NC}    $PERSONA_CHOICE"
 echo -e "  ${BOLD}Skills${NC}     10 baselines materialized in .claude/skills/"
 echo
+# Inside a batch the summary says what comes next, once.
+[ -z "${MYJARBIS_IN_BATCH:-}" ] || exit 0
 section "Next"
 echo
 echo -e "  ${RED}\$${NC} claude"
