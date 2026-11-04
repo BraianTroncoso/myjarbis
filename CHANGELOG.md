@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.2 — a machine's worth of projects in one run
+## Unreleased
 
 ### Added
 
@@ -20,6 +20,30 @@
   PATH line. A `prepack` check refuses to pack a registry, a `memory.db` or
   `node_modules`. Design: `docs/specs/npm-install.md`.
   `tests/v053-npm-install.sh`.
+
+### Changed
+
+- **Installing no longer runs `claude mcp add`.** Without `--scope` it
+  registers the server for the current directory: `install.sh` registered the
+  checkout, and `setup` run from `~` registered the home directory as a
+  project. The registration that counts was always the per-project one
+  `myjarbis init` writes into `~/.claude.json`, and that is unchanged.
+
+### Fixed
+
+- **`update` failed on every build on machines installed by the old
+  `install.sh`** with `Cannot find module '../lib/tsc.js'`. Its `cp -r` of
+  `node_modules` followed symlinks on macOS, so every `node_modules/.bin`
+  entry was a copy resolving paths from the wrong directory. `update` now
+  relinks them with `npm rebuild --ignore-scripts`, which leaves
+  `better_sqlite3.node`, mapped by any running server, untouched.
+- **`doctor` run from `$HOME` treated `~/.myjarbis` as a project** and failed
+  checks on it. That directory is `MYJARBIS_HOME`, the shared brain. It is
+  now recognised and the project checks are skipped.
+
+## v0.5.2 — a machine's worth of projects in one run
+
+### Added
 
 - **`myjarbis init --list [folder]` and `myjarbis init <dir>...` — several
   projects in one run.** Registering a machine's worth of projects meant a
