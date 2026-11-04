@@ -5,9 +5,9 @@
 #   1. `npm pack` ships product, not state
 #   2. `npm i -g <tarball>` puts `myjarbis` on the prefix's PATH
 #   3. before setup, a command says "not set up" instead of failing deep
-#   4. `myjarbis setup` builds the runtime, records the npm channel and
-#      registers the MCP server at the RUNTIME path, never the package's
-#   5. a second setup is a no-op: no npm install, no second registration
+#   4. `myjarbis setup` builds the runtime, records the npm channel, and
+#      registers nothing with `claude mcp add` (that binds to the cwd)
+#   5. a second setup is a no-op: no npm install
 #   6. a package newer than the runtime is reported; setup clears it
 #   7. update on the npm channel: a dry run installs nothing, and a package
 #      manager that fails leaves the runtime as it was
@@ -131,14 +131,12 @@ PKG_DIR="$(cd -P "$npm_config_prefix/lib/node_modules/myjarbis" && pwd)"
 [ "$(cat "$RUNTIME/.source" 2>/dev/null)" = "$PKG_DIR" ] && pass ".source is the package" || oops ".source = '$(cat "$RUNTIME/.source" 2>/dev/null)'"
 node -e "process.exit(require('$RUNTIME/projects-registry.json').projects['keep-me'] ? 0 : 1)" \
   && pass "a pre-existing registry survived" || oops "the registry lost its project"
-if grep -q "mcp add myjarbis node $RUNTIME/mcp-server/build/index.js" "$HOME/claude-calls.log" 2>/dev/null; then
-  pass "MCP registered at the runtime path"
-else
-  oops "MCP not registered at the runtime path: $(grep 'mcp add' "$HOME/claude-calls.log" 2>/dev/null)"
-fi
-grep 'mcp add' "$HOME/claude-calls.log" | grep -q node_modules \
-  && oops "MCP registered inside node_modules — breaks on nvm use" \
-  || pass "nothing registered inside node_modules"
+# Registration is per project, by init. `claude mcp add` without a scope
+# binds to the cwd, so a setup that called it registered the user's home
+# directory on the machine where this was found.
+grep -q 'mcp add' "$HOME/claude-calls.log" 2>/dev/null \
+  && oops "setup ran 'claude mcp add' (binds to the cwd): $(grep 'mcp add' "$HOME/claude-calls.log")" \
+  || pass "setup registered nothing with claude mcp add"
 echo "$OUT" | grep -q "will lose every myjarbis tool" \
   && oops "a fresh install warned about a live session" \
   || pass "no live-session warning on a fresh install"
@@ -148,13 +146,9 @@ run myjarbis --version
 
 # ─── [5] idempotent ───────────────────────────────────────────────
 echo "→ [5] a second setup changes nothing"
-ADDS_BEFORE="$(grep -c 'mcp add' "$HOME/claude-calls.log")"
 run myjarbis setup --yes --no-projects
 [ "$STATUS" = 0 ] && pass "second setup exited 0" || oops "second setup failed: $(echo "$OUT" | tail -10)"
 echo "$OUT" | grep -q "npm install skipped" && pass "npm install skipped" || oops "npm install ran again"
-echo "$OUT" | grep -q "already registered" && pass "MCP already registered" || oops "no 'already registered'"
-[ "$(grep -c 'mcp add' "$HOME/claude-calls.log")" = "$ADDS_BEFORE" ] \
-  && pass "no second mcp add" || oops "mcp add ran again"
 
 # ─── [6] drift ────────────────────────────────────────────────────
 echo "→ [6] package newer than the runtime"

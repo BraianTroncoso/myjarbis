@@ -36,7 +36,8 @@ command, the binary on the PATH, and `myjarbis update` that just works.
 
 1. `npm i -g myjarbis` puts `myjarbis` on the PATH with no shell-rc edit.
 2. One explicit command, `myjarbis setup`, does what `install.sh` steps 2–7 do
-   today: install dir, registry, dependencies, build, and MCP registration.
+   today: install dir, registry, dependencies and build. (MCP registration
+   is per project, by `myjarbis init`; see §5.4 step 6.)
 3. **Every existing project keeps working with no change.** No re-init, no
    edits to `~/.claude.json`, no re-copied hooks.
 4. `myjarbis update` works whichever way you installed (npm or git).
@@ -219,20 +220,29 @@ myjarbis setup [--yes] [--dry-run] [--no-projects] [--from=<dir>]
 | 3 | Create `projects-registry.json` if missing | `install.sh` step 4 |
 | 4 | Sync from `--from` or `PKG_DIR`: `myjarbis-update --from=<dir> --no-pull` (forwarding `--yes`, `--dry-run`, `--no-projects`) | all of `update` |
 | 5 | Write `.channel` (`npm` / `git`) and `.version` | — |
-| 6 | Register the MCP server with `claude mcp add` if not already registered | `install.sh` step 7 |
+| 6 | Check that `claude` is installed. **Registers nothing** (see below) | — (replaces `install.sh` step 7) |
 | 7 | Run `myjarbis doctor` | `doctor` |
 
 Properties:
 
 - **Idempotent.** Running it twice does nothing the second time beyond
-  "already registered / dependencies unchanged".
+  "dependencies unchanged".
 - **Never destroys the registry.** `install.sh` today `rm -rf`s the install
   dir and rescues the registry through a temp file. `setup` never deletes
   the directory, so it needs no rescue.
 - **No `postinstall`.** npm ≥ 7 hides lifecycle-script output, pnpm and bun
-  skip it by default, and registering an MCP server into the user's Claude
+  skip it by default, and changing the user's Claude
   config is not something to do without them seeing it. `setup` is explicit,
   repeatable and loud. The README's install block is two lines.
+
+**No `claude mcp add`.** The first draft kept `install.sh` step 7, and the
+smoke test on a real machine showed why that was wrong: without `--scope`,
+`claude mcp add` registers for the **current directory**. Run from `~`, it
+registered the user's home as a project; `install.sh` registered the
+checkout. The registration that counts is per project, written by
+`myjarbis init` into `~/.claude.json` with the runtime path. User scope was
+the alternative and was rejected: it would load the server in every Claude
+session on the machine, MyJarbis project or not.
 
 `update`'s source check (`global/` + `install.sh`) already holds for the
 package because `install.sh` is in `files`.
@@ -378,8 +388,9 @@ New suite `tests/npm-install.sh`, self-contained like the others (own
 8. Git-channel install (current `install.sh`) then npm `setup` → registry
    kept, channel flips to `npm`.
 
-Claude registration (`claude mcp add`) is stubbed with a fake `claude` on
-`PATH` that records its arguments, the same approach as the existing suites.
+Claude Code is a stub on `PATH` that records its arguments, the same
+approach as the existing suites, and the suite asserts that setup never
+calls `claude mcp add`.
 
 Manual smoke before merging: real `npm i -g ./myjarbis-*.tgz` on this machine
 with an existing git install and a running Claude session, then `/jarbis`

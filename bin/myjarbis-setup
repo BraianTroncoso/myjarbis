@@ -68,8 +68,8 @@ for arg in "$@"; do
             echo "Usage: myjarbis setup [--yes] [--dry-run] [--no-projects] [--from=<path>]"
             echo
             echo "  Installs or refreshes the runtime at $INSTALL_DIR from the"
-            echo "  package this command came with, registers the MCP server with"
-            echo "  Claude Code and runs the doctor. Safe to run again at any time."
+            echo "  package this command came with and runs the doctor. Projects are"
+            echo "  registered with Claude Code by 'myjarbis init'. Safe to run again."
             echo
             echo "  --yes, -y        Do not ask anything, even with Claude Code running."
             echo "  --dry-run, -n    Report what would happen, writing nothing."
@@ -127,7 +127,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 note "npm $(npm --version)"
 if ! command -v claude >/dev/null 2>&1; then
-    warn "Claude Code CLI not found — the MCP server will not be registered"
+    warn "Claude Code CLI not found — MyJarbis runs inside it"
 fi
 if ! command -v python3 >/dev/null 2>&1; then
     warn "python3 not found — 'myjarbis init' needs it to edit ~/.claude.json"
@@ -223,25 +223,22 @@ else
 fi
 ok
 
-# ─── [6/6] Claude Code registration ───────────────────────────────
-step 6 "Register MCP server with Claude Code"
-MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
-if ! command -v claude >/dev/null 2>&1; then
-    warn "Claude Code CLI not found"
-    note "install it from https://claude.ai/claude-code, then run:"
-    note "  claude mcp add myjarbis node $MCP_SERVER_PATH"
-elif claude mcp list 2>/dev/null | grep -q "myjarbis"; then
-    note "already registered (verify with: claude mcp list)"
-elif [ -n "$DRY_RUN" ]; then
-    note "would run: claude mcp add myjarbis node $MCP_SERVER_PATH"
+# ─── [6/6] Claude Code ────────────────────────────────────────────
+# Nothing is registered here, on purpose. `claude mcp add` without a scope
+# registers for the CURRENT DIRECTORY, so running it from setup tied the
+# server to wherever the user happened to be — their home, on the machine
+# where this was found. install.sh did the same with the checkout dir.
+#
+# The registration that matters is per project, and `myjarbis init` already
+# writes it into ~/.claude.json (projects[<path>].mcpServers.myjarbis),
+# pointing at the runtime path. Registering at user scope instead would put
+# the server in every Claude session on the machine, MyJarbis project or not.
+step 6 "Check Claude Code"
+if command -v claude >/dev/null 2>&1; then
+    note "$(claude --version 2>/dev/null | head -1 || echo 'claude found')"
+    note "the MCP server is registered per project by 'myjarbis init'"
 else
-    claude mcp add myjarbis node "$MCP_SERVER_PATH" >/dev/null 2>&1 || true
-    if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
-        note "registered"
-    else
-        warn "automatic registration failed"
-        note "run manually: claude mcp add myjarbis node $MCP_SERVER_PATH"
-    fi
+    warn "Claude Code CLI not found — install it from https://claude.ai/claude-code"
 fi
 ok
 

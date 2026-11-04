@@ -86,7 +86,7 @@ nothing has been cut.
 ```bash
 # 1. install (once)
 npm i -g myjarbis          # or: pnpm add -g myjarbis · bun add -g myjarbis
-myjarbis setup             # builds the runtime, registers the MCP server
+myjarbis setup             # builds the runtime in ~/.myjarbis-global
 
 # 2. register your projects (once) — pick them from a list
 myjarbis init --list ~/projects
