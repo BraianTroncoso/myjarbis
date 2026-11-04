@@ -4,6 +4,24 @@
 
 ### Changed
 
+- **Claude Code starts the server through a launcher, not through a path into
+  the install directory.** Every project's entry in `~/.claude.json` said
+  `node <install dir>/mcp-server/build/index.js`, so with 23 projects the
+  location of the code was written down 23 times, in a file that belongs to
+  Claude Code. Moving the code — which is what installing by package manager
+  does — meant rewriting every one of them.
+
+  They now point at `~/.myjarbis/bin/myjarbis-mcp`, generated under
+  `MYJARBIS_HOME`, which no update and no package manager replaces. The
+  launcher is the only file that has to learn where the code went, and
+  `myjarbis update` rewrites it on every run and repoints any entry that still
+  carries the old path — backing `~/.claude.json` up first, leaving every
+  other MCP server and every other project untouched, and declining to touch a
+  file that does not parse. An absolute path rather than a bare command on
+  PATH, deliberately: Claude Code is not always started from a shell that has
+  ours. `doctor` reports entries that have not been repointed yet.
+  `tests/v060-mcp-launcher.sh`.
+
 - **The projects registry and the brain backups moved out of the install
   directory.** They lived in `~/.myjarbis-global`, which is the one place they
   must not be: an update replaces that directory wholesale, and a package

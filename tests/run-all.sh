@@ -82,6 +82,7 @@ SUITES=(
   v052-init-batch
   v060-path-resolution
   v060-state-location
+  v060-mcp-launcher
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

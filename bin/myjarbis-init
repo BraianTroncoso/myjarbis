@@ -785,7 +785,12 @@ fi
 # file up first (same `.bak-<ms>` naming as `gc`), refuses to touch a file it
 # cannot parse, and swaps the new content in atomically so a Claude Code
 # process reading it never sees half a file.
-if python3 << 'PYTHON_EOF' >/dev/null
+#
+# What gets registered is the launcher under MYJARBIS_HOME, not a path into
+# the install dir: see mj_write_mcp_launcher in bin/myjarbis-env.sh for why a
+# project's entry must not carry the location of the code.
+mj_write_mcp_launcher
+if MYJARBIS_MCP_LAUNCHER="$MCP_LAUNCHER" python3 << 'PYTHON_EOF' >/dev/null
 import json
 import os
 import shutil
@@ -812,8 +817,8 @@ entry = data.setdefault('projects', {}).setdefault(os.getcwd(), {})
 servers = entry.get('mcpServers') or {}
 servers['myjarbis'] = {
     'type': 'stdio',
-    'command': 'node',
-    'args': [os.path.expanduser('~/.myjarbis-global/mcp-server/build/index.js')],
+    'command': os.environ['MYJARBIS_MCP_LAUNCHER'],
+    'args': [],
     'env': {}
 }
 entry['mcpServers'] = servers
@@ -829,7 +834,7 @@ then
     ok
 else
     warn "could not register the MCP server in ~/.claude.json"
-    note "add it by hand: claude mcp add myjarbis node ~/.myjarbis-global/mcp-server/build/index.js"
+    note "add it by hand: claude mcp add myjarbis $MCP_LAUNCHER"
 fi
 
 # ─── done ─────────────────────────────────────────────────────────

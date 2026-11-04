@@ -80,10 +80,26 @@ else
     note "install from https://docs.claude.com/claude-code"
 fi
 
+if [ -f "$MCP_LAUNCHER" ]; then
+    pass "MCP launcher present"
+    note "$MCP_LAUNCHER"
+else
+    warn "MCP launcher missing — run myjarbis update"
+    note "expected at $MCP_LAUNCHER"
+fi
+
 if [ -f "$CLAUDE_CONFIG" ]; then
     pass "Claude config exists (~/.claude.json)"
     if grep -q "myjarbis" "$CLAUDE_CONFIG" 2>/dev/null; then
         pass "MCP server registered in Claude config"
+        # An entry that starts the server by a path into the install dir still
+        # works today and breaks the moment the code moves, which is what
+        # installing by package manager does. `myjarbis update` rewrites them.
+        STALE=$(grep -c "mcp-server/build/index.js" "$CLAUDE_CONFIG" 2>/dev/null || echo 0)
+        if [ "$STALE" -gt 0 ]; then
+            warn "$STALE project(s) still start the server by a path into the install dir"
+            note "run 'myjarbis update' to point them at the launcher"
+        fi
     else
         warn "MCP server not registered (run myjarbis init in a project)"
     fi

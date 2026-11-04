@@ -440,6 +440,36 @@ fi
 if [ -d "$MYJARBIS_BACKUPS_LEGACY" ] && [ "$MYJARBIS_BACKUPS_LEGACY" != "$BACKUPS_DIR" ]; then
     note "would move $(find "$MYJARBIS_BACKUPS_LEGACY" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ') brain backup(s) to $BACKUPS_DIR"
 fi
+note "would write the MCP launcher at $MCP_LAUNCHER"
+if [ -f "$HOME/.claude.json" ]; then
+    DRY_ENTRIES="$(MYJARBIS_MCP_LAUNCHER="$MCP_LAUNCHER" python3 - "$HOME/.claude.json" 2>/dev/null <<'PYTHON_EOF' || echo '?'
+import json, os, sys
+launcher = os.environ['MYJARBIS_MCP_LAUNCHER']
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except ValueError:
+    print('?')
+    sys.exit(0)
+n = 0
+for entry in (data.get('projects') or {}).values():
+    server = (entry.get('mcpServers') or {}).get('myjarbis')
+    if not isinstance(server, dict):
+        continue
+    command = server.get('command')
+    args = server.get('args') or []
+    if command == 'node' and any(
+        isinstance(a, str) and a.endswith('mcp-server/build/index.js') for a in args
+    ):
+        n += 1
+    elif isinstance(command, str) and command.endswith('/bin/myjarbis-mcp') and command != launcher:
+        n += 1
+print(n)
+PYTHON_EOF
+)"
+    [ "$DRY_ENTRIES" = "0" ] \
+        || note "would point $DRY_ENTRIES project(s) in ~/.claude.json at it"
+fi
 ok
 
 step 4 "Install dependencies and rebuild"
@@ -601,6 +631,81 @@ if [ -d "$MYJARBIS_BACKUPS_LEGACY" ] && [ "$MYJARBIS_BACKUPS_LEGACY" != "$BACKUP
     done
     rmdir "$MYJARBIS_BACKUPS_LEGACY" 2>/dev/null || true
     [ "$MOVED" -eq 0 ] || note "$MOVED brain backup(s) moved → $BACKUPS_DIR"
+fi
+
+# The launcher learns where the code is now. Rewritten on every update, not
+# only when it is missing: the whole point of the file is to be the one place
+# that has to know, so it has to be the one place that gets told.
+mj_write_mcp_launcher
+
+# And the projects that still start the server by a path into the install dir
+# are pointed at the launcher instead. One entry per project in a file that
+# belongs to Claude Code, each carrying the location of the code — that is as
+# many places to fix as there are projects, every time the code moves.
+CLAUDE_JSON="$HOME/.claude.json"
+
+# A function rather than an inline substitution: a heredoc nested inside
+# `$( )` is a shape that reads as working and does not.
+rewrite_mcp_entries() {
+    MYJARBIS_MCP_LAUNCHER="$MCP_LAUNCHER" python3 - "$CLAUDE_JSON" 2>/dev/null <<'PYTHON_EOF' || echo error
+import json, os, shutil, sys, tempfile, time
+
+path = sys.argv[1]
+launcher = os.environ['MYJARBIS_MCP_LAUNCHER']
+
+try:
+    with open(path) as f:
+        data = json.load(f)
+except ValueError:
+    # Not ours to repair, and not worth aborting an update over. init takes
+    # the same line on an unparseable file.
+    print('unparseable')
+    sys.exit(0)
+
+changed = []
+for project, entry in (data.get('projects') or {}).items():
+    server = (entry.get('mcpServers') or {}).get('myjarbis')
+    if not isinstance(server, dict):
+        continue
+    command = server.get('command')
+    args = server.get('args') or []
+    points_at_build = command == 'node' and any(
+        isinstance(a, str) and a.endswith('mcp-server/build/index.js') for a in args
+    )
+    # A launcher from an earlier run whose path is no longer the current one.
+    stale_launcher = (
+        isinstance(command, str)
+        and command.endswith('/bin/myjarbis-mcp')
+        and command != launcher
+    )
+    if not (points_at_build or stale_launcher):
+        continue
+    server['command'] = launcher
+    server['args'] = []
+    changed.append(project)
+
+if not changed:
+    print('0')
+    sys.exit(0)
+
+shutil.copy2(path, f'{path}.bak-{int(time.time() * 1000)}')
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.claude.json.')
+with os.fdopen(fd, 'w') as f:
+    json.dump(data, f, indent=2)
+shutil.copymode(path, tmp)
+os.replace(tmp, path)
+print(len(changed))
+PYTHON_EOF
+}
+
+if [ -f "$CLAUDE_JSON" ]; then
+    REWRITTEN="$(rewrite_mcp_entries)"
+    case "$REWRITTEN" in
+        0)           : ;;
+        unparseable) warn "~/.claude.json does not parse — left untouched" ;;
+        error)       warn "could not read ~/.claude.json — the MCP entries were left as they are" ;;
+        *)           note "$REWRITTEN project(s) now start the server through $MCP_LAUNCHER" ;;
+    esac
 fi
 ok
 

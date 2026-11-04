@@ -229,22 +229,25 @@ fi
 
 # ─── [7/7] Claude Code registration ───────────────────────────────
 step 7 "Register MCP server with Claude Code"
-MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
+# The launcher, not a path into the install dir: what Claude Code records
+# should not have to change when the code moves. See mj_write_mcp_launcher.
+mj_write_mcp_launcher
+note "launcher: $MCP_LAUNCHER"
 
 if ! command -v claude &> /dev/null; then
     warn "Claude Code CLI not found"
     note "install from https://claude.ai/claude-code, then run:"
-    note "  claude mcp add myjarbis node $MCP_SERVER_PATH"
+    note "  claude mcp add myjarbis $MCP_LAUNCHER"
 else
     if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
         note "already registered (verify with: claude mcp list)"
     else
-        claude mcp add myjarbis node "$MCP_SERVER_PATH" >/dev/null 2>&1
+        claude mcp add myjarbis "$MCP_LAUNCHER" >/dev/null 2>&1
         if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
             note "registered"
         else
             warn "automatic registration failed"
-            note "run manually: claude mcp add myjarbis node $MCP_SERVER_PATH"
+            note "run manually: claude mcp add myjarbis $MCP_LAUNCHER"
         fi
     fi
 fi
