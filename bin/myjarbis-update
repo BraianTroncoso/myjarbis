@@ -189,6 +189,10 @@ for arg in "$@"; do
         --help|-h)
             echo "Usage: myjarbis update [--dry-run] [--projects-only|--no-projects] [--no-pull] [--yes] [--from=<path>]"
             echo
+            echo "  Installed from npm (myjarbis setup)? This installs myjarbis@latest"
+            echo "  through the same package manager, then runs the new setup."
+            echo "  From a checkout? It pulls the checkout and re-syncs from it."
+            echo
             echo "  By default this also propagates to every registered project:"
             echo "  hook scripts and their wiring, slash commands, and baseline"
             echo "  skills (reseeded, then re-materialized to .claude/skills/ so"
@@ -222,8 +226,85 @@ fi
 
 if [ ! -d "$INSTALL_DIR" ]; then
     fail "MyJarbis is not installed at $INSTALL_DIR"
-    note "clone the repo and run ./install.sh first"
+    note "npm i -g myjarbis && myjarbis setup   (or ./install.sh from a checkout)"
     exit 1
+fi
+
+# ─── npm channel: fetch through the package manager, then set up ──────
+#
+# An installation set up from a package (.channel = npm) has no checkout to
+# pull. Its next version comes from the package manager, and then the NEW
+# package's setup syncs it in — which ends back in this script, with --from,
+# so this block is skipped on that pass.
+#
+# `exec`, and the new package's setup rather than carrying on here: the
+# package manager has just replaced the package directory, and when this
+# script was started from it, the file being read is gone or rewritten. That
+# is the same self-overwrite that crashed an update on 2026-10-20.
+#
+# The package dir is resolved AGAIN after the install rather than read from
+# .source: pnpm keeps each version under its own .pnpm/myjarbis@<v>/ path,
+# so the old one is not where the new code is.
+CHANNEL="$(cat "$INSTALL_DIR/.channel" 2>/dev/null || echo git)"
+if [ "$CHANNEL" = "npm" ] && [ -z "$SOURCE_OVERRIDE" ] && [ -z "$PROJECTS_ONLY" ]; then
+    OLD_PKG="$(cat "$INSTALL_DIR/.source" 2>/dev/null || true)"
+    case "$OLD_PKG" in
+        */.pnpm/*|*/pnpm/*) PM="pnpm" ;;
+        */.bun/*)           PM="bun" ;;
+        *)                  PM="npm" ;;
+    esac
+    case "$PM" in
+        npm)  PM_CMD=(npm install -g myjarbis@latest) ;;
+        pnpm) PM_CMD=(pnpm add -g myjarbis@latest) ;;
+        bun)  PM_CMD=(bun add -g myjarbis@latest) ;;
+    esac
+
+    SETUP_ARGS=()
+    [ -n "$ASSUME_YES" ] && SETUP_ARGS+=(--yes)
+    [ -z "$SYNC_PROJECTS" ] && SETUP_ARGS+=(--no-projects)
+
+    echo -e "  ${BOLD}Channel${NC}  npm, through $PM"
+    echo
+    if ! command -v "$PM" >/dev/null 2>&1; then
+        fail "$PM is not on the PATH, and it is what installed MyJarbis"
+        note "run it yourself, then set up: ${PM_CMD[*]} && myjarbis setup"
+        exit 1
+    fi
+
+    if [ -n "$DRY_RUN" ]; then
+        note "would run: ${PM_CMD[*]}"
+        note "then the new package's setup. What setup would do with the"
+        note "package installed NOW:"
+        echo
+        if [ -x "$OLD_PKG/bin/myjarbis-setup" ]; then
+            exec "$OLD_PKG/bin/myjarbis-setup" --dry-run "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+        fi
+        warn "the recorded package ($OLD_PKG) is gone — nothing more to report"
+        exit 0
+    fi
+
+    note "${PM_CMD[*]}"
+    if ! "${PM_CMD[@]}" 2>&1 | sed 's/^/       /'; then
+        fail "$PM could not install the latest version — nothing else was changed"
+        exit 1
+    fi
+
+    case "$PM" in
+        npm)  PM_ROOT="$(npm root -g 2>/dev/null || true)" ;;
+        pnpm) PM_ROOT="$(pnpm root -g 2>/dev/null || true)" ;;
+        bun)  PM_ROOT="${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules" ;;
+    esac
+    NEW_PKG=""
+    if [ -n "$PM_ROOT" ] && [ -d "$PM_ROOT/myjarbis" ]; then
+        NEW_PKG="$(cd -P "$PM_ROOT/myjarbis" && pwd)"
+    fi
+    if [ -z "$NEW_PKG" ] || [ ! -x "$NEW_PKG/bin/myjarbis-setup" ]; then
+        fail "installed, but could not find the new package under ${PM_ROOT:-the global root of $PM}"
+        note "finish by hand: myjarbis setup"
+        exit 1
+    fi
+    echo
+    exec "$NEW_PKG/bin/myjarbis-setup" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
 fi
 
 # ─── preflight: can a running Claude session survive this run? ───────
