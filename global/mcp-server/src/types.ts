@@ -30,7 +30,8 @@ export interface ProjectConfig {
 /**
  * Registry of all projects initialized with MyJarbis
  *
- * Stored in: ~/.myjarbis-global/projects-registry.json
+ * Stored in: ~/.myjarbis/projects-registry.json (an installation that has not
+ * been updated yet still has it under ~/.myjarbis-global/)
  *
  * Structure:
  * {

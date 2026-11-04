@@ -431,6 +431,15 @@ note "and $SOURCE/bin/* into $INSTALL_DIR/bin"
 INSTALLED_VER="$(node -e "try{console.log(require('$INSTALL_DIR/mcp-server/package.json').version)}catch(e){console.log('?')}" 2>/dev/null || echo '?')"
 SOURCE_VER="$(node -e "try{console.log(require('$SOURCE/global/mcp-server/package.json').version)}catch(e){console.log('?')}" 2>/dev/null || echo '?')"
 note "version: installed $INSTALLED_VER → source $SOURCE_VER"
+# Reported from the same conditions the real run uses, so the two cannot
+# disagree about whether there is anything left to move.
+if [ -z "${MYJARBIS_REGISTRY:-}" ] && [ "$REGISTRY_FILE" = "$MYJARBIS_REGISTRY_LEGACY" ]; then
+    note "would move the registry out of the install dir, to $MYJARBIS_STATE_DIR/projects-registry.json"
+    note "leaving a copy at the old path"
+fi
+if [ -d "$MYJARBIS_BACKUPS_LEGACY" ] && [ "$MYJARBIS_BACKUPS_LEGACY" != "$BACKUPS_DIR" ]; then
+    note "would move $(find "$MYJARBIS_BACKUPS_LEGACY" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ') brain backup(s) to $BACKUPS_DIR"
+fi
 ok
 
 step 4 "Install dependencies and rebuild"
@@ -539,7 +548,20 @@ find "$INSTALL_DIR" \
     -path "$INSTALL_DIR/backups" -prune -o \
     -type d -name '.myjarbis' -prune -exec rm -rf {} + 2>/dev/null || true
 
+# The registry this step just read may still be the legacy one, sitting inside
+# the directory the step above replaces. That is the one place it must not be:
+# a package manager owns that directory and `pnpm up -g` would take the user's
+# project list with it. Moving it here, rather than in myjarbis-env.sh, is so
+# that moving a user's file is a step that reports itself and that --dry-run
+# can decline to do.
+RELOCATE_REGISTRY=""
+if [ -z "${MYJARBIS_REGISTRY:-}" ] && [ "$REGISTRY_FILE" = "$MYJARBIS_REGISTRY_LEGACY" ]; then
+    REGISTRY_FILE="$MYJARBIS_STATE_DIR/projects-registry.json"
+    RELOCATE_REGISTRY=1
+fi
+
 if [ -n "$REGISTRY_BACKUP" ]; then
+    mkdir -p "$(dirname "$REGISTRY_FILE")"
     cp "$REGISTRY_BACKUP" "$REGISTRY_FILE"
     rm -f "$REGISTRY_BACKUP"
     COUNT=$(node -e "
@@ -549,6 +571,36 @@ if [ -n "$REGISTRY_BACKUP" ]; then
       } catch { console.log('?'); }
     ")
     note "registry preserved ($COUNT project(s))"
+    if [ -n "$RELOCATE_REGISTRY" ]; then
+        note "registry moved out of the install dir → $REGISTRY_FILE"
+        # The old path keeps a copy rather than disappearing. Anything not yet
+        # updated — a project whose hooks are older, a script someone wrote —
+        # then reads the same content instead of nothing, and a reader is
+        # never worse off for this having run.
+        cp "$REGISTRY_FILE" "$MYJARBIS_REGISTRY_LEGACY" 2>/dev/null || true
+        note "a copy stays behind for anything that has not been updated yet"
+    fi
+fi
+
+# The brain backups, by the same argument: snapshots of the user's own work,
+# in a directory an update replaces wholesale.
+if [ -d "$MYJARBIS_BACKUPS_LEGACY" ] && [ "$MYJARBIS_BACKUPS_LEGACY" != "$BACKUPS_DIR" ]; then
+    mkdir -p "$BACKUPS_DIR"
+    MOVED=0
+    # One by one, and never over an existing name: the destination can already
+    # hold snapshots, and a wholesale move would put the old directory on top
+    # of them.
+    for snap in "$MYJARBIS_BACKUPS_LEGACY"/*; do
+        [ -e "$snap" ] || continue
+        [ -e "$BACKUPS_DIR/$(basename "$snap")" ] && continue
+        if mv "$snap" "$BACKUPS_DIR/"; then
+            MOVED=$((MOVED + 1))
+        else
+            warn "could not move $(basename "$snap") — it stays at the old path"
+        fi
+    done
+    rmdir "$MYJARBIS_BACKUPS_LEGACY" 2>/dev/null || true
+    [ "$MOVED" -eq 0 ] || note "$MOVED brain backup(s) moved → $BACKUPS_DIR"
 fi
 ok
 
@@ -866,7 +918,7 @@ process.stdin.on('end', () => {
         if [ -z "$DRY_RUN" ] && [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
             BRAIN="${MYJARBIS_HOME:-$HOME/.myjarbis}/memory.db"
             if [ -f "$BRAIN" ]; then
-                BACKUP_DIR="$INSTALL_DIR/backups"
+                BACKUP_DIR="$BACKUPS_DIR"
                 mkdir -p "$BACKUP_DIR"
                 BACKUP="$BACKUP_DIR/memory.db.pre-reseed-$(date +%Y%m%d-%H%M%S)"
                 # -wal and -shm too: copying the main file alone can capture a

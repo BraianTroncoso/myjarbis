@@ -1,10 +1,10 @@
 /**
  * The projects registry — the only index of where every project lives.
  *
- * `~/.myjarbis-global/projects-registry.json` is written by `myjarbis init`
- * and maps a project name to its path. It is what makes cross-project work
- * possible for silo projects: their rows live in their own files, so there
- * is no single table to query, and the registry is how we find the files.
+ * `~/.myjarbis/projects-registry.json` is written by `myjarbis init` and maps
+ * a project name to its path. It is what makes cross-project work possible
+ * for silo projects: their rows live in their own files, so there is no
+ * single table to query, and the registry is how we find the files.
  *
  * It is treated as a hint, not as truth: entries go stale when a project is
  * moved or deleted, so every consumer re-checks the path exists and skips
@@ -23,19 +23,35 @@ export interface RegistryEntry {
 }
 
 /**
- * `MYJARBIS_REGISTRY` overrides the location outright. The registry
- * otherwise lives next to the install, which is also where the build lives
- * — so a test that needs its own registry would have to relocate the build
- * too, and would end up sharing one registry across runs. Cross-project
- * commands (`org sync`, `migrate --all`) then operate on leftovers from
- * previous runs, which is exactly the sort of non-hermetic test that stops
- * meaning anything.
+ * `MYJARBIS_REGISTRY` overrides the location outright, and a test that needs
+ * its own registry needs that: without it a run would share one registry with
+ * every other run, and cross-project commands (`org sync`, `migrate --all`)
+ * would operate on leftovers from previous ones — the sort of non-hermetic
+ * test that stops meaning anything.
+ *
+ * Otherwise the registry lives under MYJARBIS_HOME, next to the brain, and
+ * not next to the install. It used to live next to the install, which is the
+ * one place it must not be: that directory is replaced wholesale by an
+ * update, and by a package manager that owns it. An installation that has not
+ * been updated yet still has the file there, so the old path is read when the
+ * new one does not exist — `myjarbis update` is what moves it.
+ *
+ * Mirrors bin/myjarbis-env.sh. The two have to agree, and the test that holds
+ * them to it is tests/v060-state-location.sh.
  */
 export function registryPath(): string {
   if (process.env.MYJARBIS_REGISTRY) return path.resolve(process.env.MYJARBIS_REGISTRY);
+
+  const stateDir = process.env.MYJARBIS_HOME || path.join(os.homedir(), '.myjarbis');
+  const current = path.join(stateDir, 'projects-registry.json');
+  if (fs.existsSync(current)) return current;
+
   const installDir =
     process.env.MYJARBIS_INSTALL_DIR || path.join(os.homedir(), '.myjarbis-global');
-  return path.join(installDir, 'projects-registry.json');
+  const legacy = path.join(installDir, 'projects-registry.json');
+  if (fs.existsSync(legacy)) return legacy;
+
+  return current;
 }
 
 /**

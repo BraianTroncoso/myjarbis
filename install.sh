@@ -14,10 +14,15 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# Paths
+# Paths, from the same library every command reads, so the installer and the
+# installed commands cannot disagree about where the registry lives. Sourced
+# out of the checkout, where there is no templates/ next to bin/, so
+# INSTALL_DIR comes out as ~/.myjarbis-global — which is what this script has
+# always used, now also overridable with MYJARBIS_INSTALL_DIR.
+#
 # Registration goes through `claude mcp add` (step 7), so we deliberately keep
 # no path to Claude Code's own config here: it has moved before and would rot.
-INSTALL_DIR="$HOME/.myjarbis-global"
+. "$(cd "$(dirname "$0")" && pwd)/bin/myjarbis-env.sh"
 
 section() { echo; echo -e "${RED}${BOLD}$1${NC}"; }
 step()    { echo -e "${RED}[$1/7]${NC}  ${BOLD}$2${NC}"; }
@@ -66,26 +71,29 @@ if [ -d "$INSTALL_DIR" ]; then
     warn "$INSTALL_DIR already exists"
 
     # An existing install almost always wants `myjarbis update`, not this.
-    # Reinstalling removes the directory, and the project registry lives in
-    # it — so a fresh install silently un-registers every project. Say that
-    # out loud, and say how many, before asking.
-    EXISTING_REGISTRY="$INSTALL_DIR/projects-registry.json"
-    if [ -f "$EXISTING_REGISTRY" ]; then
+    # Reinstalling removes the directory, and on an installation old enough to
+    # still keep the registry inside it that un-registers every project. Say
+    # that out loud, and say how many, before asking.
+    if [ -f "$MYJARBIS_REGISTRY_LEGACY" ]; then
         REG_COUNT=$(node -e "
           try {
-            const r = JSON.parse(require('fs').readFileSync('$EXISTING_REGISTRY','utf8'));
+            const r = JSON.parse(require('fs').readFileSync('$MYJARBIS_REGISTRY_LEGACY','utf8'));
             console.log(Object.keys(r.projects || {}).length);
           } catch { console.log('?'); }
         " 2>/dev/null || echo '?')
         note "it holds a registry with $REG_COUNT registered project(s)"
-        note "reinstalling DELETES that registry (your projects' own"
+        note "reinstalling DELETES that copy (your projects' own"
         note ".myjarbis/ data is untouched, but they stop being listed)"
         echo
         note "to upgrade without losing it, cancel and run:"
         note "  myjarbis update"
         echo
         REGISTRY_RESCUE="$(mktemp)"
-        cp "$EXISTING_REGISTRY" "$REGISTRY_RESCUE"
+        cp "$MYJARBIS_REGISTRY_LEGACY" "$REGISTRY_RESCUE"
+    elif [ -f "$REGISTRY_FILE" ]; then
+        # The registry already lives outside the install dir, which is the
+        # whole point of it living there: removing the code cannot touch it.
+        note "the registry is at $REGISTRY_FILE and will not be touched"
     fi
 
     if [ -n "${MYJARBIS_ASSUME_YES:-}" ]; then
@@ -106,12 +114,22 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 mkdir -p "$INSTALL_DIR"
 
-# Put the registry back. The user agreed to reinstall the CODE; there is no
-# reason that should also forget which projects exist.
+# Put the registry back — outside the install dir this time, so the next
+# reinstall has nothing to rescue. The user agreed to reinstall the CODE;
+# there is no reason that should also forget which projects exist.
 if [ -n "${REGISTRY_RESCUE:-}" ] && [ -f "$REGISTRY_RESCUE" ]; then
-    cp "$REGISTRY_RESCUE" "$INSTALL_DIR/projects-registry.json"
+    mkdir -p "$MYJARBIS_STATE_DIR"
+    if [ -f "$MYJARBIS_STATE_DIR/projects-registry.json" ]; then
+        # Both exist. The one outside wins — it is the one a current
+        # installation has been writing to — and the rescued copy is kept
+        # named rather than dropped on the floor.
+        cp "$REGISTRY_RESCUE" "$MYJARBIS_STATE_DIR/projects-registry.json.from-install-dir"
+        note "kept the install dir's registry as projects-registry.json.from-install-dir"
+    else
+        cp "$REGISTRY_RESCUE" "$MYJARBIS_STATE_DIR/projects-registry.json"
+        note "existing registry carried over to $MYJARBIS_STATE_DIR"
+    fi
     rm -f "$REGISTRY_RESCUE"
-    note "existing registry carried over"
 fi
 ok
 
@@ -163,7 +181,11 @@ ok
 
 # ─── [4/7] projects registry ──────────────────────────────────────
 step 4 "Initialize projects registry"
-REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+# Not the value the library resolved at the top of this script: that one may
+# have pointed at the install dir's copy, which step 2 has since deleted and
+# carried over. A fresh install writes to the state dir, always.
+REGISTRY_FILE="$MYJARBIS_STATE_DIR/projects-registry.json"
+mkdir -p "$MYJARBIS_STATE_DIR"
 if [ ! -f "$REGISTRY_FILE" ]; then
     # Expand the timestamp BEFORE the heredoc. Interpolating it inside a
     # heredoc is what broke this: the delimiter was quoted ('EOF'), so the

@@ -81,6 +81,7 @@ SUITES=(
   v052-start-by-name
   v052-init-batch
   v060-path-resolution
+  v060-state-location
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

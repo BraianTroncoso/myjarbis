@@ -143,13 +143,15 @@ grep -q "SIBLING DOCTOR" <<<"$OUT" \
   && pass "the sibling subcommand ran, not the installed one" \
   || oops "the dispatcher went to the installation: $(head -2 <<<"$OUT")"
 
-echo "→ [9] only the library decides where the registry lives"
-# A second script building the path itself is how the override got ignored in
-# the first place, twice.
-HITS="$(grep -ln 'REGISTRY_FILE=' "$REPO_ROOT"/bin/* | grep -v 'myjarbis-env.sh' || true)"
+echo "→ [9] only the library builds the registry path"
+# A second script gluing INSTALL_DIR to the filename is how the override got
+# ignored in the first place, in two commands at once. `update` does reassign
+# REGISTRY_FILE — it is the thing that moves the file — so the guard is about
+# the path being rebuilt from the install dir, not about the assignment.
+HITS="$(grep -ln 'INSTALL_DIR/projects-registry\.json' "$REPO_ROOT"/bin/* | grep -v 'myjarbis-env.sh' || true)"
 [ -z "$HITS" ] \
-  && pass "no command assigns REGISTRY_FILE on its own" \
-  || oops "these still build the registry path themselves: $HITS"
+  && pass "no command glues the registry path to the install dir" \
+  || oops "these still build the registry path from the install dir: $HITS"
 
 echo "→ [10] the library is synced next to the commands"
 # Every command sources it on its first lines, so an installation that has the

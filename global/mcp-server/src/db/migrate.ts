@@ -4,7 +4,7 @@
  * Detects a project initialized with v0.1 (markdown-based, no memory.db)
  * and turns it into a v0.2 project (SQLite + FTS5):
  *
- * 1. Backup the existing .myjarbis/ folder under ~/.myjarbis-global/backups/
+ * 1. Backup the existing .myjarbis/ folder under ~/.myjarbis/backups/
  * 2. Open memory.db (creates it + applies schema via MyJarbisDB.open)
  * 3. Create the project row + a "_general" module + a synthetic session
  * 4. Import legacy markdown context:
@@ -1063,7 +1063,12 @@ export function seedNewProject(
 
 function backupV01Layout(projectPath: string, myjarbisDir: string): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const root = path.join(homedir(), '.myjarbis-global', 'backups', path.basename(projectPath), ts);
+  // Under MYJARBIS_HOME, not the install dir: this is a snapshot of the
+  // user's own project, and the install dir is replaced wholesale by an
+  // update and owned outright by a package manager. Spelled out here rather
+  // than imported from resolve.ts, which reaches back into this directory.
+  const stateDir = process.env.MYJARBIS_HOME || path.join(homedir(), '.myjarbis');
+  const root = path.join(stateDir, 'backups', path.basename(projectPath), ts);
   fs.mkdirSync(root, { recursive: true });
   copyDirSync(myjarbisDir, path.join(root, '.myjarbis'));
   return root;

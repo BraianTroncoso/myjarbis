@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The projects registry and the brain backups moved out of the install
+  directory.** They lived in `~/.myjarbis-global`, which is the one place they
+  must not be: an update replaces that directory wholesale, and a package
+  manager owns it outright — `pnpm up -g` would take the user's list of
+  projects with it. `install.sh` already had to rescue the registry across a
+  reinstall by hand, and that was the tell. Both now live under
+  `MYJARBIS_HOME` (`~/.myjarbis`), next to the brain and the defaults
+  v0.5.2 put there for the same reason.
+
+  Nothing moves on its own: an installation that still has the registry in the
+  old place keeps being read from there, and `myjarbis update` moves it — once,
+  as a reported step, which `--dry-run` describes and declines to do. A copy
+  stays at the old path so anything not updated yet reads the same content
+  instead of nothing. Brain snapshots move one by one and never land on a
+  snapshot of the same name that is already outside.
+  `tests/v060-state-location.sh`.
+
+- **A command resolves its installation from where the script really is.** Five
+  scripts each opened by hardcoding `$HOME/.myjarbis-global`, and two of them
+  — `doctor` and `start` — built the registry path themselves and so ignored
+  `MYJARBIS_REGISTRY` entirely, which is how a hermetic test run came to read
+  the developer's real project list. They now share `bin/myjarbis-env.sh`,
+  which follows the symlink chain by hand (`readlink -f` is GNU-only and macOS
+  does not have it) and takes the parent of the `bin/` the running script
+  actually lives in. `MYJARBIS_INSTALL_DIR` still wins, `~/.myjarbis-global` is
+  still the fallback, and a checkout is still not mistaken for an installation
+  — so no existing install moves. `myjarbis <subcommand>` now reaches the
+  subcommand next to it, where a checkout's `myjarbis doctor` used to exec the
+  installed one and the change you were testing never ran.
+  `tests/v060-path-resolution.sh`.
+
 ## v0.5.2 — a machine's worth of projects in one run
 
 ### Added

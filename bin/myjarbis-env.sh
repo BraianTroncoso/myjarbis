@@ -52,8 +52,33 @@ else
 fi
 
 # ─── the state ────────────────────────────────────────────────────
+# The registry and the brain backups used to live INSIDE the install dir,
+# which is the one place they must not be: a package manager replaces that
+# directory wholesale, so `pnpm up -g` would take the list of the user's
+# projects with it. `install.sh` already had to rescue the file across a
+# reinstall by hand, and v0.5.2 put the saved defaults under MYJARBIS_HOME for
+# this exact reason. These follow.
+#
+# Nothing is moved here. An installation that still has its registry in the
+# old place keeps being read from there, and `myjarbis update` is what moves
+# it — once, out loud, where a step can report it. A library that silently
+# relocated a user's file on every command invocation is not a trade worth
+# making for one line saved.
 MYJARBIS_STATE_DIR="${MYJARBIS_HOME:-$HOME/.myjarbis}"
-REGISTRY_FILE="${MYJARBIS_REGISTRY:-$INSTALL_DIR/projects-registry.json}"
+MYJARBIS_REGISTRY_LEGACY="$INSTALL_DIR/projects-registry.json"
+if [ -n "${MYJARBIS_REGISTRY:-}" ]; then
+    REGISTRY_FILE="$MYJARBIS_REGISTRY"
+elif [ -f "$MYJARBIS_STATE_DIR/projects-registry.json" ]; then
+    REGISTRY_FILE="$MYJARBIS_STATE_DIR/projects-registry.json"
+elif [ -f "$MYJARBIS_REGISTRY_LEGACY" ]; then
+    REGISTRY_FILE="$MYJARBIS_REGISTRY_LEGACY"
+else
+    # Neither exists: a fresh install writes to the new place.
+    REGISTRY_FILE="$MYJARBIS_STATE_DIR/projects-registry.json"
+fi
+
+BACKUPS_DIR="${MYJARBIS_BACKUPS:-$MYJARBIS_STATE_DIR/backups}"
+MYJARBIS_BACKUPS_LEGACY="$INSTALL_DIR/backups"
 
 # ─── finding the other commands ───────────────────────────────────
 # Prefer the sibling of the script that is actually running over the one under
