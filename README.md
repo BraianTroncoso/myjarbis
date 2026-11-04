@@ -85,8 +85,8 @@ nothing has been cut.
 
 ```bash
 # 1. install (once)
-git clone https://github.com/braiantroncoso/myjarbis.git
-cd myjarbis && ./install.sh
+npm i -g myjarbis          # or: pnpm add -g myjarbis · bun add -g myjarbis
+myjarbis setup             # builds the runtime, registers the MCP server
 
 # 2. register your projects (once) — pick them from a list
 myjarbis init --list ~/projects
@@ -95,6 +95,25 @@ myjarbis init --list ~/projects
 # 3. work — from anywhere, any day
 myjarbis start
 ```
+
+No shell-rc edits, no checkout to keep around: `myjarbis update` fetches the
+next version through the same package manager. Needs Node 18+, macOS or
+Linux, and npm on the PATH even if you install with pnpm or bun — the native
+SQLite module is built with it.
+
+<details>
+<summary>From a git checkout instead (contributors)</summary>
+
+```bash
+git clone https://github.com/braiantroncoso/myjarbis.git
+cd myjarbis && ./install.sh   # = myjarbis setup --from=. + a PATH line in your rc
+```
+
+`myjarbis update` then pulls that checkout. Running `myjarbis setup` from an
+npm install later moves the machine to npm and keeps your registry; see
+[`docs/UPGRADING.md`](docs/UPGRADING.md#moving-a-git-install-to-npm).
+
+</details>
 
 `myjarbis start` lists your projects, you pick one (or several), and it
 opens a fresh terminal already `cd`'d in, with `claude` running and
@@ -950,7 +969,8 @@ myjarbis timeline <module> [--json --limit=N]
 myjarbis stats                      # row counts per table
 myjarbis cost [--last=N] [--json]   # token usage + cache hit ratio
 myjarbis list                       # registered projects
-myjarbis update [--projects] [--yes] # pull + rebuild MCP server
+myjarbis setup [--yes] [--dry-run]  # build the runtime from the installed package
+myjarbis update [--projects] [--yes] # fetch (npm or git pull) + rebuild MCP server
 myjarbis update --projects-only     # only repair project hooks + wiring (no rebuild)
 myjarbis hook install claude [--check]
                                     # bind the lifecycle hooks (init does this; --check only reports)

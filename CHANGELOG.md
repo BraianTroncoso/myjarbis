@@ -4,6 +4,23 @@
 
 ### Added
 
+- **Install from npm: `npm i -g myjarbis && myjarbis setup`.** No checkout to
+  keep and no shell-rc edit: the package manager puts `myjarbis` on the PATH.
+  The package is only the delivery. `setup` syncs it into the same
+  `~/.myjarbis-global` runtime through `myjarbis update --from`, because that
+  path is already written into `~/.claude.json` and every project's hook
+  scripts, and because the npm prefix moves with `nvm use`. The package has
+  no runtime dependencies, so pnpm and bun install it without build-script
+  approval; `better-sqlite3` is built inside the runtime with npm.
+  `setup` is idempotent and never deletes the install dir. `myjarbis update`
+  follows the channel the code came from (`.channel`: npm or git). The CLI
+  hints when the package is newer than the runtime, and `doctor` reports the
+  channel, a leftover PATH line, and whether the native module loads under
+  the current Node. `install.sh` is now `setup --from=<checkout>` plus the
+  PATH line. A `prepack` check refuses to pack a registry, a `memory.db` or
+  `node_modules`. Design: `docs/specs/npm-install.md`.
+  `tests/v053-npm-install.sh`.
+
 - **`myjarbis init --list [folder]` and `myjarbis init <dir>...` — several
   projects in one run.** Registering a machine's worth of projects meant a
   `cd` and the same two questions per project, so the second project cost as
