@@ -261,7 +261,11 @@ fi
 #
 # Skipped entirely for --projects-only: that path never rebuilds.
 DEPS_CHANGED=""
-if [ -z "$PROJECTS_ONLY" ] && [ -z "$DRY_RUN" ] && command -v pgrep >/dev/null 2>&1; then
+# Also skipped when there is no build yet — the first sync of a fresh
+# `myjarbis setup`. A Claude session cannot have mapped a server that has
+# never existed, so warning it will "lose every myjarbis tool" is false.
+if [ -z "$PROJECTS_ONLY" ] && [ -z "$DRY_RUN" ] && [ -f "$INSTALL_DIR/mcp-server/build/index.js" ] \
+    && command -v pgrep >/dev/null 2>&1; then
     CLAUDE_PIDS="$(pgrep -x claude 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" || CLAUDE_PIDS=""
     if [ -n "$CLAUDE_PIDS" ]; then
         PREFLIGHT_SOURCE=""
