@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft — awaiting approval |
+| **Status** | Implemented on `feat/npm-install`; not published (§10.1) |
 | **Branch** | `feat/npm-install` |
 | **Scope** | `install`, `cli`, `update`, `doctor`, docs |
 | **Date** | 2026-11-04 |
@@ -277,11 +277,14 @@ really wants a clean slate deletes the directory themselves.
 - **Stale PATH entry:** on the npm channel, if `~/.myjarbis-global/bin` is
   still in the shell rc, report it as removable (still harmless: it points
   at the same runtime). Report only, never edit the rc.
-- **Native module ABI:** `node -e "require('<runtime>/mcp-server/node_modules/better-sqlite3')"`.
-  Catches the nvm case where the `node` Claude spawns is not the one the
-  module was built with (`NODE_MODULE_VERSION` mismatch). Fix suggested:
-  `myjarbis setup` under the right Node. This risk exists today. npm just
-  makes it more likely to surface.
+- **Native module ABI:** open an in-memory database with
+  `<runtime>/mcp-server/node_modules/better-sqlite3` (a bare `require` does
+  not load the binding). Catches the nvm case where the `node` Claude spawns
+  is not the one the module was built with (`NODE_MODULE_VERSION`
+  mismatch). Fix suggested: `npm rebuild better-sqlite3` in the runtime
+  under the right Node. Not `myjarbis setup`, which reinstalls dependencies
+  only when their list changed. This risk exists today. npm just makes it
+  more likely to surface.
 
 ## 6. Flows
 

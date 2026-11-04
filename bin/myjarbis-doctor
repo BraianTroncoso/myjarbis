@@ -104,7 +104,8 @@ if [ -d "$SQLITE_MOD" ]; then
     else
         fail "native SQLite module does not load under node $(node --version)"
         echo "$ABI_ERR" | grep -m1 -E "NODE_MODULE_VERSION|Error" | sed 's/^/        /'
-        note "re-run 'myjarbis setup' with the node Claude Code uses"
+        note "rebuild it under the node Claude Code uses:"
+        note "  cd $INSTALL_DIR/mcp-server && npm rebuild better-sqlite3"
     fi
 fi
 
