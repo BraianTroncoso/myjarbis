@@ -1,6 +1,6 @@
 {
   "name": "@myjarbis/mcp-server",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "description": "MCP server for MyJarbis - provides persistent memory for Claude Code",
   "main": "build/index.js",

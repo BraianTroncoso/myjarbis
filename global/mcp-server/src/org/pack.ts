@@ -50,7 +50,7 @@ import {
 } from './yaml.js';
 
 /** Bumped with the release; packs may require a minimum. */
-export const MYJARBIS_VERSION = '0.5.1';
+export const MYJARBIS_VERSION = '0.5.2';
 
 export type ApplyStatus = 'created' | 'updated' | 'unchanged';
 
