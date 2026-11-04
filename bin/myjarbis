@@ -59,7 +59,7 @@ show_help() {
     echo
     echo -e "${RED}${BOLD}Commands${NC}"
     echo
-    echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project (or several: --list)"
+    echo -e "  ${BOLD}setup${NC}      Install or refresh the runtime after npm i -g myjarbis\n  ${BOLD}init${NC}       Initialize MyJarbis in the current project (or several: --list)"
     echo -e "  ${BOLD}start${NC}      Pick a registered project and open it with claude + /jarbis"
     echo -e "  ${BOLD}doctor${NC}     Verify installation and project setup"
     echo -e "  ${BOLD}list${NC}       List all registered projects"
@@ -190,6 +190,14 @@ case "${1:-help}" in
         # Global launcher: pick a project, open it with claude + /jarbis.
         shift
         run_sub myjarbis-start "$@"
+        ;;
+
+    setup)
+        # Always the package's own setup, never the runtime's: on a first
+        # install there is no runtime, and on an upgrade the package is the
+        # newer of the two.
+        shift
+        exec "$PKG_DIR/bin/myjarbis-setup" "$@"
         ;;
 
     list)

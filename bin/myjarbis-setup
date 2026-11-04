@@ -1,0 +1,267 @@
+#!/bin/bash
+#
+# MyJarbis Setup
+#
+# Turns a delivered copy of MyJarbis (an npm package, or a git checkout via
+# install.sh) into a working installation at $INSTALL_DIR.
+#
+# WHY THE RUNTIME STAYS AT ~/.myjarbis-global
+# -------------------------------------------
+# The path <install>/mcp-server/build/{index,cli}.js is written OUTSIDE this
+# repository, where no update can reach it: into ~/.claude.json once per
+# project by `myjarbis init`, and into every project's copied
+# .claude-plugin/scripts/*.sh. Running from the npm package instead would
+# break every project already initialised, would break again on `nvm use`
+# (the global prefix moves with the Node version), and would let
+# `npm update -g` replace better_sqlite3.node under a live session. So the
+# package is only the delivery; this script syncs it into the runtime.
+# See docs/specs/npm-install.md §5.1.
+#
+# The sync itself is `myjarbis-update --from=<source> --no-pull`, which
+# already swaps bin/ and the build by rename and only reinstalls the
+# dependencies when they changed. There is one implementation of that, and
+# this is not a second one.
+#
+# Idempotent: a second run finds the registry, the dependencies and the MCP
+# registration in place and says so. It never deletes $INSTALL_DIR.
+
+set -euo pipefail
+
+RED='\033[38;5;88m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
+
+INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
+REGISTRY_FILE="${MYJARBIS_REGISTRY:-$INSTALL_DIR/projects-registry.json}"
+
+step() { echo -e "${RED}[$1/6]${NC}  ${BOLD}$2${NC}"; }
+ok()   { echo "       OK"; }
+note() { echo -e "       ${DIM}$1${NC}"; }
+warn() { echo -e "       ${RED}WARN${NC}  $1"; }
+fail() { echo -e "       ${RED}${BOLD}FAIL${NC}  $1"; }
+
+# Same resolution as bin/myjarbis: this script may be reached through npm's
+# bin symlink, and what we want is the package it lives in.
+resolve_pkg_dir() {
+    local src="${BASH_SOURCE[0]}" dir
+    while [ -L "$src" ]; do
+        dir="$(cd -P "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+    done
+    cd -P "$(dirname "$src")/.." && pwd
+}
+
+ASSUME_YES=""
+DRY_RUN=""
+NO_PROJECTS=""
+SOURCE=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --yes|-y)      ASSUME_YES=1 ;;
+        --dry-run|-n)  DRY_RUN=1 ;;
+        --no-projects) NO_PROJECTS=1 ;;
+        --from=*)      SOURCE="${arg#*=}" ;;
+        --help|-h)
+            echo "Usage: myjarbis setup [--yes] [--dry-run] [--no-projects] [--from=<path>]"
+            echo
+            echo "  Installs or refreshes the runtime at $INSTALL_DIR from the"
+            echo "  package this command came with, registers the MCP server with"
+            echo "  Claude Code and runs the doctor. Safe to run again at any time."
+            echo
+            echo "  --yes, -y        Do not ask anything, even with Claude Code running."
+            echo "  --dry-run, -n    Report what would happen, writing nothing."
+            echo "  --no-projects    Do not propagate to registered projects."
+            echo "  --from=<path>    Install from this checkout or package instead."
+            exit 0
+            ;;
+        *) echo "Unknown option: $arg (try --help)" >&2; exit 1 ;;
+    esac
+done
+
+[ -n "$SOURCE" ] || SOURCE="$(resolve_pkg_dir)"
+if [ ! -d "$SOURCE" ]; then
+    echo -e "  ${RED}${BOLD}FAIL${NC}  $SOURCE does not exist" >&2
+    exit 1
+fi
+SOURCE="$(cd -P "$SOURCE" && pwd)"
+
+# The package that delivered us, or a checkout. Where the code came from
+# decides how `myjarbis update` fetches the next version, so it is recorded.
+case "$SOURCE" in
+    */node_modules/*) CHANNEL="npm" ;;
+    *)                CHANNEL="git" ;;
+esac
+VERSION="$(node -e "try{console.log(require('$SOURCE/package.json').version)}catch(e){console.log('?')}" 2>/dev/null || echo '?')"
+
+echo
+echo -e "${RED}${BOLD}MyJarbis${NC} · setup"
+echo
+echo -e "  ${BOLD}Install${NC}  $INSTALL_DIR"
+echo -e "  ${BOLD}From${NC}     $SOURCE ($CHANNEL, v$VERSION)"
+if [ -n "$DRY_RUN" ]; then
+    echo -e "  ${BOLD}Mode${NC}     ${RED}${BOLD}dry run${NC} — nothing will be written"
+fi
+echo
+
+# ─── [1/6] prerequisites ──────────────────────────────────────────
+step 1 "Check prerequisites"
+if ! command -v node >/dev/null 2>&1; then
+    fail "Node.js not installed (need 18+, https://nodejs.org)"
+    exit 1
+fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$NODE_MAJOR" -lt 18 ]; then
+    fail "Node.js $NODE_MAJOR is too old (need 18+)"
+    exit 1
+fi
+note "Node.js $(node --version)"
+# npm is needed even when the package came through pnpm or bun: the native
+# module is built inside the runtime with npm, which is what keeps pnpm's
+# build-script blocking from ever reaching better-sqlite3.
+if ! command -v npm >/dev/null 2>&1; then
+    fail "npm not installed (it ships with Node.js)"
+    exit 1
+fi
+note "npm $(npm --version)"
+if ! command -v claude >/dev/null 2>&1; then
+    warn "Claude Code CLI not found — the MCP server will not be registered"
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found — 'myjarbis init' needs it to edit ~/.claude.json"
+fi
+if [ ! -d "$SOURCE/global" ] || [ ! -f "$SOURCE/install.sh" ] || [ ! -f "$SOURCE/bin/myjarbis-update" ]; then
+    fail "$SOURCE does not look like a MyJarbis package or checkout"
+    exit 1
+fi
+ok
+
+# ─── [2/6] install directory ──────────────────────────────────────
+step 2 "Prepare install directory"
+FRESH=""
+[ -f "$INSTALL_DIR/mcp-server/build/index.js" ] || FRESH=1
+if [ -d "$INSTALL_DIR" ]; then
+    note "exists — keeping it, and everything in it that is state"
+elif [ -n "$DRY_RUN" ]; then
+    note "would create $INSTALL_DIR"
+else
+    mkdir -p "$INSTALL_DIR"
+    note "created"
+fi
+ok
+
+# ─── [3/6] projects registry ──────────────────────────────────────
+step 3 "Initialize projects registry"
+if [ -f "$REGISTRY_FILE" ]; then
+    COUNT="$(node -e "
+      try { console.log(Object.keys(JSON.parse(require('fs').readFileSync('$REGISTRY_FILE','utf8')).projects || {}).length); }
+      catch { console.log('?'); }
+    ")"
+    note "already exists ($COUNT project(s)), keeping it"
+elif [ -n "$DRY_RUN" ]; then
+    note "would create $REGISTRY_FILE"
+else
+    REGISTRY_NOW="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+    mkdir -p "$(dirname "$REGISTRY_FILE")"
+    cat > "$REGISTRY_FILE" << EOF
+{
+  "_comment": "Auto-generated by MyJarbis. Do not edit manually.",
+  "_version": "1.0",
+  "_lastUpdated": "$REGISTRY_NOW",
+  "projects": {}
+}
+EOF
+    note "created"
+fi
+ok
+
+# ─── [4/6] sync, dependencies, build, propagate ───────────────────
+step 4 "Install code, dependencies and build"
+UPDATE_ARGS=(--from="$SOURCE" --no-pull)
+[ -n "$DRY_RUN" ] && UPDATE_ARGS+=(--dry-run)
+[ -n "$NO_PROJECTS" ] && UPDATE_ARGS+=(--no-projects)
+# A first install has no build for a running Claude session to be using, so
+# update's "a session will lose its tools" question has nothing to protect.
+if [ -n "$ASSUME_YES" ] || [ -n "$FRESH" ]; then
+    UPDATE_ARGS+=(--yes)
+fi
+
+if [ -n "$DRY_RUN" ] && [ ! -d "$INSTALL_DIR" ]; then
+    note "would copy $SOURCE into $INSTALL_DIR, run npm install and build"
+else
+    note "delegating to: myjarbis update ${UPDATE_ARGS[*]}"
+    # The update that comes WITH the source, not the runtime's copy: on a
+    # first install there is no runtime copy, and on an upgrade the source is
+    # the newer of the two. It is never the file being replaced, because it
+    # syncs into $INSTALL_DIR/bin and runs from $SOURCE/bin.
+    if ! "$SOURCE/bin/myjarbis-update" "${UPDATE_ARGS[@]}" 2>&1 | sed 's/^/  │ /'; then
+        fail "the sync did not complete — see the output above"
+        exit 1
+    fi
+    if [ -z "$DRY_RUN" ] && [ ! -f "$INSTALL_DIR/mcp-server/build/index.js" ]; then
+        fail "no MCP server build at $INSTALL_DIR/mcp-server/build/index.js"
+        exit 1
+    fi
+fi
+ok
+
+# ─── [5/6] channel + version ──────────────────────────────────────
+step 5 "Record where this came from"
+if [ -n "$DRY_RUN" ]; then
+    note "would record channel=$CHANNEL version=$VERSION"
+else
+    printf '%s\n' "$CHANNEL" > "$INSTALL_DIR/.channel"
+    printf '%s\n' "$VERSION" > "$INSTALL_DIR/.version"
+    note "channel $CHANNEL · version $VERSION"
+    if [ "$CHANNEL" = "npm" ]; then
+        note "'myjarbis update' will go through your package manager"
+    else
+        note "'myjarbis update' will pull $SOURCE"
+    fi
+fi
+ok
+
+# ─── [6/6] Claude Code registration ───────────────────────────────
+step 6 "Register MCP server with Claude Code"
+MCP_SERVER_PATH="$INSTALL_DIR/mcp-server/build/index.js"
+if ! command -v claude >/dev/null 2>&1; then
+    warn "Claude Code CLI not found"
+    note "install it from https://claude.ai/claude-code, then run:"
+    note "  claude mcp add myjarbis node $MCP_SERVER_PATH"
+elif claude mcp list 2>/dev/null | grep -q "myjarbis"; then
+    note "already registered (verify with: claude mcp list)"
+elif [ -n "$DRY_RUN" ]; then
+    note "would run: claude mcp add myjarbis node $MCP_SERVER_PATH"
+else
+    claude mcp add myjarbis node "$MCP_SERVER_PATH" >/dev/null 2>&1 || true
+    if claude mcp list 2>/dev/null | grep -q "myjarbis"; then
+        note "registered"
+    else
+        warn "automatic registration failed"
+        note "run manually: claude mcp add myjarbis node $MCP_SERVER_PATH"
+    fi
+fi
+ok
+
+# ─── doctor ───────────────────────────────────────────────────────
+# Quiet when it is happy: the whole report is only worth reading when
+# something in it failed.
+if [ -z "$DRY_RUN" ] && [ -x "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
+    echo
+    if DOCTOR_OUT="$("$INSTALL_DIR/bin/myjarbis-doctor" 2>&1)"; then
+        note "doctor: no failed checks (details: myjarbis doctor)"
+    else
+        printf '%s\n' "$DOCTOR_OUT"
+    fi
+fi
+
+[ -n "$DRY_RUN" ] && { echo; exit 0; }
+
+echo
+echo -e "${RED}${BOLD}Setup complete${NC}"
+echo
+echo -e "  ${RED}\$${NC} myjarbis init --list ~/projects   ${DIM}register your projects${NC}"
+echo -e "  ${RED}\$${NC} myjarbis start                    ${DIM}open one with claude + /jarbis${NC}"
+echo
