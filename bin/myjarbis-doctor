@@ -18,6 +18,24 @@ REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 CURRENT_DIR="$(pwd)"
 CLAUDE_CONFIG="$HOME/.claude.json"
 
+# Is the current directory a project? Having a .myjarbis/ is not enough:
+# MYJARBIS_HOME is ~/.myjarbis, so run from $HOME the shared-brain dir reads
+# as a project's, and every check below reports on it — "settings.json
+# missing" as a FAIL, on a directory that was never meant to have one.
+# `myjarbis setup` runs this doctor, and with npm it is run from anywhere,
+# $HOME first of all. Compare physical paths, not strings.
+MYJARBIS_HOME_DIR="${MYJARBIS_HOME:-$HOME/.myjarbis}"
+IN_PROJECT=""
+IS_MYJARBIS_HOME=""
+if [ -d ".myjarbis" ]; then
+    if [ -d "$MYJARBIS_HOME_DIR" ] && \
+       [ "$(cd -P .myjarbis && pwd)" = "$(cd -P "$MYJARBIS_HOME_DIR" && pwd)" ]; then
+        IS_MYJARBIS_HOME=1
+    else
+        IN_PROJECT=1
+    fi
+fi
+
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 WARNINGS=0
@@ -143,7 +161,7 @@ fi
 # ─── current project ──────────────────────────────────────────────
 section "Current project"
 
-if [ -d ".myjarbis" ]; then
+if [ -n "$IN_PROJECT" ]; then
     pass ".myjarbis/ exists"
 
     if [ -f ".myjarbis/config/settings.json" ]; then
@@ -276,14 +294,19 @@ if [ -d ".myjarbis" ]; then
         warn ".claude/skills/ missing — run myjarbis skill materialize"
     fi
 else
-    warn "not in a MyJarbis project (.myjarbis/ not found)"
-    note "run myjarbis init to initialize this project"
+    if [ -n "$IS_MYJARBIS_HOME" ]; then
+        note "here, .myjarbis/ is MYJARBIS_HOME (the shared brain), not a project"
+        note "project checks skipped; run doctor inside a project to see them"
+    else
+        warn "not in a MyJarbis project (.myjarbis/ not found)"
+        note "run myjarbis init to initialize this project"
+    fi
 fi
 
 # ─── MCP tools roundtrip ──────────────────────────────────────────
 section "MCP tools"
 
-if [ -d ".myjarbis" ] && [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
+if [ -n "$IN_PROJECT" ] && [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
     # Same reason as above: resolve rather than assume a silo, so a shared
     # project is exercised instead of silently skipped.
     ROUNDTRIP=$(node --input-type=module -e "
@@ -324,7 +347,7 @@ fi
 # ─── environment ──────────────────────────────────────────────────
 section "Environment"
 
-if [ -d ".myjarbis" ]; then
+if [ -n "$IN_PROJECT" ]; then
     FILE_COUNT=$(find . -type f \
         -not -path "*/node_modules/*" \
         -not -path "*/vendor/*" \

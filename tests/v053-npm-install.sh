@@ -5,8 +5,9 @@
 #   1. `npm pack` ships product, not state
 #   2. `npm i -g <tarball>` puts `myjarbis` on the prefix's PATH
 #   3. before setup, a command says "not set up" instead of failing deep
-#   4. `myjarbis setup` builds the runtime, records the npm channel, and
-#      registers nothing with `claude mcp add` (that binds to the cwd)
+#   4. `myjarbis setup` builds the runtime, records the npm channel,
+#      registers nothing with `claude mcp add` (that binds to the cwd), and
+#      run from $HOME does not seed ~/.myjarbis as a project
 #   5. a second setup is a no-op: no npm install
 #   6. a package newer than the runtime is reported; setup clears it
 #   7. update on the npm channel: a dry run installs nothing, and a package
@@ -122,7 +123,13 @@ mkdir -p "$RUNTIME"
 cat > "$RUNTIME/projects-registry.json" <<'EOF'
 { "_version": "1.0", "projects": { "keep-me": { "name": "keep-me", "path": "/nowhere" } } }
 EOF
-run myjarbis setup --yes --no-projects
+# MYJARBIS_HOME, as a real machine has it after one init: only defaults.json.
+# Run from $HOME, its .myjarbis/ looks like a project's. On the machine this
+# was found on, a cwd-bound `claude mcp add` from setup made `claude mcp
+# list` start the server in $HOME, whose v0.1 migration then seeded
+# ~/.myjarbis as a project. Nothing setup or doctor runs may write there.
+mkdir -p "$HOME/.myjarbis" && echo '{"language":"EN"}' > "$HOME/.myjarbis/defaults.json"
+run bash -c 'cd "$HOME" && myjarbis setup --yes --no-projects'
 [ "$STATUS" = 0 ] && pass "setup exited 0" || { oops "setup failed ($STATUS): $(echo "$OUT" | tail -20)"; exit 1; }
 [ -f "$RUNTIME/mcp-server/build/index.js" ] && pass "runtime build present" || oops "no build in the runtime"
 [ -x "$RUNTIME/bin/myjarbis" ] && pass "runtime bin/ synced" || oops "no runtime bin/myjarbis"
@@ -143,6 +150,15 @@ echo "$OUT" | grep -q "will lose every myjarbis tool" \
 run myjarbis --version
 [ "$OUT" = "MyJarbis v$(node -p "require('$PKG_DIR/package.json').version")" ] \
   && pass "--version: $OUT" || oops "--version: $OUT"
+
+[ "$(ls -A "$HOME/.myjarbis")" = "defaults.json" ] \
+  && pass "setup run from \$HOME left ~/.myjarbis alone" \
+  || oops "setup run from \$HOME wrote into ~/.myjarbis: $(ls -A "$HOME/.myjarbis" | tr '\n' ' ')"
+run bash -c 'cd "$HOME" && myjarbis doctor'
+[ "$(ls -A "$HOME/.myjarbis")" = "defaults.json" ] \
+  && pass "doctor run from \$HOME did not seed it as a project" \
+  || oops "doctor run from \$HOME wrote into ~/.myjarbis: $(ls -A "$HOME/.myjarbis" | tr '\n' ' ')"
+echo "$OUT" | grep -q "is MYJARBIS_HOME" && pass "and says why it skipped the project checks" || oops "doctor in \$HOME: no MYJARBIS_HOME note"
 
 # ─── [5] idempotent ───────────────────────────────────────────────
 echo "→ [5] a second setup changes nothing"

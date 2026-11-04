@@ -247,7 +247,10 @@ ok
 # something in it failed.
 if [ -z "$DRY_RUN" ] && [ -x "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
     echo
-    if DOCTOR_OUT="$("$INSTALL_DIR/bin/myjarbis-doctor" 2>&1)"; then
+    # From the install dir, never from wherever setup was started: the
+    # doctor's project checks act on the cwd, and setup is not about a
+    # project. Run from $HOME they reported on ~/.myjarbis as if it were one.
+    if DOCTOR_OUT="$(cd "$INSTALL_DIR" && "$INSTALL_DIR/bin/myjarbis-doctor" 2>&1)"; then
         note "doctor: no failed checks (details: myjarbis doctor)"
     else
         printf '%s\n' "$DOCTOR_OUT"
