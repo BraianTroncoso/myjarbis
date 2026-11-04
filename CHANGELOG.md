@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.2 — a machine's worth of projects in one run
 
 ### Added
 

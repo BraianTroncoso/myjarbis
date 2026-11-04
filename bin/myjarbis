@@ -219,7 +219,7 @@ case "${1:-help}" in
         ;;
 
     --version|-v)
-        echo "MyJarbis v0.5.1"
+        echo "MyJarbis v0.5.2"
         ;;
 
     *)
