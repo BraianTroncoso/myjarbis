@@ -149,6 +149,9 @@ CRITICAL_FILES=(
     "$INSTALL_DIR/bin/myjarbis"
     "$INSTALL_DIR/bin/myjarbis-init"
     "$INSTALL_DIR/bin/myjarbis-doctor"
+    # Every command sources this on its first lines, so a copy that missed it
+    # produces five broken commands and no clue which file is absent.
+    "$INSTALL_DIR/bin/myjarbis-env.sh"
 )
 for file in "${CRITICAL_FILES[@]}"; do
     if [ ! -f "$file" ]; then

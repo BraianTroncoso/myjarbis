@@ -22,8 +22,12 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
-REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+# Paths. See bin/myjarbis for why the symlink chain is followed by hand here.
+# Sourcing this is also what gives start MYJARBIS_REGISTRY, which it used to
+# ignore.
+__mj_s="${BASH_SOURCE[0]}"
+while [ -L "$__mj_s" ]; do __mj_l="$(readlink "$__mj_s")"; case "$__mj_l" in /*) __mj_s="$__mj_l";; *) __mj_s="$(dirname "$__mj_s")/$__mj_l";; esac; done
+. "$(cd "$(dirname "$__mj_s")" && pwd)/myjarbis-env.sh"
 
 # ── flags / state ─────────────────────────────────────────────────────
 MODE="auto"          # auto | wt | tmux | here

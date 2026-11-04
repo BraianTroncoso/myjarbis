@@ -80,6 +80,7 @@ SUITES=(
   v052-init-mcp-merge
   v052-start-by-name
   v052-init-batch
+  v060-path-resolution
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

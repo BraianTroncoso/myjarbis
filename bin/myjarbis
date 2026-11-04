@@ -11,9 +11,13 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# Paths
-INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
-REGISTRY_FILE="${MYJARBIS_REGISTRY:-$INSTALL_DIR/projects-registry.json}"
+# Paths. Resolved in bin/myjarbis-env.sh, which is sourced through a
+# hand-followed symlink chain: finding the file is the one question it cannot
+# answer for us, because a command linked into a bin on PATH does not know
+# where its own directory is until the link is resolved.
+__mj_s="${BASH_SOURCE[0]}"
+while [ -L "$__mj_s" ]; do __mj_l="$(readlink "$__mj_s")"; case "$__mj_l" in /*) __mj_s="$__mj_l";; *) __mj_s="$(dirname "$__mj_s")/$__mj_l";; esac; done
+. "$(cd "$(dirname "$__mj_s")" && pwd)/myjarbis-env.sh"
 
 show_help() {
     echo
@@ -138,19 +142,11 @@ generate_context() {
 # Main command router
 case "${1:-help}" in
     init)
-        # Resolve script: prefer $INSTALL_DIR/bin (production install
-        # layout), fall back to $INSTALL_DIR/../bin (dev layout where
-        # MYJARBIS_INSTALL_DIR points to <repo>/global).
-        #
         # `shift` then "$@", same as start/update: without it every flag was
         # dropped, so --isolation, --org, --yes and --skip-memory were inert
         # from the CLI and init always produced a default silo project.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-init" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-init" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-init" "$@"
-        fi
+        SUB="$(mj_command_path myjarbis-init)" && exec "$SUB" "$@"
         echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-init not found"
         echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
         exit 1
@@ -158,11 +154,7 @@ case "${1:-help}" in
 
     doctor)
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-doctor" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-doctor" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-doctor" "$@"
-        fi
+        SUB="$(mj_command_path myjarbis-doctor)" && exec "$SUB" "$@"
         echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-doctor not found"
         echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
         exit 1
@@ -171,11 +163,7 @@ case "${1:-help}" in
     start)
         # Global launcher: pick a project, open it with claude + /jarbis.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-start" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-start" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-start" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-start" "$@"
-        fi
+        SUB="$(mj_command_path myjarbis-start)" && exec "$SUB" "$@"
         echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-start not found"
         echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
         exit 1
@@ -193,11 +181,7 @@ case "${1:-help}" in
         # `shift` then "$@": without it the flags were dropped, so
         # `myjarbis update --projects` silently ran a plain update.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-update" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-update" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-update" "$@"
-        fi
+        SUB="$(mj_command_path myjarbis-update)" && exec "$SUB" "$@"
         echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-update not found"
         exit 1
         ;;

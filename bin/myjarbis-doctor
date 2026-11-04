@@ -12,9 +12,15 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# Paths
-INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
-REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
+# Paths. See bin/myjarbis for why the symlink chain is followed by hand here
+# rather than asked of the file being sourced.
+#
+# Sourcing this is also what gives doctor MYJARBIS_REGISTRY: it used to build
+# the registry path itself and ignore the override, so a hermetic test run
+# diagnosed the developer's real registry instead of its own.
+__mj_s="${BASH_SOURCE[0]}"
+while [ -L "$__mj_s" ]; do __mj_l="$(readlink "$__mj_s")"; case "$__mj_l" in /*) __mj_s="$__mj_l";; *) __mj_s="$(dirname "$__mj_s")/$__mj_l";; esac; done
+. "$(cd "$(dirname "$__mj_s")" && pwd)/myjarbis-env.sh"
 CURRENT_DIR="$(pwd)"
 CLAUDE_CONFIG="$HOME/.claude.json"
 

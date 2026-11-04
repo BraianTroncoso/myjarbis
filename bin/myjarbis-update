@@ -35,8 +35,16 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
-REGISTRY_FILE="${MYJARBIS_REGISTRY:-$INSTALL_DIR/projects-registry.json}"
+# Paths. See bin/myjarbis for why the symlink chain is followed by hand here.
+#
+# Note what INSTALL_DIR must NOT become for this script: when it runs out of a
+# checkout — `bash bin/myjarbis-update`, the documented way to jump versions —
+# the installation it is updating is elsewhere. myjarbis-env.sh only takes the
+# parent of bin/ when a templates/ sits next to it, which a checkout has under
+# global/ instead.
+__mj_s="${BASH_SOURCE[0]}"
+while [ -L "$__mj_s" ]; do __mj_l="$(readlink "$__mj_s")"; case "$__mj_l" in /*) __mj_s="$__mj_l";; *) __mj_s="$(dirname "$__mj_s")/$__mj_l";; esac; done
+. "$(cd "$(dirname "$__mj_s")" && pwd)/myjarbis-env.sh"
 
 step() { echo -e "${RED}[$1/5]${NC}  ${BOLD}$2${NC}"; }
 ok()   { echo "       OK"; }
@@ -82,8 +90,25 @@ fail() { echo -e "       ${RED}${BOLD}FAIL${NC}  $1"; }
 # be copied with the rest of this tree, and better_sqlite3.node is mmap'd by
 # the running server — replacing a mapped file in place is a SIGBUS, not a
 # loud import failure. Step 3 excludes node_modules for exactly that reason.
+# One file into place, by rename, never written where it is read from.
+sync_one_executable() {
+    local f="$1" dest_dir="$2" base staged
+    base="$(basename "$f")"
+    if [ ! -f "$f" ]; then
+        # bin/ has only ever held plain scripts. Say so out loud rather
+        # than skipping in silence, so the day that changes is the day
+        # someone reads this instead of debugging a missing command.
+        warn "$base is not a plain file — not synced into $dest_dir"
+        return 0
+    fi
+    staged="$dest_dir/.myjarbis-incoming.$$-$base"
+    cp "$f" "$staged"
+    chmod +x "$staged"
+    mv -f "$staged" "$dest_dir/$base"
+}
+
 sync_executables() {
-    local src_dir="$1" dest_dir="$2" f base dest staged
+    local src_dir="$1" dest_dir="$2" f
     mkdir -p "$dest_dir"
 
     # A run that died mid-copy can leave a staging file behind. Sweeping them
@@ -91,20 +116,20 @@ sync_executables() {
     # and keeps a half-written file from ever sitting next to the real commands.
     rm -f "$dest_dir"/.myjarbis-incoming.* 2>/dev/null || true
 
+    # Libraries first, commands second. A `*.sh` in bin/ is a sourced library,
+    # and every command sources myjarbis-env.sh on its first lines. Replacing
+    # `myjarbis` before the library it needs is there would leave a window
+    # where the command is the new one and its dependency does not exist — and
+    # a window of exactly that shape is what made an update kill the session
+    # running it, once.
+    for f in "$src_dir"/*.sh; do
+        [ -e "$f" ] || continue
+        sync_one_executable "$f" "$dest_dir"
+    done
     for f in "$src_dir"/*; do
-        base="$(basename "$f")"
-        if [ ! -f "$f" ]; then
-            # bin/ has only ever held plain scripts. Say so out loud rather
-            # than skipping in silence, so the day that changes is the day
-            # someone reads this instead of debugging a missing command.
-            warn "$base is not a plain file — not synced into $dest_dir"
-            continue
-        fi
-        dest="$dest_dir/$base"
-        staged="$dest_dir/.myjarbis-incoming.$$-$base"
-        cp "$f" "$staged"
-        chmod +x "$staged"
-        mv -f "$staged" "$dest"
+        [ -e "$f" ] || continue
+        case "$(basename "$f")" in *.sh) continue ;; esac
+        sync_one_executable "$f" "$dest_dir"
     done
 }
 
