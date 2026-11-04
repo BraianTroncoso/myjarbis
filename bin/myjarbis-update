@@ -627,6 +627,30 @@ else
     note "dependencies unchanged — npm install skipped (nothing to install)"
 fi
 
+# node_modules/.bin holds symlinks. The old install.sh copied node_modules
+# out of the checkout with `cp -r`, and macOS's cp follows symlinks under
+# -r, so on machines installed that way every .bin entry is a plain COPY of
+# a stub like `require('../lib/tsc.js')`, resolved from .bin instead of from
+# typescript/bin. tsc cannot start, and every build — so every update — dies
+# with "Cannot find module '../lib/tsc.js'".
+#
+# `npm rebuild --ignore-scripts` relinks the bins and runs no install
+# script, so better_sqlite3.node (mapped by a running server) is not
+# rewritten: same inode, same mtime, checked on a real broken install.
+if [ -d node_modules/.bin ]; then
+    for b in node_modules/.bin/*; do
+        if [ -e "$b" ] && [ ! -L "$b" ]; then
+            warn "node_modules/.bin holds copies, not links (left by an older install.sh)"
+            if npm rebuild --ignore-scripts >/dev/null 2>&1; then
+                note "relinked with npm rebuild --ignore-scripts; the native module is untouched"
+            else
+                warn "npm rebuild --ignore-scripts failed — the build below may too"
+            fi
+            break
+        fi
+    done
+fi
+
 # Built BESIDE the live build, then swapped by rename. tsc writing straight
 # into build/ leaves it half-replaced for as long as the compile takes, and
 # that is the window a running session reads in. A rename is atomic, and the

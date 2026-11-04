@@ -193,10 +193,22 @@ EOF
 run "$REPO_ROOT/bin/myjarbis-setup" --from="$REPO_ROOT" --yes --no-projects
 [ "$STATUS" = 0 ] && pass "git-channel setup" || { oops "git setup failed: $(echo "$OUT" | tail -10)"; exit 1; }
 [ "$(cat "$RUNTIME/.channel")" = "git" ] && pass ".channel = git" || oops ".channel = $(cat "$RUNTIME/.channel")"
+# What the old install.sh left on macOS: `cp -r` of node_modules followed
+# the symlinks, so .bin/tsc is a copy of the stub, resolving ../lib/tsc.js
+# from .bin. Found on a real machine; every build there failed.
+BIN_TSC="$RUNTIME/mcp-server/node_modules/.bin/tsc"
+NATIVE="$(find "$RUNTIME/mcp-server/node_modules/better-sqlite3" -name 'better_sqlite3.node' | head -1)"
+NATIVE_INODE="$(ls -i "$NATIVE" | awk '{print $1}')"
+rm -f "$BIN_TSC" && cp "$RUNTIME/mcp-server/node_modules/typescript/bin/tsc" "$BIN_TSC"
+[ -L "$BIN_TSC" ] && oops "could not simulate the copied .bin" || pass "simulated an old install's copied .bin/tsc"
 run npm install -g "$TARBALL"
 run myjarbis setup --yes --no-projects
 [ "$STATUS" = 0 ] && pass "npm setup over a git install" || oops "npm setup failed: $(echo "$OUT" | tail -10)"
 [ "$(cat "$RUNTIME/.channel")" = "npm" ] && pass ".channel flipped to npm" || oops ".channel = $(cat "$RUNTIME/.channel")"
+echo "$OUT" | grep -q "holds copies, not links" && pass "the copied .bin was detected" || oops "the copied .bin went unnoticed"
+[ -L "$BIN_TSC" ] && pass ".bin/tsc is a link again" || oops ".bin/tsc is still a copy"
+[ "$(ls -i "$NATIVE" | awk '{print $1}')" = "$NATIVE_INODE" ] \
+  && pass "the native module was not rewritten" || oops "better_sqlite3.node was replaced"
 node -e "process.exit(require('$RUNTIME/projects-registry.json').projects['old-one'] ? 0 : 1)" \
   && pass "the registry kept its project" || oops "the registry lost its project"
 
