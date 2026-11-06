@@ -80,6 +80,7 @@ SUITES=(
   v052-init-mcp-merge
   v052-start-by-name
   v052-init-batch
+  v053-npm-install
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

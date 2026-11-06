@@ -127,9 +127,53 @@ done; echo "checked"
 ## 2. Update the code
 
 ```bash
-cd <checkout> && git pull
 myjarbis update
 ```
+
+What that does depends on how the machine was installed, which is recorded in
+`~/.myjarbis-global/.channel` (no file means `git`; `myjarbis doctor` prints it):
+
+| channel | `myjarbis update` |
+|---|---|
+| `npm` | `npm i -g myjarbis@latest` (or pnpm/bun, whichever installed it), then the new package's `myjarbis setup` |
+| `git` | pulls the checkout in `.source`, re-syncs and rebuilds from it |
+
+### Moving a git install to npm
+
+```bash
+npm i -g myjarbis
+myjarbis setup
+```
+
+`setup` syncs the package over the same `~/.myjarbis-global`. It never deletes
+that directory, so the registry, `backups/` and every project's wiring stay as
+they are: `~/.claude.json` and the hook scripts point at the runtime path,
+which does not move. `.channel` flips to `npm`, and the checkout can be deleted.
+
+Then remove the `# MyJarbis CLI` line that `install.sh` added to your shell
+rc. It still works (it points at the same runtime), but it shadows npm's link,
+so you would not see the hint that the package is newer than the runtime.
+`myjarbis doctor` names the file.
+
+### Case: `myjarbis 0.x installed, runtime is 0.y — run: myjarbis setup`
+
+The package manager updated the package (`npm update -g`, a reinstall) but the
+runtime was not synced. Run `myjarbis setup`. It is not automatic because
+syncing swaps the MCP server build, and a dependency change takes a running
+Claude session down with it (see the preflight in `myjarbis update`).
+
+### Case: `native SQLite module does not load` (`NODE_MODULE_VERSION`)
+
+`better-sqlite3` was built for a different Node than the one running now.
+That's typical with nvm, after `nvm use`. Rebuild it under the Node Claude
+Code uses:
+
+```bash
+cd ~/.myjarbis-global/mcp-server && npm rebuild better-sqlite3
+```
+
+Not `myjarbis setup`: it reinstalls dependencies only when their list changed,
+so it would leave the module as it is.
 
 ### Case: the install is v0.2 — `update` cannot work
 
@@ -190,11 +234,14 @@ dead run left behind. If you want to check rather than trust,
 `myjarbis update --no-pull` and read step 5 — every live project should say
 `up to date`.
 
-### Do NOT run `install.sh` to upgrade
+### `install.sh` on an existing install
 
-It is for first installs. On older versions re-running it un-registered every
-project, because the registry lives in the directory it removes. `update` is
-the supported path and preserves the registry explicitly.
+From this version on, `install.sh` is `myjarbis setup --from=<checkout>` plus
+the PATH line, and never deletes anything, so re-running it is an update from
+that checkout. **On older versions it was not:** it removed
+`~/.myjarbis-global`, and with it the registry. If the install predates
+`myjarbis setup`, use `myjarbis update` (or `npm i -g myjarbis && myjarbis
+setup`), not the old `install.sh`.
 
 ### Verify
 

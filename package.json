@@ -22,16 +22,32 @@
     "url": "https://github.com/braiantroncoso/myjarbis/issues"
   },
   "homepage": "https://github.com/braiantroncoso/myjarbis#readme",
+  "bin": {
+    "myjarbis": "bin/myjarbis"
+  },
+  "files": [
+    "bin/",
+    "install.sh",
+    "global/core/",
+    "global/templates/",
+    "global/mcp-server/src/",
+    "global/mcp-server/package.json",
+    "global/mcp-server/tsconfig.json",
+    "CHANGELOG.md"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "install-global": "./install.sh",
     "build:mcp": "cd global/mcp-server && npm run build",
     "dev:mcp": "cd global/mcp-server && npm run dev",
-    "test:structure": "ls -R global/ && echo '\u2713 Structure OK'"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "bin": {
-    "myjarbis": "./bin/myjarbis"
+    "test:structure": "ls -R global/ && echo '✓ Structure OK'",
+    "test": "tests/run-all.sh",
+    "prepack": "scripts/check-pack.sh"
   }
 }

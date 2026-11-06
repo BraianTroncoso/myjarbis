@@ -15,6 +15,91 @@ NC='\033[0m'
 INSTALL_DIR="${MYJARBIS_INSTALL_DIR:-$HOME/.myjarbis-global}"
 REGISTRY_FILE="${MYJARBIS_REGISTRY:-$INSTALL_DIR/projects-registry.json}"
 
+# The directory this script was shipped in: a git checkout, the runtime at
+# $INSTALL_DIR, or an npm package under <prefix>/lib/node_modules/myjarbis.
+#
+# npm puts a SYMLINK on the PATH (<prefix>/bin/myjarbis -> the package's
+# bin/myjarbis), so $0 names the link, not the package. Follow it by hand:
+# `readlink -f` does not exist on macOS before 12.3.
+resolve_pkg_dir() {
+    local src="${BASH_SOURCE[0]}" dir
+    while [ -L "$src" ]; do
+        dir="$(cd -P "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+    done
+    cd -P "$(dirname "$src")/.." && pwd
+}
+PKG_DIR="$(resolve_pkg_dir)"
+
+# Run bin/<name> from the first place it exists, in this order:
+#
+#   $INSTALL_DIR/bin      the runtime — what every installed command runs
+#   $INSTALL_DIR/../bin   dev layout, MYJARBIS_INSTALL_DIR=<repo>/global
+#   $PKG_DIR/bin          the package this script came from, which is all
+#                         there is on an npm install that has not been set up
+run_sub() {
+    local name="$1" dir
+    shift
+    for dir in "$INSTALL_DIR/bin" "$INSTALL_DIR/../bin" "$PKG_DIR/bin"; do
+        if [ -f "$dir/$name" ]; then
+            exec "$dir/$name" "$@"
+        fi
+    done
+    echo -e "  ${RED}${BOLD}FAIL${NC}  $name not found"
+    echo -e "        ${DIM}run 'myjarbis setup', or set MYJARBIS_INSTALL_DIR${NC}"
+    exit 1
+}
+
+# Read "version" out of a package.json without starting node for it: this
+# runs on every command.
+json_version() {
+    [ -f "$1" ] || return 0
+    sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
+# What the runtime is: .version, written by setup. Older installs predate
+# it, and their mcp-server/package.json carries the same number.
+runtime_version() {
+    if [ -f "$INSTALL_DIR/.version" ]; then
+        cat "$INSTALL_DIR/.version"
+    else
+        json_version "$INSTALL_DIR/mcp-server/package.json"
+    fi
+}
+
+# Only when this dispatcher came from a package manager. A checkout or the
+# runtime itself has nothing to drift from.
+FROM_PACKAGE=""
+case "$PKG_DIR" in */node_modules/*) FROM_PACKAGE=1 ;; esac
+
+if [ -n "$FROM_PACKAGE" ]; then
+    case "${1:-help}" in
+        setup|help|--help|-h|--version|-v|doctor) ;;
+        *)
+            if [ ! -f "$INSTALL_DIR/mcp-server/build/index.js" ]; then
+                echo
+                echo -e "  ${RED}${BOLD}FAIL${NC}  MyJarbis is installed but not set up"
+                echo -e "        ${DIM}run: myjarbis setup${NC}"
+                echo
+                exit 1
+            fi
+            ;;
+    esac
+    # A hint, not an automatic sync: setup swaps the MCP server build, and
+    # when that happens is the user's call (update's preflight explains why).
+    case "${1:-help}" in
+        setup|update|--version|-v) ;;
+        *)
+            PKG_VERSION="$(json_version "$PKG_DIR/package.json")"
+            RUNTIME_VERSION="$(runtime_version)"
+            if [ -n "$PKG_VERSION" ] && [ -n "$RUNTIME_VERSION" ] && [ "$PKG_VERSION" != "$RUNTIME_VERSION" ]; then
+                echo -e "  ${DIM}myjarbis $PKG_VERSION installed, runtime is $RUNTIME_VERSION — run: myjarbis setup${NC}" >&2
+            fi
+            ;;
+    esac
+fi
+
 show_help() {
     echo
     echo -e "${RED}${BOLD}MyJarbis${NC}"
@@ -23,7 +108,7 @@ show_help() {
     echo
     echo -e "${RED}${BOLD}Commands${NC}"
     echo
-    echo -e "  ${BOLD}init${NC}       Initialize MyJarbis in the current project (or several: --list)"
+    echo -e "  ${BOLD}setup${NC}      Install or refresh the runtime after npm i -g myjarbis\n  ${BOLD}init${NC}       Initialize MyJarbis in the current project (or several: --list)"
     echo -e "  ${BOLD}start${NC}      Pick a registered project and open it with claude + /jarbis"
     echo -e "  ${BOLD}doctor${NC}     Verify installation and project setup"
     echo -e "  ${BOLD}list${NC}       List all registered projects"
@@ -138,47 +223,30 @@ generate_context() {
 # Main command router
 case "${1:-help}" in
     init)
-        # Resolve script: prefer $INSTALL_DIR/bin (production install
-        # layout), fall back to $INSTALL_DIR/../bin (dev layout where
-        # MYJARBIS_INSTALL_DIR points to <repo>/global).
-        #
         # `shift` then "$@", same as start/update: without it every flag was
         # dropped, so --isolation, --org, --yes and --skip-memory were inert
         # from the CLI and init always produced a default silo project.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-init" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-init" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-init" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-init" "$@"
-        fi
-        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-init not found"
-        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
-        exit 1
+        run_sub myjarbis-init "$@"
         ;;
 
     doctor)
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-doctor" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-doctor" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-doctor" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-doctor" "$@"
-        fi
-        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-doctor not found"
-        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
-        exit 1
+        run_sub myjarbis-doctor "$@"
         ;;
 
     start)
         # Global launcher: pick a project, open it with claude + /jarbis.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-start" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-start" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-start" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-start" "$@"
-        fi
-        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-start not found"
-        echo -e "        ${DIM}run ./install.sh or set MYJARBIS_INSTALL_DIR${NC}"
-        exit 1
+        run_sub myjarbis-start "$@"
+        ;;
+
+    setup)
+        # Always the package's own setup, never the runtime's: on a first
+        # install there is no runtime, and on an upgrade the package is the
+        # newer of the two.
+        shift
+        exec "$PKG_DIR/bin/myjarbis-setup" "$@"
         ;;
 
     list)
@@ -193,13 +261,7 @@ case "${1:-help}" in
         # `shift` then "$@": without it the flags were dropped, so
         # `myjarbis update --projects` silently ran a plain update.
         shift
-        if [ -f "$INSTALL_DIR/bin/myjarbis-update" ]; then
-            exec "$INSTALL_DIR/bin/myjarbis-update" "$@"
-        elif [ -f "$INSTALL_DIR/../bin/myjarbis-update" ]; then
-            exec "$INSTALL_DIR/../bin/myjarbis-update" "$@"
-        fi
-        echo -e "  ${RED}${BOLD}FAIL${NC}  myjarbis-update not found"
-        exit 1
+        run_sub myjarbis-update "$@"
         ;;
 
     import|brain|module|skill|stats|cost|config|status|health|review|gc|backfill-remotes|timeline|diagram|hook|\
@@ -219,7 +281,20 @@ case "${1:-help}" in
         ;;
 
     --version|-v)
-        echo "MyJarbis v0.5.2"
+        RUNTIME_VERSION="$(runtime_version)"
+        if [ -n "$FROM_PACKAGE" ]; then
+            PKG_VERSION="$(json_version "$PKG_DIR/package.json")"
+            if [ -n "$RUNTIME_VERSION" ] && [ "$RUNTIME_VERSION" != "$PKG_VERSION" ]; then
+                echo "MyJarbis v$PKG_VERSION (runtime v$RUNTIME_VERSION — run: myjarbis setup)"
+            elif [ -z "$RUNTIME_VERSION" ]; then
+                echo "MyJarbis v$PKG_VERSION (not set up — run: myjarbis setup)"
+            else
+                echo "MyJarbis v$PKG_VERSION"
+            fi
+        else
+            [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="$(json_version "$PKG_DIR/package.json")"
+            echo "MyJarbis v${RUNTIME_VERSION:-?}"
+        fi
         ;;
 
     *)

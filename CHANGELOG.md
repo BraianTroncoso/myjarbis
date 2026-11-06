@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Install from npm: `npm i -g myjarbis && myjarbis setup`.** No checkout to
+  keep and no shell-rc edit: the package manager puts `myjarbis` on the PATH.
+  The package is only the delivery. `setup` syncs it into the same
+  `~/.myjarbis-global` runtime through `myjarbis update --from`, because that
+  path is already written into `~/.claude.json` and every project's hook
+  scripts, and because the npm prefix moves with `nvm use`. The package has
+  no runtime dependencies, so pnpm and bun install it without build-script
+  approval; `better-sqlite3` is built inside the runtime with npm.
+  `setup` is idempotent and never deletes the install dir. `myjarbis update`
+  follows the channel the code came from (`.channel`: npm or git). The CLI
+  hints when the package is newer than the runtime, and `doctor` reports the
+  channel, a leftover PATH line, and whether the native module loads under
+  the current Node. `install.sh` is now `setup --from=<checkout>` plus the
+  PATH line. A `prepack` check refuses to pack a registry, a `memory.db` or
+  `node_modules`. Design: `docs/specs/npm-install.md`.
+  `tests/v053-npm-install.sh`.
+
+### Changed
+
+- **Installing no longer runs `claude mcp add`.** Without `--scope` it
+  registers the server for the current directory: `install.sh` registered the
+  checkout, and `setup` run from `~` registered the home directory as a
+  project. The registration that counts was always the per-project one
+  `myjarbis init` writes into `~/.claude.json`, and that is unchanged.
+
+### Fixed
+
+- **`update` failed on every build on machines installed by the old
+  `install.sh`** with `Cannot find module '../lib/tsc.js'`. Its `cp -r` of
+  `node_modules` followed symlinks on macOS, so every `node_modules/.bin`
+  entry was a copy resolving paths from the wrong directory. `update` now
+  relinks them with `npm rebuild --ignore-scripts`, which leaves
+  `better_sqlite3.node`, mapped by any running server, untouched.
+- **`doctor` run from `$HOME` treated `~/.myjarbis` as a project** and failed
+  checks on it. That directory is `MYJARBIS_HOME`, the shared brain. It is
+  now recognised and the project checks are skipped.
+
 ## v0.5.2 — a machine's worth of projects in one run
 
 ### Added

@@ -18,6 +18,24 @@ REGISTRY_FILE="$INSTALL_DIR/projects-registry.json"
 CURRENT_DIR="$(pwd)"
 CLAUDE_CONFIG="$HOME/.claude.json"
 
+# Is the current directory a project? Having a .myjarbis/ is not enough:
+# MYJARBIS_HOME is ~/.myjarbis, so run from $HOME the shared-brain dir reads
+# as a project's, and every check below reports on it — "settings.json
+# missing" as a FAIL, on a directory that was never meant to have one.
+# `myjarbis setup` runs this doctor, and with npm it is run from anywhere,
+# $HOME first of all. Compare physical paths, not strings.
+MYJARBIS_HOME_DIR="${MYJARBIS_HOME:-$HOME/.myjarbis}"
+IN_PROJECT=""
+IS_MYJARBIS_HOME=""
+if [ -d ".myjarbis" ]; then
+    if [ -d "$MYJARBIS_HOME_DIR" ] && \
+       [ "$(cd -P .myjarbis && pwd)" = "$(cd -P "$MYJARBIS_HOME_DIR" && pwd)" ]; then
+        IS_MYJARBIS_HOME=1
+    else
+        IN_PROJECT=1
+    fi
+fi
+
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 WARNINGS=0
@@ -60,7 +78,53 @@ fi
 if command -v myjarbis &> /dev/null; then
     pass "myjarbis on PATH"
 else
-    warn "myjarbis not on PATH (add ~/.myjarbis-global/bin to PATH)"
+    warn "myjarbis not on PATH"
+    note "npm i -g myjarbis, or add ~/.myjarbis-global/bin to PATH"
+fi
+
+# Where the code came from, written by `myjarbis setup`. Installs from
+# before it have no .channel and are git installs.
+CHANNEL="$(cat "$INSTALL_DIR/.channel" 2>/dev/null || echo git)"
+RUNTIME_VERSION="$(cat "$INSTALL_DIR/.version" 2>/dev/null || true)"
+SOURCE_DIR="$(cat "$INSTALL_DIR/.source" 2>/dev/null || true)"
+if [ "$CHANNEL" = "npm" ]; then
+    PKG_VERSION="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SOURCE_DIR/package.json" 2>/dev/null | head -1)"
+    if [ -z "$PKG_VERSION" ]; then
+        warn "installed from npm, but the package is gone from $SOURCE_DIR"
+        note "reinstall it: npm i -g myjarbis && myjarbis setup"
+    elif [ "$PKG_VERSION" != "$RUNTIME_VERSION" ]; then
+        warn "package is v$PKG_VERSION, runtime is v${RUNTIME_VERSION:-?}"
+        note "run: myjarbis setup"
+    else
+        pass "installed from npm · v$RUNTIME_VERSION"
+    fi
+
+    # Harmless — it points at the same runtime — but it shadows npm's link,
+    # and the dispatcher in the runtime cannot tell the package is newer.
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+        if [ -f "$rc" ] && grep -q "myjarbis-global/bin" "$rc" 2>/dev/null; then
+            warn "$rc still adds ~/.myjarbis-global/bin to PATH"
+            note "left from a git install; npm already puts myjarbis on PATH."
+            note "remove the '# MyJarbis CLI' line from it"
+        fi
+    done
+else
+    pass "installed from a checkout${SOURCE_DIR:+ ($SOURCE_DIR)}${RUNTIME_VERSION:+ · v$RUNTIME_VERSION}"
+fi
+
+# better-sqlite3 is native, built for one Node ABI. With nvm, the node that
+# ran setup and the node Claude Code spawns the server with can differ, and
+# then the server dies at its first query with NODE_MODULE_VERSION mismatch.
+SQLITE_MOD="$INSTALL_DIR/mcp-server/node_modules/better-sqlite3"
+if [ -d "$SQLITE_MOD" ]; then
+    if ABI_ERR="$(node -e "const D=require('$SQLITE_MOD'); new D(':memory:').close()" 2>&1)"; then
+        pass "native SQLite module loads under node $(node --version)"
+    else
+        fail "native SQLite module does not load under node $(node --version)"
+        echo "$ABI_ERR" | grep -m1 -E "NODE_MODULE_VERSION|Error" | sed 's/^/        /'
+        note "rebuild it under the node Claude Code uses:"
+        note "  cd $INSTALL_DIR/mcp-server && npm rebuild better-sqlite3"
+    fi
 fi
 
 # ─── Claude Code integration ──────────────────────────────────────
@@ -97,7 +161,7 @@ fi
 # ─── current project ──────────────────────────────────────────────
 section "Current project"
 
-if [ -d ".myjarbis" ]; then
+if [ -n "$IN_PROJECT" ]; then
     pass ".myjarbis/ exists"
 
     if [ -f ".myjarbis/config/settings.json" ]; then
@@ -230,14 +294,19 @@ if [ -d ".myjarbis" ]; then
         warn ".claude/skills/ missing — run myjarbis skill materialize"
     fi
 else
-    warn "not in a MyJarbis project (.myjarbis/ not found)"
-    note "run myjarbis init to initialize this project"
+    if [ -n "$IS_MYJARBIS_HOME" ]; then
+        note "here, .myjarbis/ is MYJARBIS_HOME (the shared brain), not a project"
+        note "project checks skipped; run doctor inside a project to see them"
+    else
+        warn "not in a MyJarbis project (.myjarbis/ not found)"
+        note "run myjarbis init to initialize this project"
+    fi
 fi
 
 # ─── MCP tools roundtrip ──────────────────────────────────────────
 section "MCP tools"
 
-if [ -d ".myjarbis" ] && [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
+if [ -n "$IN_PROJECT" ] && [ -f "$INSTALL_DIR/mcp-server/build/cli.js" ]; then
     # Same reason as above: resolve rather than assume a silo, so a shared
     # project is exercised instead of silently skipped.
     ROUNDTRIP=$(node --input-type=module -e "
@@ -278,7 +347,7 @@ fi
 # ─── environment ──────────────────────────────────────────────────
 section "Environment"
 
-if [ -d ".myjarbis" ]; then
+if [ -n "$IN_PROJECT" ]; then
     FILE_COUNT=$(find . -type f \
         -not -path "*/node_modules/*" \
         -not -path "*/vendor/*" \
