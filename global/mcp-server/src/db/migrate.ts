@@ -814,6 +814,32 @@ export function migrateProject(projectPath: string): MigrationResult {
     };
   }
 
+  // MYJARBIS_HOME is not a project, and from $HOME it looks exactly like one.
+  //
+  // The trigger below is "`.myjarbis/` exists and `.myjarbis/memory.db` does
+  // not", and `~/.myjarbis` is a `.myjarbis/` directory with no memory.db in
+  // it until the first project is initialised. So the server started with cwd
+  // = $HOME — `myjarbis doctor` does exactly that when it health-checks the
+  // handshake — read the shared brain's own directory as a v0.1 layout and
+  // seeded it with a `config/settings.json` claiming $HOME is a project, plus
+  // an empty brain that resolution would then prefer.
+  //
+  // It is bounded but it lands on the worst audience: the migration returns
+  // early once a memory.db exists, so it only fires on a machine between
+  // `setup` and its first `myjarbis init`.
+  //
+  // Spelled out rather than imported from resolve.ts, which reaches back into
+  // this directory — same as backupV01Layout below.
+  const stateDir = process.env.MYJARBIS_HOME || path.join(homedir(), '.myjarbis');
+  if (path.resolve(myjarbisDir) === path.resolve(stateDir)) {
+    return {
+      migrated: false,
+      fromVersion: null,
+      toVersion: SCHEMA_VERSION,
+      reason: 'this is MYJARBIS_HOME, the shared brain, not a project',
+    };
+  }
+
   const dbPath = path.join(myjarbisDir, 'memory.db');
   if (fs.existsSync(dbPath)) {
     return {

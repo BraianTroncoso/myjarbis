@@ -283,6 +283,33 @@ console.log(out.join('\n'));
 " > "$ASSERTS"
 read_asserts
 
+echo "[7] MYJARBIS_HOME is not a v0.1 layout"
+
+# The shared brain's own directory has exactly the shape [6] migrates — a
+# `.myjarbis/` with no memory.db beside it — until the first project is
+# initialised. So the server started with cwd = $HOME read it as a legacy
+# project and seeded it: a config/settings.json claiming $HOME is a project,
+# and an empty brain that resolution would then prefer. `myjarbis doctor`
+# triggers it on its own, through the handshake it health-checks with.
+HOME_AS_PROJECT="$WORK/home-as-project"
+mkdir -p "$HOME_AS_PROJECT/.myjarbis"
+printf '{ "language": "EN" }\n' > "$HOME_AS_PROJECT/.myjarbis/defaults.json"
+
+REASON="$(MYJARBIS_HOME="$HOME_AS_PROJECT/.myjarbis" node --input-type=module -e "
+import { migrateProject } from '$B/db/migrate.js';
+const r = migrateProject('$HOME_AS_PROJECT');
+console.log(r.migrated ? 'MIGRATED' : r.reason);
+" 2>&1 | tail -1)"
+case "$REASON" in
+  *"MYJARBIS_HOME"*) pass "migrateProject refuses it, and says why" ;;
+  *)                 oops "it was not refused as MYJARBIS_HOME: $REASON" ;;
+esac
+
+LEFT="$(ls -A "$HOME_AS_PROJECT/.myjarbis" | tr '\n' ' ')"
+[ "$LEFT" = "defaults.json " ] \
+  && pass "and wrote nothing into it" \
+  || oops "MYJARBIS_HOME was seeded: $LEFT"
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "✓ v03-shared-resolution: all assertions passed"
