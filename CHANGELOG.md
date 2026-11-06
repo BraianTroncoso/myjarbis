@@ -31,6 +31,19 @@
 
 ### Fixed
 
+- **The server started in `$HOME` seeded `~/.myjarbis` as if it were a v0.1
+  project.** The v0.1 → v0.2 migration fires on one condition — a `.myjarbis/`
+  with no `memory.db` beside it — and `MYJARBIS_HOME` has exactly that shape
+  until the first project is initialised. So it wrote a
+  `config/settings.json` claiming `$HOME` was a project and an empty brain
+  that resolution would then prefer, into the shared brain's own directory.
+  `myjarbis doctor` triggered it on its own, through the handshake it
+  health-checks the server with. Bounded — the migration returns early once a
+  `memory.db` exists — but it lands between `setup` and the first
+  `myjarbis init`, which is the one window a new machine is in.
+  `migrateProject` now refuses `MYJARBIS_HOME` by name.
+  `tests/v03-shared-resolution.sh` [7], beside the check that a real v0.1
+  layout still migrates.
 - **`update` failed on every build on machines installed by the old
   `install.sh`** with `Cannot find module '../lib/tsc.js'`. Its `cp -r` of
   `node_modules` followed symlinks on macOS, so every `node_modules/.bin`
