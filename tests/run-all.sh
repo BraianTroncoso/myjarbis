@@ -81,6 +81,7 @@ SUITES=(
   v052-start-by-name
   v052-init-batch
   v053-npm-install
+  v060-registry-override
 )
 
 # ─── what to print when a suite fails ─────────────────────────────

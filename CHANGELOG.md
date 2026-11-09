@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`doctor` and `start` ignored `MYJARBIS_REGISTRY`.** Both built
+  `$INSTALL_DIR/projects-registry.json` by hand while every other reader —
+  `myjarbis`, `init`, `setup`, `update` and `src/org/registry.ts` — went
+  through the override first. A hermetic test run points `MYJARBIS_REGISTRY`
+  at its own fixture and leaves `MYJARBIS_INSTALL_DIR` on a real-looking
+  install, so those two reached past the fixture and reported on the
+  developer's own registry: a diagnosis of production state, and a `start`
+  offering projects the caller had excluded. The new
+  `tests/v060-registry-override.sh` also fails if a future `bin/` script
+  builds the path the same way.
+
 ## v0.6.0 — one command to install it
 
 ### Added
