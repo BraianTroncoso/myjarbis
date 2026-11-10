@@ -541,7 +541,7 @@ async function main(): Promise<void> {
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
   const server = new Server(
-    { name: 'myjarbis-mcp-server', version: '0.6.0' },
+    { name: 'myjarbis-mcp-server', version: '0.6.1' },
     { capabilities: { tools: {} } },
   );
 
