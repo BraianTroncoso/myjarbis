@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.1 — the registry override is honoured everywhere
 
 ### Fixed
 
